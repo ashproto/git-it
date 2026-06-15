@@ -71,8 +71,12 @@
     }
   });
 
-  // Derived: is there no active repo and no open repos?
-  const isEmpty = $derived(appState.openRepos.length === 0 && !appState.repo);
+  // Derived: nothing to show — no active repo, no open repos, and no loaded commits.
+  // (The graphCommits check keeps the browser preview's sample graph visible, since
+  // its onMount loads commits without setting a repo.)
+  const isEmpty = $derived(
+    appState.openRepos.length === 0 && !appState.repo && appState.graphCommits.length === 0,
+  );
 </script>
 
 <main>
