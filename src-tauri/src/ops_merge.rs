@@ -1,5 +1,5 @@
 use crate::git_ops;
-use crate::types::OpOutcome;
+use crate::types::{ConflictEntry, ConflictKind, OpOutcome};
 use std::path::Path;
 use std::process::Command;
 
@@ -161,6 +161,69 @@ pub fn resolve_side(repo: &Path, path: &str, ours: bool) -> Result<(), String> {
     add.current_dir(repo).args(["add", "--", path]);
     git_ops::run(&mut add)?;
     Ok(())
+}
+
+/// Map a git porcelain-v2 unmerged XY code to a resolution kind.
+fn classify(xy: &str) -> ConflictKind {
+    match xy {
+        "UU" | "AA" => ConflictKind::Both,
+        "DD" => ConflictKind::BothDeleted,
+        _ => ConflictKind::ModifyDelete, // UD, DU, AU, UA
+    }
+}
+
+/// Conflicted paths with their resolution kind. Parses `status --porcelain=v2 -z`
+/// unmerged ("u") records: `u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>`.
+/// `-z` makes records NUL-terminated and paths verbatim (no quoting), so a path
+/// with spaces survives the field split.
+pub fn conflict_details(repo: &Path) -> Result<Vec<ConflictEntry>, String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo).args(["status", "--porcelain=v2", "-z"]);
+    let (out, _) = git_ops::run(&mut c)?;
+    let mut entries = Vec::new();
+    for rec in out.split('\0') {
+        if let Some(rest) = rec.strip_prefix("u ") {
+            // rest = "<XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>"
+            let mut it = rest.splitn(10, ' ');
+            let xy = it.next().unwrap_or("");
+            let path = it.nth(8).unwrap_or("");
+            if !path.is_empty() {
+                entries.push(ConflictEntry { path: path.to_string(), kind: classify(xy) });
+            }
+        }
+    }
+    Ok(entries)
+}
+
+/// Keep the working-tree version of a modify/delete-conflicted file (stages it).
+pub fn resolve_keep(repo: &Path, path: &str) -> Result<(), String> {
+    let mut add = Command::new("git");
+    add.current_dir(repo).args(["add", "--", path]);
+    git_ops::run(&mut add)?;
+    Ok(())
+}
+
+/// Remove a conflicted file as the resolution (stages the deletion). `-f` because
+/// a modify/delete conflict leaves modified content in the worktree that the plain
+/// `git rm` up-to-date check would otherwise reject — removal is the chosen intent.
+pub fn resolve_remove(repo: &Path, path: &str) -> Result<(), String> {
+    let mut rm = Command::new("git");
+    rm.current_dir(repo).args(["rm", "-f", "--", path]);
+    git_ops::run(&mut rm)?;
+    Ok(())
+}
+
+/// Skip the current commit of an in-progress cherry-pick/revert sequence. Merge has
+/// no `--skip` (resolve or abort instead) — reject it rather than shell out.
+pub fn skip(repo: &Path, kind: &str) -> Result<OpOutcome, String> {
+    let sub = op_subcommand(kind)?;
+    if sub == "merge" {
+        return Err("Merge cannot skip — resolve the conflicts or abort.".to_string());
+    }
+    let mut c = Command::new("git");
+    c.current_dir(repo).args([sub, "--skip"]);
+    let (ok, msg) = run_status(&mut c)?;
+    outcome_for(repo, sub, ok, msg)
 }
 
 #[cfg(test)]
@@ -360,5 +423,95 @@ mod tests {
         assert_eq!(out.files, vec!["f.txt".to_string()]);
         abort(&r.path, "cherry-pick").unwrap();
         assert!(!sequencer_in_progress(&r.path, "cherry-pick"));
+    }
+
+    #[test]
+    fn conflict_details_classifies_both_modified() {
+        let r = TempRepo::new();
+        r.commit("f.txt", "base\n", "base");
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.commit("f.txt", "feat\n", "feat edit");
+        r.git(&["checkout", "-q", "main"]);
+        r.commit("f.txt", "main\n", "main edit");
+        assert!(merge(&r.path, "feat", false, false).unwrap().conflicted);
+        let d = conflict_details(&r.path).unwrap();
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].path, "f.txt");
+        assert_eq!(d[0].kind, crate::types::ConflictKind::Both);
+        abort(&r.path, "merge").unwrap();
+    }
+
+    #[test]
+    fn conflict_details_classifies_modify_delete() {
+        // We modify f.txt; they delete it → UD (modify/delete).
+        let r = TempRepo::new();
+        r.commit("f.txt", "base\n", "base");
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.git(&["rm", "-q", "f.txt"]);
+        r.git(&["commit", "-q", "-m", "delete f"]);
+        r.git(&["checkout", "-q", "main"]);
+        r.commit("f.txt", "main-change\n", "main edit");
+        assert!(merge(&r.path, "feat", false, false).unwrap().conflicted);
+        let d = conflict_details(&r.path).unwrap();
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].kind, crate::types::ConflictKind::ModifyDelete);
+        abort(&r.path, "merge").unwrap();
+    }
+
+    #[test]
+    fn resolve_keep_then_continue_keeps_file() {
+        let r = TempRepo::new();
+        r.commit("f.txt", "base\n", "base");
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.git(&["rm", "-q", "f.txt"]);
+        r.git(&["commit", "-q", "-m", "delete f"]);
+        r.git(&["checkout", "-q", "main"]);
+        r.commit("f.txt", "kept\n", "main edit");
+        assert!(merge(&r.path, "feat", false, false).unwrap().conflicted);
+        resolve_keep(&r.path, "f.txt").unwrap();
+        assert!(conflicted_files(&r.path).unwrap().is_empty());
+        let done = continue_op(&r.path, "merge").unwrap();
+        assert!(!done.conflicted);
+        assert_eq!(r.read("f.txt"), "kept\n");
+    }
+
+    #[test]
+    fn resolve_remove_then_continue_drops_file() {
+        let r = TempRepo::new();
+        r.commit("f.txt", "base\n", "base");
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.git(&["rm", "-q", "f.txt"]);
+        r.git(&["commit", "-q", "-m", "delete f"]);
+        r.git(&["checkout", "-q", "main"]);
+        r.commit("f.txt", "main-change\n", "main edit");
+        assert!(merge(&r.path, "feat", false, false).unwrap().conflicted);
+        resolve_remove(&r.path, "f.txt").unwrap();
+        assert!(conflicted_files(&r.path).unwrap().is_empty());
+        let done = continue_op(&r.path, "merge").unwrap();
+        assert!(!done.conflicted);
+        assert!(!r.path.join("f.txt").exists(), "file should be gone");
+    }
+
+    #[test]
+    fn skip_cherry_pick_advances_without_applying() {
+        let r = TempRepo::new();
+        r.commit("f.txt", "base\n", "base");
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.commit("f.txt", "feat\n", "feat edit");
+        let pick = r.rev("HEAD");
+        r.git(&["checkout", "-q", "main"]);
+        r.commit("f.txt", "main\n", "main edit");
+        assert!(cherry_pick(&r.path, &[pick]).unwrap().conflicted);
+        let out = skip(&r.path, "cherry-pick").unwrap();
+        assert!(!out.conflicted);
+        assert!(!sequencer_in_progress(&r.path, "cherry-pick"));
+        assert_eq!(r.read("f.txt"), "main\n", "skip discards the picked change");
+    }
+
+    #[test]
+    fn skip_merge_is_rejected() {
+        let r = TempRepo::new();
+        r.commit("f.txt", "x\n", "x");
+        assert!(skip(&r.path, "merge").is_err(), "merge has no --skip");
     }
 }

@@ -113,3 +113,21 @@ pub struct OpOutcome {
     /// Combined git stdout+stderr, for the log.
     pub message: String,
 }
+
+/// How a conflicted path must be resolved, derived from git's status XY code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConflictKind {
+    /// Both sides have content (UU / AA) — resolvable by taking ours or theirs.
+    Both,
+    /// One side modified, the other deleted/added (UD/DU/AU/UA) — keep or remove.
+    ModifyDelete,
+    /// Both sides deleted (DD) — only removal finalizes it.
+    BothDeleted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConflictEntry {
+    pub path: String,
+    pub kind: ConflictKind,
+}

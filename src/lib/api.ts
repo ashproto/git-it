@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   BundleInfo,
   Commit,
+  ConflictEntry,
   DateMapping,
   GraphCommit,
   OpOutcome,
@@ -54,6 +55,13 @@ export const api = {
   resolveConflict: (repo: string, path: string, ours: boolean) =>
     invoke<void>("resolve_conflict", { repo, path, ours }),
   conflictedFiles: (repo: string) => invoke<string[]>("conflicted_files", { repo }),
+  conflictDetails: (repo: string) =>
+    invoke<ConflictEntry[]>("conflict_details", { repo }),
+  resolveKeep: (repo: string, path: string) =>
+    invoke<void>("resolve_keep", { repo, path }),
+  resolveRemove: (repo: string, path: string) =>
+    invoke<void>("resolve_remove", { repo, path }),
+  opSkip: (repo: string, kind: string) => invoke<OpOutcome>("op_skip", { repo, kind }),
   createBundle: (repo: string) => invoke<string>("create_bundle", { repo }),
   listBundles: (repo: string) => invoke<BundleInfo[]>("list_bundles", { repo }),
   deleteBundle: (path: string) => invoke<void>("delete_bundle", { path }),

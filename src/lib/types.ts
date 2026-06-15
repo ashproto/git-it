@@ -91,3 +91,7 @@ export type OpOutcome = {
   files: string[];
   message: string;
 };
+
+export type ConflictKind = "both" | "modify-delete" | "both-deleted";
+
+export type ConflictEntry = { path: string; kind: ConflictKind };

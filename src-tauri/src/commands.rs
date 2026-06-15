@@ -3,7 +3,7 @@ use crate::graph;
 use crate::ops;
 use crate::ops_merge;
 use crate::rewrite;
-use crate::types::{BundleInfo, Commit, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, Ref, RepoStatus, RewriteOptions, SafetyRef};
+use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, Ref, RepoStatus, RewriteOptions, SafetyRef};
 use std::path::PathBuf;
 use tauri::ipc::Channel;
 
@@ -192,4 +192,24 @@ pub fn resolve_conflict(repo: String, path: String, ours: bool) -> Result<(), St
 #[tauri::command]
 pub fn conflicted_files(repo: String) -> Result<Vec<String>, String> {
     ops_merge::conflicted_files(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn conflict_details(repo: String) -> Result<Vec<ConflictEntry>, String> {
+    ops_merge::conflict_details(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn resolve_keep(repo: String, path: String) -> Result<(), String> {
+    ops_merge::resolve_keep(&PathBuf::from(repo), &path)
+}
+
+#[tauri::command]
+pub fn resolve_remove(repo: String, path: String) -> Result<(), String> {
+    ops_merge::resolve_remove(&PathBuf::from(repo), &path)
+}
+
+#[tauri::command]
+pub fn op_skip(repo: String, kind: String) -> Result<OpOutcome, String> {
+    ops_merge::skip(&PathBuf::from(repo), &kind)
 }
