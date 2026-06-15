@@ -19,17 +19,27 @@ pub fn working_changes(repo: &Path) -> Result<Vec<WorkingFile>, String> {
         if rec.is_empty() {
             continue;
         }
-        if let Some(rest) = rec.strip_prefix("1 ").or_else(|| rec.strip_prefix("2 ")) {
-            let is_rename = rec.starts_with("2 ");
-            // rest = "<XY> <sub> <mH> <mI> <mW> <hH> <hI> [<Xscore>] <path>"
-            let xy: Vec<char> = rest.chars().take(2).collect();
-            let x = *xy.first().unwrap_or(&'.');
-            let y = *xy.get(1).unwrap_or(&'.');
-            // path is the last space-separated field of the record
-            let path = rest.rsplit(' ').next().unwrap_or("").to_string();
-            if is_rename {
-                let _ = it.next(); // consume the rename origin path
-            }
+        if let Some(rest) = rec.strip_prefix("1 ") {
+            // rest = "<XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>"
+            // 7 fixed fields before path → splitn(8, ' ').nth(7)
+            let x = rest.chars().next().unwrap_or('.');
+            let y = rest.chars().nth(1).unwrap_or('.');
+            let path = rest.splitn(8, ' ').nth(7).unwrap_or("").to_string();
+            files.push(WorkingFile {
+                path,
+                staged: x != '.',
+                unstaged: y != '.',
+                untracked: false,
+                conflicted: false,
+                status: status_label(x, y),
+            });
+        } else if let Some(rest) = rec.strip_prefix("2 ") {
+            // rest = "<XY> <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>"
+            // 8 fixed fields before path → splitn(9, ' ').nth(8)
+            let x = rest.chars().next().unwrap_or('.');
+            let y = rest.chars().nth(1).unwrap_or('.');
+            let path = rest.splitn(9, ' ').nth(8).unwrap_or("").to_string();
+            let _ = it.next(); // consume the NUL-separated rename origin path
             files.push(WorkingFile {
                 path,
                 staged: x != '.',
@@ -39,7 +49,9 @@ pub fn working_changes(repo: &Path) -> Result<Vec<WorkingFile>, String> {
                 status: status_label(x, y),
             });
         } else if let Some(rest) = rec.strip_prefix("u ") {
-            let path = rest.rsplit(' ').next().unwrap_or("").to_string();
+            // rest = "<XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>"
+            // 9 fixed fields before path → splitn(10, ' ').nth(9)
+            let path = rest.splitn(10, ' ').nth(9).unwrap_or("").to_string();
             files.push(WorkingFile {
                 path,
                 staged: false,
@@ -238,6 +250,8 @@ fn git_apply(repo: &Path, patch: &str, reverse: bool) -> Result<(), String> {
 }
 
 /// Stage one hunk (by index) of `path`'s UNSTAGED diff.
+/// Hunk indices refer to the CURRENT live diff; after a successful stage/unstage the remaining
+/// diff re-indexes, so callers must re-fetch the diff before issuing another hunk op.
 pub fn stage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), String> {
     let d = diff(repo, Some(path), false)?;
     let (header, hunks) = split_hunks(&d);
@@ -246,6 +260,8 @@ pub fn stage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), Stri
 }
 
 /// Unstage one hunk (by index) of `path`'s STAGED diff.
+/// Hunk indices refer to the CURRENT live diff; after a successful stage/unstage the remaining
+/// diff re-indexes, so callers must re-fetch the diff before issuing another hunk op.
 pub fn unstage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), String> {
     let d = diff(repo, Some(path), true)?;
     let (header, hunks) = split_hunks(&d);
@@ -495,5 +511,38 @@ mod tests {
         assert_eq!(list.len(), 1);
         stash_pop(&r.path, 0).unwrap();
         assert_eq!(fs::read_to_string(r.path.join("a.txt")).unwrap(), "2\n", "pop restores");
+    }
+
+    #[test]
+    fn working_changes_handles_space_in_path() {
+        let r = TempRepo::new();
+        // Commit a file with a space in its name so it has an index entry.
+        r.commit_file("my file.txt", "original\n", "init");
+
+        // Modify the tracked spaced file (produces a `1` record with unstaged change).
+        r.write("my file.txt", "modified\n");
+
+        // Stage a new spaced file (produces a `1` record with staged add).
+        r.write("staged file.txt", "staged\n");
+        r.git(&["add", "staged file.txt"]);
+
+        // Add an untracked file with a space (produces a `?` record).
+        r.write("new file.txt", "untracked\n");
+
+        let files = working_changes(&r.path).unwrap();
+        let by = |p: &str| files.iter().find(|x| x.path == p).cloned();
+
+        // Modified tracked file: path must be the full "my file.txt", not "file.txt".
+        let modified = by("my file.txt").expect("'my file.txt' missing from working_changes");
+        assert!(modified.unstaged, "'my file.txt' should be unstaged");
+        assert!(!modified.untracked);
+
+        // Staged new file: path must be the full "staged file.txt".
+        let staged = by("staged file.txt").expect("'staged file.txt' missing from working_changes");
+        assert!(staged.staged, "'staged file.txt' should be staged");
+
+        // Untracked file: path must be the full "new file.txt".
+        let untracked = by("new file.txt").expect("'new file.txt' missing from working_changes");
+        assert!(untracked.untracked, "'new file.txt' should be untracked");
     }
 }
