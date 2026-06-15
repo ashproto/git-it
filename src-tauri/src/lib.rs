@@ -46,6 +46,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        // Manage Arc<RemoteState> so pull/push/cancel_remote commands can share it
+        // across async spawn_blocking boundaries (State<'_> is not 'static).
+        .manage(std::sync::Arc::new(ops_remote::RemoteState::default()))
         .invoke_handler(tauri::generate_handler![
             commands::check_prerequisites,
             commands::is_git_repo,
@@ -105,6 +108,9 @@ pub fn run() {
             commands::remote_add,
             commands::remote_remove,
             commands::remote_set_url,
+            commands::pull,
+            commands::push,
+            commands::cancel_remote,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

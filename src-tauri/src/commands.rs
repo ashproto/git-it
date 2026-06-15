@@ -6,9 +6,11 @@ use crate::ops_remote;
 use crate::ops_rewrite;
 use crate::ops_worktree;
 use crate::rewrite;
-use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RemoteInfo, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile};
+use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RemoteInfo, RemoteOutcome, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::ipc::Channel;
+use tauri::State;
 
 #[tauri::command]
 pub fn check_prerequisites() -> PrerequisiteCheck {
@@ -353,4 +355,61 @@ pub fn remote_remove(repo: String, name: String) -> Result<(), String> {
 #[tauri::command]
 pub fn remote_set_url(repo: String, name: String, url: String) -> Result<(), String> {
     ops_remote::remote_set_url(&PathBuf::from(repo), &name, &url)
+}
+
+// ── Streamed pull / push / cancel ────────────────────────────────────────────
+//
+// Tauri `State<'_, T>` is not 'static, so we cannot move it into spawn_blocking.
+// The solution: manage `Arc<RemoteState>` in lib.rs; commands take
+// `State<'_, Arc<ops_remote::RemoteState>>` and clone the Arc before spawn_blocking.
+
+#[tauri::command]
+pub async fn pull(
+    repo: String,
+    rebase: bool,
+    on_event: Channel<String>,
+    state: State<'_, Arc<ops_remote::RemoteState>>,
+) -> Result<RemoteOutcome, String> {
+    let st = state.inner().clone(); // clone the Arc — now 'static-safe
+    let repo_path = PathBuf::from(repo);
+    let chan = on_event.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        ops_remote::pull(&repo_path, rebase, &st, &|l| { let _ = chan.send(l); })
+    })
+    .await
+    .map_err(|e| format!("join: {}", e))?
+}
+
+#[tauri::command]
+pub async fn push(
+    repo: String,
+    remote: String,
+    refspec: Option<String>,
+    force_with_lease: bool,
+    set_upstream: bool,
+    on_event: Channel<String>,
+    state: State<'_, Arc<ops_remote::RemoteState>>,
+) -> Result<RemoteOutcome, String> {
+    let st = state.inner().clone();
+    let repo_path = PathBuf::from(repo);
+    let chan = on_event.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        ops_remote::push(
+            &repo_path,
+            &remote,
+            refspec.as_deref(),
+            force_with_lease,
+            set_upstream,
+            &st,
+            &|l| { let _ = chan.send(l); },
+        )
+    })
+    .await
+    .map_err(|e| format!("join: {}", e))?
+}
+
+/// Kill the in-flight remote operation. Synchronous — no spawn needed.
+#[tauri::command]
+pub fn cancel_remote(state: State<'_, Arc<ops_remote::RemoteState>>) {
+    ops_remote::cancel(state.inner());
 }

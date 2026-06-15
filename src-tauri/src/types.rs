@@ -194,3 +194,12 @@ pub struct RemoteInfo {
     pub name: String,
     pub url: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteOutcome {
+    pub ok: bool,
+    pub auth_failed: bool,  // → UI shows CredentialsPrompt + retries
+    pub conflicted: bool,   // pull merge/rebase stopped on conflict → ConflictView
+    pub message: String,
+}

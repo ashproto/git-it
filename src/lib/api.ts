@@ -13,6 +13,7 @@ import type {
   Ref,
   ReflogEntry,
   RemoteInfo,
+  RemoteOutcome,
   RepoStatus,
   RewriteOptions,
   RewriteResult,
@@ -133,4 +134,29 @@ export const api = {
   remoteRemove: (repo: string, name: string) => invoke<void>("remote_remove", { repo, name }),
   remoteSetUrl: (repo: string, name: string, url: string) =>
     invoke<void>("remote_set_url", { repo, name, url }),
+  pull: (repo: string, rebase: boolean, onEvent: (line: string) => void) => {
+    const channel = new Channel<string>();
+    channel.onmessage = onEvent;
+    return invoke<RemoteOutcome>("pull", { repo, rebase, onEvent: channel });
+  },
+  push: (
+    repo: string,
+    remote: string,
+    refspec: string | null,
+    forceWithLease: boolean,
+    setUpstream: boolean,
+    onEvent: (line: string) => void,
+  ) => {
+    const channel = new Channel<string>();
+    channel.onmessage = onEvent;
+    return invoke<RemoteOutcome>("push", {
+      repo,
+      remote,
+      refspec,
+      forceWithLease,
+      setUpstream,
+      onEvent: channel,
+    });
+  },
+  cancelRemote: (repo: string) => invoke<void>("cancel_remote", { repo }),
 };

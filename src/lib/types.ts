@@ -114,3 +114,10 @@ export type WorkingFile = {
 export type StashEntry = { index: number; message: string; sha: string };
 
 export type RemoteInfo = { name: string; url: string };
+
+export type RemoteOutcome = {
+  ok: boolean;
+  authFailed: boolean;
+  conflicted: boolean;
+  message: string;
+};
