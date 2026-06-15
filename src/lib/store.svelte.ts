@@ -1,8 +1,9 @@
 // Centralized reactive app state using Svelte 5 runes.
 // Components import this module and read/write fields directly.
-import type { Commit } from "./types";
+import type { Commit, GraphCommit } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
+import { computeLanes } from "./graph";
 
 // Preferences persist via the Tauri Store plugin (a JSON file written by Rust) so
 // they survive a force-quit/crash — macOS WKWebView flushes localStorage only
@@ -35,6 +36,32 @@ function loadSyncDateFormat(): DateFormatPrefs {
     return raw ? coerceFmt(JSON.parse(raw)) : { ...DEFAULT_FMT };
   } catch {
     return { ...DEFAULT_FMT };
+  }
+}
+
+// The edit/apply features consume the flat Commit shape; map from GraphCommit.
+function graphToCommit(g: GraphCommit): Commit {
+  return {
+    sha: g.sha,
+    author_name: g.author_name,
+    author_date: g.author_date,
+    committer_name: g.committer_name,
+    committer_date: g.committer_date,
+    subject: g.subject,
+  };
+}
+
+const LINESTYLE_KEY = "gte.graphLineStyle.v1";
+const LINESTYLE_STORE_KEY = "graphLineStyle";
+
+function loadSyncLineStyle(): "curved" | "angular" {
+  if (isTauri()) return "curved";
+  try {
+    if (typeof localStorage === "undefined") return "curved";
+    const raw = localStorage.getItem(LINESTYLE_KEY);
+    return raw === "angular" ? "angular" : "curved";
+  } catch {
+    return "curved";
   }
 }
 
@@ -96,6 +123,42 @@ function makeState() {
         localStorage.setItem(DATE_FMT_KEY, JSON.stringify(snapshot));
     } catch (e) {
       console.warn("[gte] could not persist date format", e);
+    }
+  }
+
+  let graphCommits = $state<GraphCommit[]>([]);
+  const rows = $derived(
+    computeLanes(graphCommits.map((c) => ({ sha: c.sha, parents: c.parents }))),
+  );
+  let graphLineStyle = $state<"curved" | "angular">(loadSyncLineStyle());
+  let graphLineStyleTouched = false;
+
+  const lsHydrate = getStore();
+  if (lsHydrate) {
+    lsHydrate
+      .then((store) => store.get<string>(LINESTYLE_STORE_KEY))
+      .then((saved) => {
+        if ((saved === "curved" || saved === "angular") && !graphLineStyleTouched) {
+          graphLineStyle = saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load line style", e));
+  }
+
+  function persistLineStyle() {
+    const snapshot = graphLineStyle;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(LINESTYLE_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist line style", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(LINESTYLE_KEY, snapshot);
+    } catch (e) {
+      console.warn("[gte] could not persist line style", e);
     }
   }
 
@@ -183,6 +246,26 @@ function makeState() {
       selected = new Set(commits.map((c) => c.sha));
     },
     clearSelection() {
+      selected = new Set();
+    },
+    get graphCommits() {
+      return graphCommits;
+    },
+    get rows() {
+      return rows;
+    },
+    get graphLineStyle() {
+      return graphLineStyle;
+    },
+    setGraphLineStyle(v: "curved" | "angular") {
+      graphLineStyleTouched = true;
+      graphLineStyle = v;
+      persistLineStyle();
+    },
+    setGraphCommits(gc: GraphCommit[]) {
+      graphCommits = gc;
+      commits = gc.map(graphToCommit);
+      newDates = new Map();
       selected = new Set();
     },
   };
