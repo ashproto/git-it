@@ -507,6 +507,14 @@ function makeState() {
         remotesState = [];
         remoteOpActive = false;
         remoteLog = [];
+        // Clear the loaded graph + selection so a switch doesn't briefly show the
+        // previous repo's history/branch chip (the new repo reloads via the +page
+        // effect), and closing the last repo (v="") falls back to the empty state.
+        graphCommits = [];
+        commits = [];
+        currentSha = null;
+        selected = new Set();
+        newDates = new Map();
       }
       repo = v;
     },
