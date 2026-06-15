@@ -47,3 +47,59 @@ pub struct PrerequisiteCheck {
     pub filter_repo: bool,
     pub filter_repo_version: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphCommit {
+    pub sha: String,
+    pub parents: Vec<String>,
+    pub author_name: String,
+    pub author_email: String,
+    pub author_date: String,
+    pub committer_name: String,
+    pub committer_date: String,
+    pub refs: Vec<RefDecoration>,
+    pub subject: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefDecoration {
+    pub name: String,
+    pub kind: RefKind,
+    pub is_head: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RefKind {
+    Local,
+    Remote,
+    Tag,
+    Head,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ref {
+    pub name: String,
+    pub kind: RefKind,
+    pub target_sha: String,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeadInfo {
+    pub sha: Option<String>,
+    pub branch: Option<String>,
+    pub detached: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoStatus {
+    pub head: HeadInfo,
+    pub staged: u32,
+    pub unstaged: u32,
+    pub untracked: u32,
+    pub conflicted: u32,
+    pub operation: Option<String>,
+}

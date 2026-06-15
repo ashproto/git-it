@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Run a command; return (stdout, stderr) on success, an error string otherwise.
-fn run(cmd: &mut Command) -> Result<(String, String), String> {
+pub(crate) fn run(cmd: &mut Command) -> Result<(String, String), String> {
     let output = cmd
         .output()
         .map_err(|e| format!("Failed to spawn command: {}", e))?;
