@@ -6,6 +6,7 @@
   import { gitActions, loadMoreGraph } from "../gitActions";
   import { amendDialog } from "../amendDialog.svelte";
   import { rebaseEditor } from "../rebaseEditor.svelte";
+  import { timeEditDrawer } from "../timeEditDrawer.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import GraphGutter from "./GraphGutter.svelte";
 
@@ -151,6 +152,11 @@
         action: () => rebaseEditor.openWith(sha),
       },
       { separator: true },
+      {
+        label: "Edit timestamps…",
+        action: () => timeEditDrawer.openDrawer(),
+      },
+      { separator: true },
       { label: "Copy SHA", action: () => navigator.clipboard?.writeText(sha) },
     ]);
   }
@@ -211,6 +217,13 @@
     </div>
     <button type="button" onclick={selectAll}>Select all</button>
     <button type="button" onclick={clearSel}>Clear</button>
+    <button
+      type="button"
+      class="edit-ts"
+      disabled={appState.selected.size === 0}
+      title={appState.selected.size === 0 ? "Select one or more commits first" : "Edit timestamps for the selected commits"}
+      onclick={() => timeEditDrawer.openDrawer()}
+    >Edit timestamps…</button>
   {/snippet}
 
   <div class="wrap" onscroll={onWrapScroll}>
@@ -219,7 +232,6 @@
       <span class="h author">Author</span>
       <span class="h date">Date</span>
       <span class="h sha">Commit</span>
-      <span class="h newdate">New date</span>
     </div>
 
     <div class="history">
@@ -244,7 +256,6 @@
           <div class="author"></div>
           <div class="date mono"></div>
           <div class="sha mono"></div>
-          <div class="newdate mono"></div>
         </div>
       {/if}
 
@@ -267,11 +278,14 @@
               <span class="badge {r.kind}" class:current={r.is_head}>{r.name}</span>
             {/each}
             <span class="msg">{commit.subject}</span>
+            {#if appState.newDates.has(commit.sha)}
+              <span class="new-pill mono" title={`New date: ${newDateLabel(commit.sha)}`}
+                >→ {newDateLabel(commit.sha)}</span>
+            {/if}
           </div>
           <div class="author">{commit.author_name}</div>
           <div class="date mono">{localDate(commit.author_date)}</div>
           <div class="sha mono">{commit.sha.slice(0, 9)}</div>
-          <div class="newdate mono">{newDateLabel(commit.sha)}</div>
         </div>
       {/each}
 
@@ -328,7 +342,7 @@
     border-radius: 6px;
     border: 1px solid var(--border);
     overflow: auto;
-    max-height: 440px;
+    max-height: clamp(360px, 58vh, 900px);
     user-select: none;
     -webkit-user-select: none;
   }
@@ -407,16 +421,27 @@
     flex: 0 0 84px;
     color: var(--text-muted);
   }
-  .newdate {
-    flex: 0 0 168px;
+  .new-pill {
+    flex: 0 0 auto;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 4px;
+    border: 1px solid var(--accent);
     color: var(--accent);
-    padding-right: 10px;
+    font-size: 11px;
+    line-height: 1.6;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 200px;
   }
-  .row.edited .newdate {
-    font-weight: 600;
+  button.edit-ts:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  button.edit-ts:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
   .badge {
     flex: 0 0 auto;

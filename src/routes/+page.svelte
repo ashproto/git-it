@@ -4,8 +4,6 @@
   import WorkingCopyView from "$lib/components/WorkingCopyView.svelte";
   import ConflictView from "$lib/components/ConflictView.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
-  import EditTabs from "$lib/components/EditTabs.svelte";
-  import ApplyPanel from "$lib/components/ApplyPanel.svelte";
   import LogPanel from "$lib/components/LogPanel.svelte";
   import PrereqBanner from "$lib/components/PrereqBanner.svelte";
   import DateFormatMenu from "$lib/components/DateFormatMenu.svelte";
@@ -18,6 +16,7 @@
   import RepoTabs from "$lib/components/RepoTabs.svelte";
   import RepoList from "$lib/components/RepoList.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
+  import TimeEditDrawer from "$lib/components/TimeEditDrawer.svelte";
   import { gitActions, reloadGraph } from "$lib/gitActions";
   import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
@@ -177,10 +176,6 @@
             {:else}
               <CommitDetail />
             {/if}
-            <div class="two-col">
-              <EditTabs />
-              <ApplyPanel />
-            </div>
             <LogPanel />
           </div>
         {/if}
@@ -192,6 +187,7 @@
   <Modal />
   <AmendDialog />
   <RebaseTodo />
+  <TimeEditDrawer />
   <StatusBar />
 </main>
 
@@ -505,11 +501,6 @@
     flex-direction: column;
     gap: 12px;
   }
-  .two-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
   @media (max-width: 900px) {
     .shell {
       flex-direction: column;
@@ -522,9 +513,6 @@
     .side-col {
       flex: 1 1 auto;
       width: 100%;
-    }
-    .two-col {
-      grid-template-columns: 1fr;
     }
   }
 </style>
