@@ -31,6 +31,18 @@ export const api = {
     invoke<GraphCommit[]>("load_graph", { repo, count, skip }),
   listRefs: (repo: string) => invoke<Ref[]>("list_refs", { repo }),
   repoStatus: (repo: string) => invoke<RepoStatus>("repo_status", { repo }),
+  checkout: (repo: string, target: string) => invoke<string>("checkout", { repo, target }),
+  createBranch: (repo: string, name: string, startPoint: string) =>
+    invoke<void>("create_branch", { repo, name, startPoint }),
+  renameBranch: (repo: string, oldName: string, newName: string) =>
+    invoke<void>("rename_branch", { repo, old: oldName, new: newName }),
+  deleteBranch: (repo: string, name: string, force: boolean) =>
+    invoke<void>("delete_branch", { repo, name, force }),
+  createTag: (repo: string, name: string, target: string, message?: string) =>
+    invoke<void>("create_tag", { repo, name, target, message: message ?? null }),
+  deleteTag: (repo: string, name: string) => invoke<void>("delete_tag", { repo, name }),
+  fetch: (repo: string, remote?: string) =>
+    invoke<string>("fetch", { repo, remote: remote ?? null }),
   createBundle: (repo: string) => invoke<string>("create_bundle", { repo }),
   listBundles: (repo: string) => invoke<BundleInfo[]>("list_bundles", { repo }),
   deleteBundle: (path: string) => invoke<void>("delete_bundle", { path }),

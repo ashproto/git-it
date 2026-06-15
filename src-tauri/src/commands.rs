@@ -1,5 +1,6 @@
 use crate::git_ops;
 use crate::graph;
+use crate::ops;
 use crate::rewrite;
 use crate::types::{BundleInfo, Commit, DateMapping, GraphCommit, PrerequisiteCheck, Ref, RepoStatus, RewriteOptions, SafetyRef};
 use std::path::PathBuf;
@@ -115,4 +116,44 @@ pub fn list_refs(repo: String) -> Result<Vec<Ref>, String> {
 #[tauri::command]
 pub fn repo_status(repo: String) -> Result<RepoStatus, String> {
     graph::repo_status(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn checkout(repo: String, target: String) -> Result<String, String> {
+    ops::checkout(&PathBuf::from(repo), &target)
+}
+
+#[tauri::command]
+pub fn create_branch(repo: String, name: String, start_point: String) -> Result<(), String> {
+    ops::create_branch(&PathBuf::from(repo), &name, &start_point)
+}
+
+#[tauri::command]
+pub fn rename_branch(repo: String, old: String, new: String) -> Result<(), String> {
+    ops::rename_branch(&PathBuf::from(repo), &old, &new)
+}
+
+#[tauri::command]
+pub fn delete_branch(repo: String, name: String, force: bool) -> Result<(), String> {
+    ops::delete_branch(&PathBuf::from(repo), &name, force)
+}
+
+#[tauri::command]
+pub fn create_tag(
+    repo: String,
+    name: String,
+    target: String,
+    message: Option<String>,
+) -> Result<(), String> {
+    ops::create_tag(&PathBuf::from(repo), &name, &target, message.as_deref())
+}
+
+#[tauri::command]
+pub fn delete_tag(repo: String, name: String) -> Result<(), String> {
+    ops::delete_tag(&PathBuf::from(repo), &name)
+}
+
+#[tauri::command]
+pub fn fetch(repo: String, remote: Option<String>) -> Result<String, String> {
+    ops::fetch(&PathBuf::from(repo), remote.as_deref())
 }

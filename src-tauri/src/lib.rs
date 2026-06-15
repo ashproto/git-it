@@ -1,6 +1,7 @@
 mod commands;
 mod git_ops;
 mod graph;
+mod ops;
 mod rewrite;
 mod types;
 
@@ -47,6 +48,13 @@ pub fn run() {
             commands::load_graph,
             commands::list_refs,
             commands::repo_status,
+            commands::checkout,
+            commands::create_branch,
+            commands::rename_branch,
+            commands::delete_branch,
+            commands::create_tag,
+            commands::delete_tag,
+            commands::fetch,
             commands::create_bundle,
             commands::list_bundles,
             commands::delete_bundle,
