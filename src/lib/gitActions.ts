@@ -263,6 +263,16 @@ export const gitActions = {
   undo: () => {
     const u: UndoSnapshot | null = appState.lastUndo;
     if (!u) return Promise.resolve(false);
+    // The snapshot reverses the LAST op on the branch it was taken on. If the user
+    // has since checked out a different branch, restoring would move the wrong one
+    // (a repo switch already clears lastUndo via the store's repo setter). Invalidate
+    // rather than reset the wrong branch.
+    const current = appState.refsByKind.local.find((r) => r.isHead)?.name ?? null;
+    if (u.branch !== current) {
+      appState.status = "Undo unavailable — the checked-out branch changed.";
+      appState.setLastUndo(null);
+      return Promise.resolve(false);
+    }
     return run(`Undo ${u.label}`, () => api.undoOp(appState.repo, u.sha)).then((ok) => {
       if (ok) appState.setLastUndo(null);
       return ok;

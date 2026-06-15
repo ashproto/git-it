@@ -246,6 +246,13 @@ function makeState() {
       return repo;
     },
     set repo(v: string) {
+      // Switching repos invalidates the one-click undo (its sha belongs to the old
+      // repo, and forks can share SHAs — restoring here could hard-reset the wrong
+      // tree) and any in-progress-op status carried from the previous repo.
+      if (v !== repo) {
+        lastUndo = null;
+        repoStatus = null;
+      }
       repo = v;
     },
     get commits() {

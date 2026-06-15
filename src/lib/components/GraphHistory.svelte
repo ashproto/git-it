@@ -34,14 +34,12 @@
 
   function doReset(sha: string, mode: "soft" | "mixed" | "hard") {
     const branch = currentBranchName();
-    // graphCommits is newest-first; HEAD is index 0.
-    const headIdx = appState.graphCommits.findIndex((c) => c.refs.some((r) => r.is_head));
-    const targetIdx = appState.graphCommits.findIndex((c) => c.sha === sha);
-    // n = how many commits back from HEAD we're resetting to
-    const n = targetIdx >= 0 && headIdx >= 0 ? targetIdx - headIdx : 0;
+    const subject = appState.graphCommits.find((c) => c.sha === sha)?.subject ?? "";
+    // SHA/subject wording, not a positional count: the graph is date-sorted across
+    // branches, so "N commits back" can't be trusted (could read negative/zero).
     const consequence =
-      `Move ${branch} back ${n} commit(s)` +
-      (mode === "hard" ? "; uncommitted changes will be lost." : ".");
+      `Reset ${branch} to ${sha.slice(0, 9)}${subject ? ` (${subject})` : ""}` +
+      (mode === "hard" ? " — uncommitted changes will be lost." : ".");
     gitActions.reset(sha, mode, consequence);
   }
 
