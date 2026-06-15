@@ -33,7 +33,7 @@
   <div
     id="app-context-menu"
     class="menu"
-    style={`left:${Math.min(contextMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200)}px; top:${contextMenu.y}px`}
+    style={`left:${Math.min(contextMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200)}px; top:${Math.min(contextMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - (contextMenu.items.length * 30 + 16))}px`}
     role="menu"
     aria-label="Context menu"
   >

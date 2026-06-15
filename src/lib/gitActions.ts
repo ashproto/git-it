@@ -34,7 +34,12 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
   try {
     appState.status = `${label}…`;
     await fn();
-    await reloadGraph();
+    // A failed graph refresh shouldn't make a successful op look failed.
+    try {
+      await reloadGraph();
+    } catch (e) {
+      console.warn("[gte] graph refresh after op failed", e);
+    }
     appState.status = `${label} — done.`;
     return true;
   } catch (e) {

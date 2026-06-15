@@ -24,6 +24,13 @@ type DialogState =
 function makeDialogs() {
   let state = $state<DialogState>({ kind: "none" });
 
+  // Settle any still-pending dialog (as cancelled) before opening a new one, so a
+  // replaced dialog's awaiting caller never hangs forever.
+  function settlePending() {
+    if (state.kind === "prompt") state.resolve(null);
+    else if (state.kind === "confirm") state.resolve(false);
+  }
+
   return {
     get state() {
       return state;
@@ -35,6 +42,7 @@ function makeDialogs() {
       placeholder?: string;
       confirmLabel?: string;
     }): Promise<string | null> {
+      settlePending();
       return new Promise((resolve) => {
         state = {
           kind: "prompt",
@@ -53,6 +61,7 @@ function makeDialogs() {
       confirmLabel?: string;
       danger?: boolean;
     }): Promise<boolean> {
+      settlePending();
       return new Promise((resolve) => {
         state = {
           kind: "confirm",
