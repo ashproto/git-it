@@ -103,7 +103,7 @@
           <div class="spacer" style={`width:${gutterWidth}px`}></div>
           <div class="subject">
             {#each commit.refs as r}
-              <span class="badge {r.kind}" class:head={r.is_head}>{r.name}</span>
+              <span class="badge {r.kind}" class:current={r.is_head}>{r.name}</span>
             {/each}
             <span class="msg">{commit.subject}</span>
           </div>
@@ -260,9 +260,14 @@
     color: var(--text-muted);
     white-space: nowrap;
   }
-  .badge.head {
+  .badge.current {
     border-color: var(--accent);
     color: var(--accent);
+  }
+  .badge.head {
+    border-color: var(--text-muted);
+    color: var(--text);
+    font-weight: 600;
   }
   .badge.tag {
     border-color: var(--err);

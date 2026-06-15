@@ -19,6 +19,12 @@
 </script>
 
 <aside class="sidebar">
+  {#if refs.head.length}
+    <button class="ref detached" onclick={() => jumpTo(refs.head[0].sha)} title="Detached HEAD">
+      <span class="dot head" aria-hidden="true"></span>
+      <span class="rn">HEAD (detached)</span>
+    </button>
+  {/if}
   <section>
     <button class="sec" onclick={() => (openLocal = !openLocal)} aria-expanded={openLocal}>
       <span class="chev" class:open={openLocal} aria-hidden="true">▸</span>
@@ -26,7 +32,7 @@
       <span class="n">{refs.local.length}</span>
     </button>
     {#if openLocal}
-      {#each refs.local as r (r.name)}
+      {#each refs.local as r (`${r.name}@${r.sha}`)}
         <button class="ref" class:head={r.isHead} onclick={() => jumpTo(r.sha)} title={r.name}>
           <span class="dot local" aria-hidden="true"></span>
           <span class="rn">{r.name}</span>
@@ -43,7 +49,7 @@
       <span class="n">{refs.remote.length}</span>
     </button>
     {#if openRemote}
-      {#each refs.remote as r (r.name)}
+      {#each refs.remote as r (`${r.name}@${r.sha}`)}
         <button class="ref muted" onclick={() => jumpTo(r.sha)} title={r.name}>
           <span class="dot remote" aria-hidden="true"></span>
           <span class="rn">{r.name}</span>
@@ -60,7 +66,7 @@
       <span class="n">{refs.tags.length}</span>
     </button>
     {#if openTags}
-      {#each refs.tags as r (r.name)}
+      {#each refs.tags as r (`${r.name}@${r.sha}`)}
         <button class="ref" onclick={() => jumpTo(r.sha)} title={r.name}>
           <span class="dot tag" aria-hidden="true"></span>
           <span class="rn">{r.name}</span>
@@ -164,6 +170,13 @@
   }
   .dot.tag {
     background: #ba7517;
+  }
+  .dot.head {
+    background: var(--err);
+  }
+  .ref.detached .rn {
+    color: var(--err);
+    font-weight: 600;
   }
   .none {
     margin: 0 0 4px 18px;

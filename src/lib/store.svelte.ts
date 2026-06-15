@@ -1,6 +1,6 @@
 // Centralized reactive app state using Svelte 5 runes.
 // Components import this module and read/write fields directly.
-import type { Commit, GraphCommit } from "./types";
+import type { Commit, GraphCommit, RefEntry } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
 import { computeLanes } from "./graph";
@@ -138,18 +138,20 @@ function makeState() {
   // Sidebar ref tree, derived from the loaded graph's ref decorations so it works
   // in both Tauri and the browser preview without a separate list_refs call.
   const refsByKind = $derived.by(() => {
-    const local: { name: string; sha: string; isHead: boolean }[] = [];
-    const remote: { name: string; sha: string; isHead: boolean }[] = [];
-    const tags: { name: string; sha: string; isHead: boolean }[] = [];
+    const local: RefEntry[] = [];
+    const remote: RefEntry[] = [];
+    const tags: RefEntry[] = [];
+    const head: RefEntry[] = []; // detached-HEAD decoration (RefKind "head")
     for (const c of graphCommits) {
       for (const r of c.refs) {
-        const entry = { name: r.name, sha: c.sha, isHead: r.is_head };
+        const entry: RefEntry = { name: r.name, sha: c.sha, isHead: r.is_head };
         if (r.kind === "local") local.push(entry);
         else if (r.kind === "remote") remote.push(entry);
         else if (r.kind === "tag") tags.push(entry);
+        else if (r.kind === "head") head.push(entry);
       }
     }
-    return { local, remote, tags };
+    return { local, remote, tags, head };
   });
   let graphLineStyle = $state<"curved" | "angular">(loadSyncLineStyle());
   let graphLineStyleTouched = false;

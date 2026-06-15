@@ -42,6 +42,8 @@ export type EditMode = "offset" | "exact" | "compress";
 
 export type RefKind = "local" | "remote" | "tag" | "head";
 
+export type RefEntry = { name: string; sha: string; isHead: boolean };
+
 export type RefDecoration = {
   name: string;
   kind: RefKind;

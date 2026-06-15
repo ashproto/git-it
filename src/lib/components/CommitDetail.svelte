@@ -42,7 +42,7 @@
         <span class="k">Refs</span>
         <span class="v badges">
           {#each c.refs as r (r.name + r.kind)}
-            <span class="badge {r.kind}" class:head={r.is_head}>{r.name}</span>
+            <span class="badge {r.kind}" class:current={r.is_head}>{r.name}</span>
           {/each}
         </span>
       {/if}
@@ -128,9 +128,14 @@
     border: 1px solid var(--border);
     color: var(--text-muted);
   }
-  .badge.head {
+  .badge.current {
     border-color: var(--accent);
     color: var(--accent);
+  }
+  .badge.head {
+    border-color: var(--text-muted);
+    color: var(--text);
+    font-weight: 600;
   }
   .badge.tag {
     border-color: var(--err);

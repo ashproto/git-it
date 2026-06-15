@@ -16,6 +16,9 @@
   const currentBranch = $derived(
     appState.refsByKind.local.find((r) => r.isHead)?.name ?? null,
   );
+  const detachedHead = $derived(
+    currentBranch === null && appState.refsByKind.head.length > 0,
+  );
 
   onMount(() => {
     const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -32,6 +35,8 @@
     <span class="sub">Batch-edit commit timestamps via git-filter-repo</span>
     {#if currentBranch}
       <span class="branch-chip" title="Current branch">{currentBranch}</span>
+    {:else if detachedHead}
+      <span class="branch-chip detached" title="Detached HEAD">detached HEAD</span>
     {/if}
     <DateFormatMenu />
   </header>
@@ -213,6 +218,10 @@
     border-radius: 999px;
     padding: 1px 10px;
     white-space: nowrap;
+  }
+  .branch-chip.detached {
+    color: var(--err);
+    border-color: var(--err);
   }
   .shell {
     display: flex;
