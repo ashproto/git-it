@@ -384,6 +384,13 @@
   .row.selected {
     background: var(--row-selected);
   }
+  /* Queued-edit accent: an always-visible left bar so an edited row stays legible
+     even when the inline .new-pill is clipped on a long subject / narrow window.
+     inset box-shadow (not border-left) avoids shifting the flex cells out of
+     alignment with the sticky header's gutter padding. */
+  .row.edited {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
   .spacer {
     flex: 0 0 auto;
   }
