@@ -22,21 +22,64 @@ pub fn conflicted_files(repo: &Path) -> Result<Vec<String>, String> {
     Ok(out.lines().map(|s| s.to_string()).filter(|s| !s.is_empty()).collect())
 }
 
-/// Interpret a finished op: clean success, an expected conflict, or a hard error.
-fn outcome(repo: &Path, ok: bool, message: String) -> Result<OpOutcome, String> {
+/// Worktree-aware existence check for a git control file (e.g. CHERRY_PICK_HEAD).
+fn control_file_exists(repo: &Path, name: &str) -> bool {
+    if let Ok(out) = Command::new("git")
+        .current_dir(repo)
+        .args(["rev-parse", "--git-path", name])
+        .output()
+    {
+        if out.status.success() {
+            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !p.is_empty() {
+                let pb = std::path::PathBuf::from(&p);
+                return if pb.is_absolute() { pb } else { repo.join(pb) }.exists();
+            }
+        }
+    }
+    false
+}
+
+/// A cherry-pick/revert sequence is still mid-flight (e.g. stuck on an empty commit).
+fn sequencer_in_progress(repo: &Path, sub: &str) -> bool {
+    let head = if sub == "revert" { "REVERT_HEAD" } else { "CHERRY_PICK_HEAD" };
+    control_file_exists(repo, head) || control_file_exists(repo, "sequencer")
+}
+
+/// Interpret a finished op. `sub` is the git subcommand ("merge"|"cherry-pick"|"revert").
+/// Returns: clean success; an expected conflict (with files); or — for a cherry-pick/
+/// revert that stopped on an EMPTY (already-applied) commit, which otherwise strands
+/// the repo mid-sequence — auto-skip that commit and report a clean outcome; else Err.
+fn outcome_for(repo: &Path, sub: &str, ok: bool, message: String) -> Result<OpOutcome, String> {
     if ok {
         return Ok(OpOutcome { conflicted: false, files: vec![], message });
     }
     let files = conflicted_files(repo)?;
-    if files.is_empty() {
-        // No conflicts but non-zero exit → a real failure (bad ref, etc.).
-        return Err(message);
+    if !files.is_empty() {
+        return Ok(OpOutcome { conflicted: true, files, message });
     }
-    Ok(OpOutcome { conflicted: true, files, message })
+    if (sub == "cherry-pick" || sub == "revert") && sequencer_in_progress(repo, sub) {
+        // Non-zero, no conflicts, but the sequence is stuck — an empty/no-op commit.
+        // Skip it so the user isn't stranded mid-operation.
+        let mut skip = Command::new("git");
+        skip.current_dir(repo).args([sub, "--skip"]);
+        if git_ops::run(&mut skip).is_ok() {
+            return Ok(OpOutcome {
+                conflicted: false,
+                files: vec![],
+                message: format!("Skipped an empty commit. {}", message.lines().next().unwrap_or("")),
+            });
+        }
+    }
+    // Genuine failure (bad ref, dirty tree, …).
+    Err(message)
 }
 
 /// Merge `reference` into the current branch.
 pub fn merge(repo: &Path, reference: &str, no_ff: bool, squash: bool) -> Result<OpOutcome, String> {
+    if no_ff && squash {
+        return Err("Choose either a squash merge or a no-ff merge, not both.".to_string());
+    }
     let mut c = Command::new("git");
     c.current_dir(repo).env("GIT_TERMINAL_PROMPT", "0").arg("merge");
     if no_ff {
@@ -47,7 +90,7 @@ pub fn merge(repo: &Path, reference: &str, no_ff: bool, squash: bool) -> Result<
     }
     c.arg("--end-of-options").arg(reference);
     let (ok, msg) = run_status(&mut c)?;
-    outcome(repo, ok, msg)
+    outcome_for(repo, "merge", ok, msg)
 }
 
 /// Cherry-pick one or more commits onto the current branch.
@@ -61,7 +104,7 @@ pub fn cherry_pick(repo: &Path, shas: &[String]) -> Result<OpOutcome, String> {
         c.arg(s);
     }
     let (ok, msg) = run_status(&mut c)?;
-    outcome(repo, ok, msg)
+    outcome_for(repo, "cherry-pick", ok, msg)
 }
 
 /// Revert one or more commits (creating new commits that undo them).
@@ -75,7 +118,7 @@ pub fn revert(repo: &Path, shas: &[String]) -> Result<OpOutcome, String> {
         c.arg(s);
     }
     let (ok, msg) = run_status(&mut c)?;
-    outcome(repo, ok, msg)
+    outcome_for(repo, "revert", ok, msg)
 }
 
 fn op_subcommand(kind: &str) -> Result<&'static str, String> {
@@ -104,7 +147,7 @@ pub fn continue_op(repo: &Path, kind: &str) -> Result<OpOutcome, String> {
         .env("GIT_EDITOR", "true") // accept the default message, don't open an editor
         .args([sub, "--continue"]);
     let (ok, msg) = run_status(&mut c)?;
-    outcome(repo, ok, msg)
+    outcome_for(repo, sub, ok, msg)
 }
 
 /// Resolve a conflicted file by taking one side wholesale, then staging it.
@@ -264,5 +307,58 @@ mod tests {
         let out = revert(&r.path, &[last]).unwrap();
         assert!(!out.conflicted);
         assert_eq!(r.read("f.txt"), "v1\n", "revert should restore the prior content");
+    }
+
+    #[test]
+    fn empty_cherry_pick_recovers_not_stuck() {
+        let r = TempRepo::new();
+        r.commit("f.txt", "1\n", "A");
+        r.commit("f.txt", "2\n", "B");
+        let b = r.rev("HEAD");
+        r.git(&["checkout", "-q", "-b", "feat"]); // feat is at B
+        // Cherry-picking B onto feat is a no-op (already applied) → empty.
+        let out = cherry_pick(&r.path, &[b]).unwrap();
+        assert!(!out.conflicted);
+        assert!(
+            !sequencer_in_progress(&r.path, "cherry-pick"),
+            "an empty cherry-pick must be skipped, not left stranded"
+        );
+    }
+
+    #[test]
+    fn continue_after_empty_resolution_recovers() {
+        let r = TempRepo::new();
+        r.commit("f.txt", "base\n", "base");
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.commit("f.txt", "theirs\n", "feat edit");
+        let pick = r.rev("HEAD");
+        r.git(&["checkout", "-q", "main"]);
+        r.commit("f.txt", "ours\n", "main edit");
+        let out = cherry_pick(&r.path, &[pick]).unwrap();
+        assert!(out.conflicted);
+        resolve_side(&r.path, "f.txt", true).unwrap(); // take ours → net patch becomes empty
+        let done = continue_op(&r.path, "cherry-pick").unwrap();
+        assert!(!done.conflicted);
+        assert!(
+            !sequencer_in_progress(&r.path, "cherry-pick"),
+            "an empty resolution must not strand the cherry-pick"
+        );
+        assert_eq!(r.read("f.txt"), "ours\n");
+    }
+
+    #[test]
+    fn cherry_pick_conflict_reports_files() {
+        let r = TempRepo::new();
+        r.commit("f.txt", "base\n", "base");
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.commit("f.txt", "feat\n", "feat edit");
+        let pick = r.rev("HEAD");
+        r.git(&["checkout", "-q", "main"]);
+        r.commit("f.txt", "main\n", "main edit");
+        let out = cherry_pick(&r.path, &[pick]).unwrap();
+        assert!(out.conflicted, "diverging cherry-pick must conflict");
+        assert_eq!(out.files, vec!["f.txt".to_string()]);
+        abort(&r.path, "cherry-pick").unwrap();
+        assert!(!sequencer_in_progress(&r.path, "cherry-pick"));
     }
 }
