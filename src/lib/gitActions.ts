@@ -4,7 +4,7 @@
 import { appState } from "./store.svelte";
 import { api } from "./api";
 import { SAMPLE_GRAPH } from "./graph/sample";
-import type { OpOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot } from "./types";
+import type { OpOutcome, RemoteOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot } from "./types";
 import { dialogs } from "./dialogs.svelte";
 
 function isTauri(): boolean {
@@ -35,6 +35,18 @@ export async function refreshWorkingChanges(): Promise<void> {
   }
 }
 
+// Refresh the detailed ref list (ahead/behind/upstream) and the remotes list.
+// Tauri-only; silently no-ops in browser preview.
+export async function refreshRefs(): Promise<void> {
+  if (!isTauri() || !appState.repo) return;
+  try {
+    appState.setRefsDetailed(await api.listRefs(appState.repo));
+    appState.setRemotes(await api.remotes(appState.repo));
+  } catch (e) {
+    console.warn("[gte] refs/remotes refresh failed", e);
+  }
+}
+
 export async function reloadGraph(): Promise<void> {
   if (!isTauri()) {
     appState.setGraphCommits(SAMPLE_GRAPH);
@@ -45,6 +57,7 @@ export async function reloadGraph(): Promise<void> {
   appState.setGraphCommits(gc);
   await refreshStatus();
   await refreshWorkingChanges();
+  await refreshRefs();
 }
 
 // Run an op with uniform guard / status / refresh / error handling.
@@ -246,6 +259,65 @@ async function runDestructiveRebase(
   }
 }
 
+// ── Remote operation helper (Phase 6) ────────────────────────────────────────
+// Runs a streamed pull/push op with:
+//   1. Progress state management (startRemoteProgress / pushRemoteLog / endRemoteProgress)
+//   2. First attempt WITHOUT credentials (relies on system credential helper / SSH agent)
+//   3. On authFailed: prompt for credentials and retry
+//   4. Graph reload + status update (conflicted → ConflictView; ok → done)
+async function runRemote(
+  label: string,
+  fn: (onLine: (l: string) => void, creds?: { username: string; password: string }) => Promise<RemoteOutcome>,
+): Promise<boolean> {
+  if (!isTauri()) {
+    appState.status = "That action needs the desktop app (not the browser preview).";
+    return false;
+  }
+  if (!appState.repo) {
+    appState.status = "Open a repository first.";
+    return false;
+  }
+  appState.startRemoteProgress(label);
+  try {
+    // First attempt: no credentials (system helper / SSH agent / keychain).
+    let outcome = await fn((l) => appState.pushRemoteLog(l));
+
+    if (outcome.authFailed) {
+      // Auth failed — prompt for credentials and retry once.
+      const creds = await dialogs.confirmCredentials({ title: `${label}: sign in` });
+      if (creds) {
+        outcome = await fn((l) => appState.pushRemoteLog(l), creds);
+      }
+      // If user cancelled the credentials dialog, fall through with the original outcome.
+    }
+
+    // Refresh graph/status so ConflictView, UndoBar, ahead/behind etc. are current.
+    try {
+      await reloadGraph();
+    } catch (e) {
+      console.warn("[gte] graph refresh after remote op failed", e);
+    }
+
+    if (outcome.conflicted) {
+      appState.status = `${label}: conflicts to resolve.`;
+    } else if (outcome.ok) {
+      appState.status = `${label} — done.`;
+    } else {
+      appState.status = `${label} failed: ${firstLine(outcome.message)}`;
+    }
+
+    return outcome.ok;
+  } catch (e) {
+    try {
+      await reloadGraph();
+    } catch {}
+    appState.status = `${label} failed: ${firstLine(e)}`;
+    return false;
+  } finally {
+    appState.endRemoteProgress();
+  }
+}
+
 export const gitActions = {
   checkout: (target: string, label?: string) =>
     run(label ?? `Checkout ${target}`, () => api.checkout(appState.repo, target)),
@@ -384,4 +456,50 @@ export const gitActions = {
       return ok;
     });
   },
+
+  // ── Remote actions (Phase 6) ───────────────────────────────────────────────
+  pull: () => {
+    const label = appState.pullRebase ? "Pull (rebase)" : "Pull";
+    return runRemote(label, (onLine, creds) =>
+      api.pull(appState.repo, appState.pullRebase, onLine, creds),
+    );
+  },
+
+  push: async (forceWithLease = false): Promise<boolean> => {
+    if (forceWithLease) {
+      const ok = await dialogs.confirm({
+        title: "Force push",
+        message:
+          "Force-push with lease? This overwrites the remote branch if it matches your last fetch. Any commits others pushed since your last fetch will be lost.",
+        confirmLabel: "Force push",
+        danger: true,
+      });
+      if (!ok) return false;
+    }
+
+    // Determine the current branch + whether it already has an upstream tracking ref.
+    const branch = appState.refsByKind.local.find((r) => r.isHead)?.name ?? null;
+    const hasUpstream = branch
+      ? (appState.refsDetailed.find((r) => r.kind === "local" && r.name === branch)?.upstream ??
+          null) !== null
+      : false;
+    // Use the first configured remote, or "origin" as fallback.
+    const remote = appState.remotes[0]?.name ?? "origin";
+    const label = forceWithLease ? "Force push" : "Push";
+
+    return runRemote(label, (onLine, creds) =>
+      api.push(appState.repo, remote, branch, forceWithLease, !hasUpstream, onLine, creds),
+    );
+  },
+
+  cancelRemote: () => api.cancelRemote(),
+
+  remoteAdd: (name: string, url: string) =>
+    run(`Add remote ${name}`, () => api.remoteAdd(appState.repo, name, url)),
+
+  remoteRemove: (name: string) =>
+    run(`Remove remote ${name}`, () => api.remoteRemove(appState.repo, name)),
+
+  remoteSetUrl: (name: string, url: string) =>
+    run(`Set ${name} url`, () => api.remoteSetUrl(appState.repo, name, url)),
 };

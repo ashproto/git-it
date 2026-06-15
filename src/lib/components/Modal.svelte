@@ -31,6 +31,25 @@
       dialogs.resolveDestructive(false);
     }
   }
+
+  // Credentials dialog helpers
+  function submitCredentials() {
+    const s = dialogs.state;
+    if (s.kind !== "credentials") return;
+    dialogs.resolveCredentials({ username: s.username, password: s.password });
+  }
+  function cancelCredentials() {
+    dialogs.resolveCredentials(null);
+  }
+  function handleCredentialsKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitCredentials();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelCredentials();
+    }
+  }
 </script>
 
 {#if dialogs.state.kind === "prompt"}
@@ -113,6 +132,43 @@
         >
           {dialogs.state.confirmLabel}
         </button>
+      </div>
+    </div>
+  </div>
+{:else if dialogs.state.kind === "credentials"}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="overlay"
+    onpointerdown={(e) => {
+      if (e.target === e.currentTarget) cancelCredentials();
+    }}
+    onkeydown={handleCredentialsKey}
+  >
+    <div class="dialog" role="dialog" aria-modal="true" aria-label={dialogs.state.title}>
+      <h3>{dialogs.state.title}</h3>
+      {#if dialogs.state.message}
+        <p class="msg">{dialogs.state.message}</p>
+      {/if}
+      <label class="lbl" for="cred-username">Username</label>
+      <input
+        id="cred-username"
+        type="text"
+        autocomplete="username"
+        value={dialogs.state.username}
+        oninput={(e) => dialogs.setCredField("username", (e.currentTarget as HTMLInputElement).value)}
+      />
+      <label class="lbl" for="cred-password">Password / Token</label>
+      <input
+        id="cred-password"
+        type="password"
+        autocomplete="current-password"
+        value={dialogs.state.password}
+        oninput={(e) => dialogs.setCredField("password", (e.currentTarget as HTMLInputElement).value)}
+      />
+      <p class="hint">Used once for this operation — never stored.</p>
+      <div class="actions">
+        <button type="button" onclick={cancelCredentials}>Cancel</button>
+        <button type="button" class="primary" onclick={submitCredentials}>Sign in</button>
       </div>
     </div>
   </div>
@@ -213,5 +269,11 @@
     border: none;
     background: none;
     cursor: pointer;
+  }
+  .hint {
+    margin: 0 0 14px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
   }
 </style>

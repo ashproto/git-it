@@ -27,6 +27,14 @@ type DialogState =
       confirmLabel: string;
       backup: boolean;
       resolve: (v: { confirmed: boolean; backup: boolean }) => void;
+    }
+  | {
+      kind: "credentials";
+      title: string;
+      message: string;
+      username: string;
+      password: string;
+      resolve: (v: { username: string; password: string } | null) => void;
     };
 
 function makeDialogs() {
@@ -38,6 +46,7 @@ function makeDialogs() {
     if (state.kind === "prompt") state.resolve(null);
     else if (state.kind === "confirm") state.resolve(false);
     else if (state.kind === "destructive") state.resolve({ confirmed: false, backup: false });
+    else if (state.kind === "credentials") state.resolve(null);
   }
 
   return {
@@ -120,6 +129,35 @@ function makeDialogs() {
     },
     resolveConfirm(v: boolean) {
       if (state.kind === "confirm") {
+        state.resolve(v);
+        state = { kind: "none" };
+      }
+    },
+    // ── Credentials dialog (Phase 6) ──────────────────────────────────────────
+    // Opens a username + password prompt for a network op that returned authFailed.
+    // The resolved value is used ONCE for the retry; it is NEVER stored in app state.
+    confirmCredentials(opts: { title: string; message?: string }): Promise<{ username: string; password: string } | null> {
+      settlePending();
+      return new Promise((resolve) => {
+        state = {
+          kind: "credentials",
+          title: opts.title,
+          message: opts.message ?? "",
+          username: "",
+          password: "",
+          resolve,
+        };
+      });
+    },
+    // Update a credentials field while the dialog is open.
+    setCredField(which: "username" | "password", value: string) {
+      if (state.kind === "credentials") {
+        state = { ...state, [which]: value };
+      }
+    },
+    // Confirm with the current username/password, or null to cancel.
+    resolveCredentials(v: { username: string; password: string } | null) {
+      if (state.kind === "credentials") {
         state.resolve(v);
         state = { kind: "none" };
       }

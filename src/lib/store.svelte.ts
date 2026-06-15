@@ -1,6 +1,6 @@
 // Centralized reactive app state using Svelte 5 runes.
 // Components import this module and read/write fields directly.
-import type { Commit, GraphCommit, RefEntry, RepoStatus, UndoSnapshot, WorkingFile } from "./types";
+import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
 import { computeLanes } from "./graph";
@@ -60,6 +60,9 @@ const AUTOBACKUP_STORE_KEY = "safetyAutoBackup";
 const DIFFSPLIT_KEY = "gte.diffSplit.v1";
 const DIFFSPLIT_STORE_KEY = "diffSplit";
 
+const PULLREBASE_KEY = "gte.pullRebase.v1";
+const PULLREBASE_STORE_KEY = "pullRebase";
+
 function loadSyncLineStyle(): "curved" | "angular" {
   if (isTauri()) return "curved";
   try {
@@ -87,6 +90,17 @@ function loadSyncDiffSplit(): boolean {
   try {
     if (typeof localStorage === "undefined") return false;
     const raw = localStorage.getItem(DIFFSPLIT_KEY);
+    return raw === "true";
+  } catch {
+    return false;
+  }
+}
+
+function loadSyncPullRebase(): boolean {
+  if (isTauri()) return false;
+  try {
+    if (typeof localStorage === "undefined") return false;
+    const raw = localStorage.getItem(PULLREBASE_KEY);
     return raw === "true";
   } catch {
     return false;
@@ -300,6 +314,64 @@ function makeState() {
     }
   }
 
+  // ── pullRebase persisted setting (Phase 6) ────────────────────────────────
+  // Whether `git pull` should use --rebase (true) or --no-edit merge (false, default).
+  // Mirrors the diffSplit pattern exactly.
+  let pullRebase = $state<boolean>(loadSyncPullRebase());
+  let pullRebaseTouched = false;
+
+  const prHydrate = getStore();
+  if (prHydrate) {
+    prHydrate
+      .then((store) => store.get<boolean>(PULLREBASE_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !pullRebaseTouched) {
+          pullRebase = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load pullRebase setting", e));
+  }
+
+  function persistPullRebase() {
+    const snapshot = pullRebase;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(PULLREBASE_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist pullRebase setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(PULLREBASE_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist pullRebase setting", e);
+    }
+  }
+
+  // ── Remote state (Phase 6) ────────────────────────────────────────────────
+  // refsDetailed: the result of api.listRefs (includes upstream/ahead/behind).
+  // remotes: the result of api.remotes (name + url).
+  // remoteOpActive / remoteLog: live progress for an in-flight pull/push.
+  let refsDetailed = $state<Ref[]>([]);
+  let remotesState = $state<RemoteInfo[]>([]);
+  let remoteOpActive = $state<boolean>(false);
+  let remoteLog = $state<string[]>([]);
+
+  // Derived: upstream/ahead/behind for the currently checked-out branch.
+  // Match the local branch name against refsDetailed to find tracking info.
+  const currentBranchName = $derived(
+    refsByKind.local.find((r) => r.isHead)?.name ?? null,
+  );
+  const currentUpstreamRef = $derived(
+    currentBranchName
+      ? (refsDetailed.find((r) => r.kind === "local" && r.name === currentBranchName) ?? null)
+      : null,
+  );
+  const currentUpstream = $derived(currentUpstreamRef?.upstream ?? null);
+  const currentAhead = $derived(currentUpstreamRef?.ahead ?? 0);
+  const currentBehind = $derived(currentUpstreamRef?.behind ?? 0);
+
   return {
     get repo() {
       return repo;
@@ -316,6 +388,11 @@ function makeState() {
         workingChangesRev = 0;
         selectedFile = null;
         workingCopySelected = false;
+        // Clear remote state — refs/remotes/progress belong to the previous repo.
+        refsDetailed = [];
+        remotesState = [];
+        remoteOpActive = false;
+        remoteLog = [];
       }
       repo = v;
     },
@@ -489,6 +566,55 @@ function makeState() {
       currentSha = null;
       // NOTE: lastUndo is intentionally NOT cleared here — a destructive op reloads the
       // graph and we want the UndoBar to remain visible after that refresh.
+    },
+    // ── pullRebase persisted setting (Phase 6) ────────────────────────────────
+    get pullRebase() {
+      return pullRebase;
+    },
+    setPullRebase(v: boolean) {
+      pullRebaseTouched = true;
+      pullRebase = v;
+      persistPullRebase();
+    },
+    // ── Remote detailed refs + remotes (Phase 6) ──────────────────────────────
+    get refsDetailed() {
+      return refsDetailed;
+    },
+    setRefsDetailed(v: Ref[]) {
+      refsDetailed = v;
+    },
+    get remotes() {
+      return remotesState;
+    },
+    setRemotes(v: RemoteInfo[]) {
+      remotesState = v;
+    },
+    // ── Remote operation progress (Phase 6) ───────────────────────────────────
+    get remoteOpActive() {
+      return remoteOpActive;
+    },
+    get remoteLog() {
+      return remoteLog;
+    },
+    startRemoteProgress(label: string) {
+      remoteOpActive = true;
+      remoteLog = label ? [label] : [];
+    },
+    pushRemoteLog(line: string) {
+      remoteLog = [...remoteLog, line];
+    },
+    endRemoteProgress() {
+      remoteOpActive = false;
+    },
+    // ── Derived upstream/ahead/behind for current branch (Phase 6) ────────────
+    get currentUpstream() {
+      return currentUpstream;
+    },
+    get currentAhead() {
+      return currentAhead;
+    },
+    get currentBehind() {
+      return currentBehind;
     },
   };
 }
