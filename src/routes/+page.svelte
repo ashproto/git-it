@@ -273,6 +273,11 @@
   @media (max-width: 900px) {
     .shell {
       flex-direction: column;
+      /* Column mode: stretch children to the viewport width (not max-content) so a
+         wide child (the commits table) scrolls inside its own overflow:auto box
+         instead of forcing page-level horizontal scroll that pushes panel controls
+         (e.g. the conflict-resolution buttons) off-screen. */
+      align-items: stretch;
     }
     .side-col {
       flex: 1 1 auto;
