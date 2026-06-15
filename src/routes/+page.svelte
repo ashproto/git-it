@@ -1,9 +1,10 @@
 <script lang="ts">
   import RepoLoader from "$lib/components/RepoLoader.svelte";
   import GraphHistory from "$lib/components/GraphHistory.svelte";
+  import CommitDetail from "$lib/components/CommitDetail.svelte";
+  import Sidebar from "$lib/components/Sidebar.svelte";
   import EditTabs from "$lib/components/EditTabs.svelte";
   import ApplyPanel from "$lib/components/ApplyPanel.svelte";
-  import BackupsPanel from "$lib/components/BackupsPanel.svelte";
   import LogPanel from "$lib/components/LogPanel.svelte";
   import PrereqBanner from "$lib/components/PrereqBanner.svelte";
   import DateFormatMenu from "$lib/components/DateFormatMenu.svelte";
@@ -11,6 +12,10 @@
   import { onMount } from "svelte";
   import { appState } from "$lib/store.svelte";
   import { SAMPLE_GRAPH } from "$lib/graph/sample";
+
+  const currentBranch = $derived(
+    appState.refsByKind.local.find((r) => r.isHead)?.name ?? null,
+  );
 
   onMount(() => {
     const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -25,20 +30,28 @@
   <header class="app-header" onmousedown={onWindowDragMouseDown}>
     <h1>Git It</h1>
     <span class="sub">Batch-edit commit timestamps via git-filter-repo</span>
+    {#if currentBranch}
+      <span class="branch-chip" title="Current branch">{currentBranch}</span>
+    {/if}
     <DateFormatMenu />
   </header>
 
   <PrereqBanner />
 
-  <div class="grid">
-    <RepoLoader />
-    <GraphHistory />
-    <div class="two-col">
-      <EditTabs />
-      <BackupsPanel />
+  <div class="shell">
+    <aside class="side-col">
+      <RepoLoader />
+      <Sidebar />
+    </aside>
+    <div class="main-col">
+      <GraphHistory />
+      <CommitDetail />
+      <div class="two-col">
+        <EditTabs />
+        <ApplyPanel />
+      </div>
+      <LogPanel />
     </div>
-    <ApplyPanel />
-    <LogPanel />
   </div>
 </main>
 
@@ -191,7 +204,31 @@
     font-size: 13px;
   }
 
-  .grid {
+  .branch-chip {
+    margin-left: 4px;
+    align-self: center;
+    font-size: 12px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    padding: 1px 10px;
+    white-space: nowrap;
+  }
+  .shell {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .side-col {
+    flex: 0 0 240px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .main-col {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -202,6 +239,13 @@
     gap: 12px;
   }
   @media (max-width: 900px) {
+    .shell {
+      flex-direction: column;
+    }
+    .side-col {
+      flex: 1 1 auto;
+      width: 100%;
+    }
     .two-col {
       grid-template-columns: 1fr;
     }

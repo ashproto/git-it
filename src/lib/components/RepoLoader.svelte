@@ -54,14 +54,14 @@
       min="1"
       max="5000"
       bind:value={count}
-      style="width:6rem"
+      style="width:4.5rem; flex:0 0 auto"
     />
-    <span class="note">recent commits across all branches</span>
     <span class="grow"></span>
     <button type="button" onclick={load} disabled={loading} class="primary">
       {loading ? "Loading…" : "Reload"}
     </button>
   </div>
+  <p class="caption">recent commits across all branches</p>
 </CollapsiblePanel>
 
 <style>
@@ -79,8 +79,9 @@
     color: var(--text-muted);
     min-width: 50px;
   }
-  .note {
-    font-size: 12px;
+  .caption {
+    margin: 6px 0 0;
+    font-size: 11px;
     color: var(--text-muted);
   }
   .grow {
