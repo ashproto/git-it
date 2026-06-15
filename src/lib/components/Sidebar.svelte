@@ -6,6 +6,7 @@
   import type { RefEntry } from "../types";
   import BackupsPanel from "./BackupsPanel.svelte";
   import ReflogPanel from "./ReflogPanel.svelte";
+  import StashPanel from "./StashPanel.svelte";
 
   const refs = $derived(appState.refsByKind);
 
@@ -184,6 +185,9 @@
   </div>
   <div class="backups">
     <ReflogPanel />
+  </div>
+  <div class="backups">
+    <StashPanel />
   </div>
 </aside>
 

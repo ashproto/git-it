@@ -1,6 +1,13 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
+  import { api } from "../api";
   import { parseISO, formatCommitDate } from "../dates";
+  import { parseDiff } from "../diff/parse";
+  import DiffView from "./DiffView.svelte";
+
+  function isTauri(): boolean {
+    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  }
 
   const c = $derived(appState.selectedCommit);
 
@@ -16,6 +23,40 @@
       .join("")
       .toUpperCase();
   }
+
+  // Commit diff state
+  let diffPatch = $state<string>("");
+  let diffError = $state<string | null>(null);
+  let diffLoading = $state(false);
+
+  // Re-fetch when selected commit changes
+  $effect(() => {
+    const sha = appState.currentSha;
+    if (!sha || !isTauri() || !appState.repo) {
+      diffPatch = "";
+      diffError = null;
+      diffLoading = false;
+      return;
+    }
+    diffLoading = true;
+    diffError = null;
+    diffPatch = "";
+    api.commitDiff(appState.repo, sha, null)
+      .then((patch) => {
+        // Guard: the user may have navigated away during the async gap.
+        if (appState.currentSha !== sha) return;
+        diffPatch = patch;
+        diffLoading = false;
+      })
+      .catch((e) => {
+        if (appState.currentSha !== sha) return;
+        diffError = String(e).split("\n")[0];
+        diffLoading = false;
+      });
+  });
+
+  // Derive file count from the parsed diff
+  const fileCount = $derived(diffPatch ? parseDiff(diffPatch).files.length : 0);
 </script>
 
 <div class="detail panel">
@@ -48,9 +89,23 @@
       {/if}
     </div>
 
-    <p class="note">
-      File changes and the line-by-line diff arrive with the working-copy phase.
-    </p>
+    <!-- Diff section -->
+    <div class="diff-section">
+      {#if !isTauri()}
+        <p class="note">Commit diff is available in the desktop app only.</p>
+      {:else if diffLoading}
+        <p class="note">Loading diff…</p>
+      {:else if diffError}
+        <p class="note err">Could not load diff: {diffError}</p>
+      {:else}
+        {#if fileCount > 0}
+          <div class="diff-summary">
+            <span class="files-changed">{fileCount} file{fileCount === 1 ? "" : "s"} changed</span>
+          </div>
+        {/if}
+        <DiffView patch={diffPatch} />
+      {/if}
+    </div>
   {:else}
     <p class="empty">Select a commit to see its details.</p>
   {/if}
@@ -149,6 +204,22 @@
     font-size: 11px;
     color: var(--text-muted);
     font-style: italic;
+  }
+  .diff-section {
+    margin-top: 14px;
+    border-top: 1px solid var(--border-subtle);
+    overflow: auto;
+  }
+  .diff-summary {
+    padding: 6px 0 4px 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .files-changed {
+    font-weight: 500;
+  }
+  .err {
+    color: var(--err, #c0392b);
   }
   .empty {
     margin: 0;
