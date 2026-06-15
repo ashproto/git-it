@@ -15,5 +15,7 @@ export function laneColor(
   overrides: Record<string, string>,
 ): string {
   if (branchName && overrides[branchName]) return overrides[branchName];
-  return LANE_PALETTE[colorIndex % LANE_PALETTE.length];
+  // Wrap into range, tolerating negative indices (JS % keeps the operand's sign).
+  const i = ((colorIndex % LANE_PALETTE.length) + LANE_PALETTE.length) % LANE_PALETTE.length;
+  return LANE_PALETTE[i];
 }

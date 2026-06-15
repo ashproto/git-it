@@ -15,6 +15,7 @@ function assertWidthInvariants(rows: RowLayout[]) {
       expect(e.toLane).toBeGreaterThanOrEqual(0);
       expect(e.fromLane).toBeLessThan(r.width);
       expect(e.toLane).toBeLessThan(r.width);
+      if (e.kind === "straight") expect(e.fromLane).toBe(e.toLane);
     }
   }
 }

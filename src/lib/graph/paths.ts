@@ -1,5 +1,9 @@
 import type { Edge } from "./types";
 
+// A same-lane edge (x1 === x2) always renders as a straight vertical segment
+// regardless of its `kind`; `kind` only chooses the bend direction when the lane
+// actually changes.
+
 export interface GeomConfig {
   laneWidth: number;
   rowHeight: number;

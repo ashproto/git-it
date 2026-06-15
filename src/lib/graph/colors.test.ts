@@ -23,4 +23,9 @@ describe("laneColor", () => {
   it("falls back to palette when branch name is null", () => {
     expect(laneColor(1, null, { main: "#ff0000" })).toBe(LANE_PALETTE[1]);
   });
+
+  it("wraps a negative color index into range", () => {
+    expect(laneColor(-1, null, {})).toBe(LANE_PALETTE[LANE_PALETTE.length - 1]);
+    expect(laneColor(-LANE_PALETTE.length, null, {})).toBe(LANE_PALETTE[0]);
+  });
 });

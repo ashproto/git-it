@@ -155,13 +155,21 @@ Output: `RowLayout[]`, one per commit:
 ```ts
 type Edge = { fromLane: number; toLane: number; colorIndex: number;
               kind: "straight" | "branch" | "merge" };
-type RowLayout = {
+type RowLayout = {        // IMPLEMENTED shape — see deviation note below
   sha: string; lane: number; colorIndex: number;
-  isMerge: boolean; isHead: boolean;
-  passthrough: { lane: number; colorIndex: number }[]; // lanes crossing this row untouched
-  edgesBelow: Edge[];   // segments drawn in the gap to the next row
+  isMerge: boolean;
+  edges: Edge[];   // all band-below segments; pass-throughs are emitted here as
+                   // same-lane "straight" edges (no separate passthrough array)
+  width: number;   // column count spanning this row's band (gutter sizing)
 };
 ```
+
+> **Deviation from the original shape (Plan 1, as built):** `edgesBelow` is named
+> `edges`; pass-throughs are emitted as same-lane `straight` edges inside `edges`
+> rather than a separate `passthrough` array (one list for the renderer to draw);
+> `width` was added for gutter sizing; and `isHead` is **deferred to the Plan 2 ref
+> data layer** (head-ness comes from `%D` ref decoration, not parent topology, so the
+> pure engine cannot know it — Plan 3 threads it in alongside `RowLayout`).
 
 Algorithm — maintain `lanes: (sha | null)[]`, where `lanes[i]` is the SHA the lane is
 currently "reserved" for (the next commit expected in that column). Process commits in
