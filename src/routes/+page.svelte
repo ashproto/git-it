@@ -1,6 +1,6 @@
 <script lang="ts">
   import RepoLoader from "$lib/components/RepoLoader.svelte";
-  import CommitTable from "$lib/components/CommitTable.svelte";
+  import GraphHistory from "$lib/components/GraphHistory.svelte";
   import EditTabs from "$lib/components/EditTabs.svelte";
   import ApplyPanel from "$lib/components/ApplyPanel.svelte";
   import BackupsPanel from "$lib/components/BackupsPanel.svelte";
@@ -8,6 +8,16 @@
   import PrereqBanner from "$lib/components/PrereqBanner.svelte";
   import DateFormatMenu from "$lib/components/DateFormatMenu.svelte";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
+  import { onMount } from "svelte";
+  import { appState } from "$lib/store.svelte";
+  import { SAMPLE_GRAPH } from "$lib/graph/sample";
+
+  onMount(() => {
+    const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+    if (!inTauri && appState.graphCommits.length === 0) {
+      appState.setGraphCommits(SAMPLE_GRAPH);
+    }
+  });
 </script>
 
 <main>
@@ -22,7 +32,7 @@
 
   <div class="grid">
     <RepoLoader />
-    <CommitTable />
+    <GraphHistory />
     <div class="two-col">
       <EditTabs />
       <BackupsPanel />

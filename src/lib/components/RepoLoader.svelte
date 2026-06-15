@@ -26,15 +26,9 @@
         appState.status = `${appState.repo} is not a git repo.`;
         return;
       }
-      const commits = await api.loadCommits(
-        appState.repo,
-        count,
-        useRange ? range : undefined,
-      );
-      appState.commits = commits;
-      appState.clearNewDates();
-      appState.clearSelection();
-      appState.status = `Loaded ${commits.length} commit(s).`;
+      const gc = await api.loadGraph(appState.repo, count, 0);
+      appState.setGraphCommits(gc);
+      appState.status = `Loaded ${gc.length} commit(s) across all branches.`;
     } catch (e) {
       appState.status = `Load failed: ${e}`;
     } finally {
