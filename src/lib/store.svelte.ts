@@ -9,7 +9,7 @@ import { computeLanes } from "./graph";
 // they survive a force-quit/crash — macOS WKWebView flushes localStorage only
 // lazily and can lose a just-changed value on abrupt exit. Outside Tauri (dev
 // browser / svelte-check) we fall back to localStorage.
-const DATE_FMT_KEY = "gte.dateFormat.v1"; // localStorage key (non-Tauri fallback)
+const DATE_FMT_KEY = "gitit.dateFormat.v1"; // localStorage key (non-Tauri fallback)
 const STORE_FILE = "settings.json"; // Tauri store file
 const STORE_KEY = "dateFormat";
 const DEFAULT_FMT: DateFormatPrefs = { hour12: false, weekday: false, monthName: false };
@@ -51,21 +51,21 @@ function graphToCommit(g: GraphCommit): Commit {
   };
 }
 
-const LINESTYLE_KEY = "gte.graphLineStyle.v1";
+const LINESTYLE_KEY = "gitit.graphLineStyle.v1";
 const LINESTYLE_STORE_KEY = "graphLineStyle";
 
-const AUTOBACKUP_KEY = "gte.safety.autoBackup.v1";
+const AUTOBACKUP_KEY = "gitit.safety.autoBackup.v1";
 const AUTOBACKUP_STORE_KEY = "safetyAutoBackup";
 
-const DIFFSPLIT_KEY = "gte.diffSplit.v1";
+const DIFFSPLIT_KEY = "gitit.diffSplit.v1";
 const DIFFSPLIT_STORE_KEY = "diffSplit";
 
-const PULLREBASE_KEY = "gte.pullRebase.v1";
+const PULLREBASE_KEY = "gitit.pullRebase.v1";
 const PULLREBASE_STORE_KEY = "pullRebase";
 
-const OPENREPOS_KEY = "gte.openRepos.v1";       const OPENREPOS_STORE_KEY = "openRepos";
-const RECENTREPOS_KEY = "gte.recentRepos.v1";   const RECENTREPOS_STORE_KEY = "recentRepos";
-const REPOMODE_KEY = "gte.repoSwitcherMode.v1"; const REPOMODE_STORE_KEY = "repoSwitcherMode";
+const OPENREPOS_KEY = "gitit.openRepos.v1";       const OPENREPOS_STORE_KEY = "openRepos";
+const RECENTREPOS_KEY = "gitit.recentRepos.v1";   const RECENTREPOS_STORE_KEY = "recentRepos";
+const REPOMODE_KEY = "gitit.repoSwitcherMode.v1"; const REPOMODE_STORE_KEY = "repoSwitcherMode";
 const RECENT_CAP = 12;
 
 // Parse a JSON string[] from localStorage; returns [] on any error or in Tauri

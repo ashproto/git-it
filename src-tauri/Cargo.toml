@@ -1,7 +1,7 @@
 [package]
 name = "git-it"
 version = "0.1.0"
-description = "Batch-edit git commit timestamps via git-filter-repo"
+description = "A fast, native macOS git client with first-class commit-time editing"
 authors = ["Ashutosh Shah"]
 edition = "2021"
 
