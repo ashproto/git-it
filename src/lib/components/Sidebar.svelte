@@ -5,6 +5,7 @@
   import { gitActions } from "../gitActions";
   import type { RefEntry } from "../types";
   import BackupsPanel from "./BackupsPanel.svelte";
+  import ReflogPanel from "./ReflogPanel.svelte";
 
   const refs = $derived(appState.refsByKind);
 
@@ -180,6 +181,9 @@
 
   <div class="backups">
     <BackupsPanel />
+  </div>
+  <div class="backups">
+    <ReflogPanel />
   </div>
 </aside>
 
