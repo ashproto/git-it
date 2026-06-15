@@ -11,7 +11,7 @@ function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-const RELOAD_COUNT = 500;
+const PAGE = 150;
 
 export async function refreshStatus(): Promise<void> {
   if (!isTauri() || !appState.repo) {
@@ -50,14 +50,31 @@ export async function refreshRefs(): Promise<void> {
 export async function reloadGraph(): Promise<void> {
   if (!isTauri()) {
     appState.setGraphCommits(SAMPLE_GRAPH);
+    appState.setGraphHasMore(false);
     return;
   }
   if (!appState.repo) return;
-  const gc = await api.loadGraph(appState.repo, RELOAD_COUNT, 0);
+  const gc = await api.loadGraph(appState.repo, PAGE, 0);
   appState.setGraphCommits(gc);
+  appState.setGraphHasMore(gc.length === PAGE);
   await refreshStatus();
   await refreshWorkingChanges();
   await refreshRefs();
+}
+
+export async function loadMoreGraph(): Promise<void> {
+  if (!isTauri() || !appState.repo) return;
+  if (!appState.graphHasMore || appState.graphLoadingMore) return;
+  appState.setGraphLoadingMore(true);
+  try {
+    const gc = await api.loadGraph(appState.repo, PAGE, appState.graphCommits.length);
+    appState.appendGraphCommits(gc);
+    appState.setGraphHasMore(gc.length === PAGE);
+  } catch (e) {
+    console.warn("[gte] load more failed", e);
+  } finally {
+    appState.setGraphLoadingMore(false);
+  }
 }
 
 // Run an op with uniform guard / status / refresh / error handling.

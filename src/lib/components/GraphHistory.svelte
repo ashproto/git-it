@@ -3,7 +3,7 @@
   import { parseISO, formatCommitDate } from "../dates";
   import { contextMenu } from "../contextMenu.svelte";
   import { dialogs } from "../dialogs.svelte";
-  import { gitActions } from "../gitActions";
+  import { gitActions, loadMoreGraph } from "../gitActions";
   import { amendDialog } from "../amendDialog.svelte";
   import { rebaseEditor } from "../rebaseEditor.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
@@ -185,6 +185,13 @@
     appState.clearSelection();
     anchorIndex = null;
   }
+
+  function onWrapScroll(e: Event) {
+    const el = e.currentTarget as HTMLElement;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+      loadMoreGraph();
+    }
+  }
 </script>
 
 <CollapsiblePanel title="Commits">
@@ -206,7 +213,7 @@
     <button type="button" onclick={clearSel}>Clear</button>
   {/snippet}
 
-  <div class="wrap">
+  <div class="wrap" onscroll={onWrapScroll}>
     <div class="head-row" style={`padding-left:${gutterWidth}px`}>
       <span class="h subject">Description</span>
       <span class="h author">Author</span>
@@ -267,6 +274,12 @@
           <div class="newdate mono">{newDateLabel(commit.sha)}</div>
         </div>
       {/each}
+
+      {#if appState.graphLoadingMore}
+        <div class="load-hint">Loading more…</div>
+      {:else if !appState.graphHasMore && commits.length > 0}
+        <div class="load-hint muted">— end of history —</div>
+      {/if}
 
       {#if commits.length === 0}
         <div class="empty">No commits loaded. Pick a repository and click Reload.</div>
@@ -475,5 +488,16 @@
     justify-content: center;
     flex-shrink: 0;
     line-height: 1;
+  }
+
+  /* ── Infinite-scroll loading / end-of-history hints ──────────────────────── */
+  .load-hint {
+    text-align: center;
+    padding: 8px;
+    font-size: 11px;
+    color: var(--accent);
+  }
+  .load-hint.muted {
+    color: var(--text-muted);
   }
 </style>

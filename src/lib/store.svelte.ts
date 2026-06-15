@@ -200,6 +200,8 @@ function makeState() {
   }
 
   let graphCommits = $state<GraphCommit[]>([]);
+  let graphHasMore = $state(false);
+  let graphLoadingMore = $state(false);
   const rows = $derived(
     computeLanes(graphCommits.map((c) => ({ sha: c.sha, parents: c.parents }))),
   );
@@ -688,6 +690,28 @@ function makeState() {
       currentSha = null;
       // NOTE: lastUndo is intentionally NOT cleared here — a destructive op reloads the
       // graph and we want the UndoBar to remain visible after that refresh.
+    },
+    get graphHasMore() {
+      return graphHasMore;
+    },
+    setGraphHasMore(v: boolean) {
+      graphHasMore = v;
+    },
+    get graphLoadingMore() {
+      return graphLoadingMore;
+    },
+    setGraphLoadingMore(v: boolean) {
+      graphLoadingMore = v;
+    },
+    // Append a page of graph commits, deduplicating by sha against what is already
+    // loaded. Does NOT reset selection/newDates/currentSha — this is a page append,
+    // not a fresh load. Only appends the mapped flat Commit entries for the new rows.
+    appendGraphCommits(gc: GraphCommit[]) {
+      const existingShas = new Set(graphCommits.map((c) => c.sha));
+      const fresh = gc.filter((c) => !existingShas.has(c.sha));
+      if (fresh.length === 0) return;
+      graphCommits = [...graphCommits, ...fresh];
+      commits = [...commits, ...fresh.map(graphToCommit)];
     },
     // ── pullRebase persisted setting (Phase 6) ────────────────────────────────
     get pullRebase() {
