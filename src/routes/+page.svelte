@@ -13,6 +13,7 @@
   import Modal from "$lib/components/Modal.svelte";
   import UndoBar from "$lib/components/UndoBar.svelte";
   import AmendDialog from "$lib/components/AmendDialog.svelte";
+  import RebaseTodo from "$lib/components/RebaseTodo.svelte";
   import { gitActions } from "$lib/gitActions";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
   import { onMount } from "svelte";
@@ -71,6 +72,7 @@
   <ContextMenu />
   <Modal />
   <AmendDialog />
+  <RebaseTodo />
 </main>
 
 <style>

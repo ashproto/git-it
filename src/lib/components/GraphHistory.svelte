@@ -5,6 +5,7 @@
   import { dialogs } from "../dialogs.svelte";
   import { gitActions } from "../gitActions";
   import { amendDialog } from "../amendDialog.svelte";
+  import { rebaseEditor } from "../rebaseEditor.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import GraphGutter from "./GraphGutter.svelte";
 
@@ -110,6 +111,19 @@
             },
           ]
         : []),
+      { separator: true },
+      {
+        label: `Rebase ${currentBranchName()} onto here`,
+        action: () =>
+          gitActions.rebaseOnto(
+            sha,
+            `Replay ${currentBranchName()}'s commits onto ${sha.slice(0, 9)}.`,
+          ),
+      },
+      {
+        label: "Interactive rebase from here…",
+        action: () => rebaseEditor.openWith(sha),
+      },
       { separator: true },
       { label: "Copy SHA", action: () => navigator.clipboard?.writeText(sha) },
     ]);
