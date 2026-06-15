@@ -1,6 +1,6 @@
 // Centralized reactive app state using Svelte 5 runes.
 // Components import this module and read/write fields directly.
-import type { Commit, GraphCommit, RefEntry } from "./types";
+import type { Commit, GraphCommit, RefEntry, RepoStatus } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
 import { computeLanes } from "./graph";
@@ -156,6 +156,9 @@ function makeState() {
   let graphLineStyle = $state<"curved" | "angular">(loadSyncLineStyle());
   let graphLineStyleTouched = false;
 
+  // Working-copy/op status from repo_status; null in browser/sample mode (no op).
+  let repoStatus = $state<RepoStatus | null>(null);
+
   const lsHydrate = getStore();
   if (lsHydrate) {
     lsHydrate
@@ -296,6 +299,12 @@ function makeState() {
       graphLineStyleTouched = true;
       graphLineStyle = v;
       persistLineStyle();
+    },
+    get repoStatus() {
+      return repoStatus;
+    },
+    setRepoStatus(s: RepoStatus | null) {
+      repoStatus = s;
     },
     setGraphCommits(gc: GraphCommit[]) {
       graphCommits = gc;
