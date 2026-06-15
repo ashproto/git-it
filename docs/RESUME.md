@@ -8,14 +8,15 @@
 Building `git-it` into a full Fork/SourceTree-style
 git client. Designed up-front; built in reviewed, merged phases.
 
-**Done & on `main`** (32 commits, 26 Rust tests + 25 Vitest, `cargo check`/`svelte-check` clean):
+**Done & on `main`** (35 Rust tests + 25 Vitest, `cargo check`/`svelte-check` clean):
 - Up-front design (6-phase spec).
 - Phase 1 — commit graph: lane engine (pure TS) · Rust data layer · rendered graph view.
 - 3-pane shell: sidebar ref tree · graph · bottom commit-detail · branch chip.
 - Phase 2 — nav/ref operations: checkout, branch/tag CRUD, fetch + right-click menus & dialogs.
 - Phase 3a — integrate ops backend: merge / cherry-pick / revert + conflict handling.
+- Phase 3b — conflict-resolution UI: `ConflictView` panel · gitActions `OpOutcome` wrappers · merge (plain/no-ff) + cherry-pick + revert context menus. (Squash merge deferred to Phase 5.)
 
-**NEXT: Phase 3b** — the conflict-resolution UI (the backend exists; the UI doesn't). Then Phases 4–6.
+**NEXT: Phase 4** — history rewriting (rebase / reset / amend). Then Phases 5–6.
 
 ## Process (FOLLOW THIS — it's been catching real bugs)
 Per phase: `writing-plans` (spec the slice) → build → **adversarial code review** (Agent `superpowers:code-reviewer`, model opus) → fix findings → merge to `main`.
@@ -26,7 +27,13 @@ Per phase: `writing-plans` (spec the slice) → build → **adversarial code rev
 - Commit trailer: end every commit message with `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
 - After each phase: update the two memory files (see Memory section) + report + checkpoint with the user.
 
-## NEXT TASK — Phase 3b: conflict-resolution UI (branch `feat/phase3b-conflict-ui`)
+## ✅ DONE — Phase 3b: conflict-resolution UI (merged `eb3d4c1`, 2026-06-15)
+> Completed exactly as specced below, with one review-driven change: the `--squash`
+> merge menu item was **removed and deferred to Phase 5** (a conflicting `--squash`
+> writes no MERGE_HEAD, so the panel/abort can't recover it; a clean one only stages
+> and needs a commit UI). Plain + `--no-ff` ship. Plan: `docs/plans/2026-06-14-phase3b-conflict-ui.md`.
+> Historical build notes below.
+
 Build:
 1. **Load `repo_status`** so the app knows when an op is in progress. The store does NOT currently load it. Add a `repoStatus` state to `store.svelte.ts` and load it in Tauri alongside the graph (extend `reloadGraph()` in `gitActions.ts` to also `api.repoStatus(repo)` → set it). In browser/sample mode there's no op (leave null).
 2. **`ConflictView.svelte`** — shown when `repoStatus.operation != null && repoStatus.conflicted > 0`. Lists conflicted files (`api.conflictedFiles(repo)`), each with **Use ours** / **Use theirs** (`api.resolveConflict(repo, path, ours)`), plus **Continue** (`api.opContinue(repo, kind)`) and **Abort** (`api.opAbort(repo, kind)`). `kind` = `repoStatus.operation`. Mount it in `+page.svelte`'s `.main-col` (e.g. above `CommitDetail`), only when an op is in progress.
