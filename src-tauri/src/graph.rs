@@ -201,6 +201,86 @@ pub fn list_refs(repo: &Path) -> Result<Vec<Ref>, String> {
     Ok(refs)
 }
 
+/// porcelain=v2 ordinary/renamed line: the two chars after the "1 "/"2 " prefix
+/// are the staged (X) and unstaged (Y) status; "." means unchanged on that side.
+fn count_xy(rest: &str, staged: &mut u32, unstaged: &mut u32) {
+    let b = rest.as_bytes();
+    if b.len() >= 2 {
+        if b[0] as char != '.' {
+            *staged += 1;
+        }
+        if b[1] as char != '.' {
+            *unstaged += 1;
+        }
+    }
+}
+
+/// Detect an in-progress multi-step operation from control files under .git.
+fn detect_operation(repo: &Path) -> Option<String> {
+    let g = repo.join(".git");
+    if g.join("MERGE_HEAD").exists() {
+        return Some("merge".to_string());
+    }
+    if g.join("rebase-merge").exists() || g.join("rebase-apply").exists() {
+        return Some("rebase".to_string());
+    }
+    if g.join("CHERRY_PICK_HEAD").exists() {
+        return Some("cherry-pick".to_string());
+    }
+    if g.join("REVERT_HEAD").exists() {
+        return Some("revert".to_string());
+    }
+    None
+}
+
+/// Working-tree summary: staged/unstaged/untracked/conflicted counts, HEAD info,
+/// and any in-progress operation.
+pub fn repo_status(repo: &Path) -> Result<RepoStatus, String> {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(repo)
+        .args(["status", "--porcelain=v2", "--branch"]);
+    let (out, _) = git_ops::run(&mut cmd)?;
+
+    let mut staged = 0u32;
+    let mut unstaged = 0u32;
+    let mut untracked = 0u32;
+    let mut conflicted = 0u32;
+    let mut branch: Option<String> = None;
+    let mut sha: Option<String> = None;
+    let mut detached = false;
+
+    for line in out.lines() {
+        if let Some(rest) = line.strip_prefix("# branch.oid ") {
+            let v = rest.trim();
+            sha = if v == "(initial)" { None } else { Some(v.to_string()) };
+        } else if let Some(rest) = line.strip_prefix("# branch.head ") {
+            let v = rest.trim();
+            if v == "(detached)" {
+                detached = true;
+            } else {
+                branch = Some(v.to_string());
+            }
+        } else if let Some(rest) = line.strip_prefix("1 ") {
+            count_xy(rest, &mut staged, &mut unstaged);
+        } else if let Some(rest) = line.strip_prefix("2 ") {
+            count_xy(rest, &mut staged, &mut unstaged);
+        } else if line.starts_with("u ") {
+            conflicted += 1;
+        } else if line.starts_with("? ") {
+            untracked += 1;
+        }
+    }
+
+    Ok(RepoStatus {
+        head: HeadInfo { sha, branch, detached },
+        staged,
+        unstaged,
+        untracked,
+        conflicted,
+        operation: detect_operation(repo),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,5 +416,32 @@ mod tests {
         assert!(refs.iter().any(|x| x.name == "feature" && x.kind == RefKind::Local));
         assert!(refs.iter().any(|x| x.name == "v1" && x.kind == RefKind::Tag));
         assert!(!refs.iter().any(|x| x.kind == RefKind::Remote));
+    }
+
+    #[test]
+    fn count_xy_counts_each_side() {
+        let mut s = 0;
+        let mut u = 0;
+        count_xy("M. file", &mut s, &mut u);
+        count_xy(".M file", &mut s, &mut u);
+        count_xy("MM file", &mut s, &mut u);
+        assert_eq!(s, 2);
+        assert_eq!(u, 2);
+    }
+
+    #[test]
+    fn repo_status_clean_then_staged() {
+        let r = merge_fixture();
+        let clean = repo_status(&r.path).unwrap();
+        assert_eq!(clean.head.branch.as_deref(), Some("main"));
+        assert!(!clean.head.detached);
+        assert_eq!((clean.staged, clean.unstaged, clean.untracked, clean.conflicted), (0, 0, 0, 0));
+        assert_eq!(clean.operation, None);
+
+        fs::write(r.path.join("new.txt"), "x").unwrap();
+        assert_eq!(repo_status(&r.path).unwrap().untracked, 1);
+
+        r.git(&["add", "new.txt"]);
+        assert_eq!(repo_status(&r.path).unwrap().staged, 1);
     }
 }
