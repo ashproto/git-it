@@ -1,8 +1,9 @@
 use crate::git_ops;
 use crate::graph;
 use crate::ops;
+use crate::ops_merge;
 use crate::rewrite;
-use crate::types::{BundleInfo, Commit, DateMapping, GraphCommit, PrerequisiteCheck, Ref, RepoStatus, RewriteOptions, SafetyRef};
+use crate::types::{BundleInfo, Commit, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, Ref, RepoStatus, RewriteOptions, SafetyRef};
 use std::path::PathBuf;
 use tauri::ipc::Channel;
 
@@ -156,4 +157,39 @@ pub fn delete_tag(repo: String, name: String) -> Result<(), String> {
 #[tauri::command]
 pub fn fetch(repo: String, remote: Option<String>) -> Result<String, String> {
     ops::fetch(&PathBuf::from(repo), remote.as_deref())
+}
+
+#[tauri::command]
+pub fn merge(repo: String, reference: String, no_ff: bool, squash: bool) -> Result<OpOutcome, String> {
+    ops_merge::merge(&PathBuf::from(repo), &reference, no_ff, squash)
+}
+
+#[tauri::command]
+pub fn cherry_pick(repo: String, shas: Vec<String>) -> Result<OpOutcome, String> {
+    ops_merge::cherry_pick(&PathBuf::from(repo), &shas)
+}
+
+#[tauri::command]
+pub fn revert(repo: String, shas: Vec<String>) -> Result<OpOutcome, String> {
+    ops_merge::revert(&PathBuf::from(repo), &shas)
+}
+
+#[tauri::command]
+pub fn op_abort(repo: String, kind: String) -> Result<(), String> {
+    ops_merge::abort(&PathBuf::from(repo), &kind)
+}
+
+#[tauri::command]
+pub fn op_continue(repo: String, kind: String) -> Result<OpOutcome, String> {
+    ops_merge::continue_op(&PathBuf::from(repo), &kind)
+}
+
+#[tauri::command]
+pub fn resolve_conflict(repo: String, path: String, ours: bool) -> Result<(), String> {
+    ops_merge::resolve_side(&PathBuf::from(repo), &path, ours)
+}
+
+#[tauri::command]
+pub fn conflicted_files(repo: String) -> Result<Vec<String>, String> {
+    ops_merge::conflicted_files(&PathBuf::from(repo))
 }

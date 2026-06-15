@@ -5,6 +5,7 @@ import type {
   Commit,
   DateMapping,
   GraphCommit,
+  OpOutcome,
   PrerequisiteCheck,
   Ref,
   RepoStatus,
@@ -43,6 +44,16 @@ export const api = {
   deleteTag: (repo: string, name: string) => invoke<void>("delete_tag", { repo, name }),
   fetch: (repo: string, remote?: string) =>
     invoke<string>("fetch", { repo, remote: remote ?? null }),
+  merge: (repo: string, reference: string, noFf = false, squash = false) =>
+    invoke<OpOutcome>("merge", { repo, reference, noFf, squash }),
+  cherryPick: (repo: string, shas: string[]) =>
+    invoke<OpOutcome>("cherry_pick", { repo, shas }),
+  revert: (repo: string, shas: string[]) => invoke<OpOutcome>("revert", { repo, shas }),
+  opAbort: (repo: string, kind: string) => invoke<void>("op_abort", { repo, kind }),
+  opContinue: (repo: string, kind: string) => invoke<OpOutcome>("op_continue", { repo, kind }),
+  resolveConflict: (repo: string, path: string, ours: boolean) =>
+    invoke<void>("resolve_conflict", { repo, path, ours }),
+  conflictedFiles: (repo: string) => invoke<string[]>("conflicted_files", { repo }),
   createBundle: (repo: string) => invoke<string>("create_bundle", { repo }),
   listBundles: (repo: string) => invoke<BundleInfo[]>("list_bundles", { repo }),
   deleteBundle: (path: string) => invoke<void>("delete_bundle", { path }),

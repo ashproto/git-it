@@ -85,3 +85,9 @@ export type RepoStatus = {
   conflicted: number;
   operation: string | null;
 };
+
+export type OpOutcome = {
+  conflicted: boolean;
+  files: string[];
+  message: string;
+};

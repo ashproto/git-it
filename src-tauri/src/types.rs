@@ -103,3 +103,13 @@ pub struct RepoStatus {
     pub conflicted: u32,
     pub operation: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpOutcome {
+    /// True when the operation stopped on conflicts (not an error — needs resolution).
+    pub conflicted: bool,
+    /// Conflicted file paths, when `conflicted`.
+    pub files: Vec<String>,
+    /// Combined git stdout+stderr, for the log.
+    pub message: String,
+}

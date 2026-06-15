@@ -2,6 +2,7 @@ mod commands;
 mod git_ops;
 mod graph;
 mod ops;
+mod ops_merge;
 mod rewrite;
 mod types;
 
@@ -55,6 +56,13 @@ pub fn run() {
             commands::create_tag,
             commands::delete_tag,
             commands::fetch,
+            commands::merge,
+            commands::cherry_pick,
+            commands::revert,
+            commands::op_abort,
+            commands::op_continue,
+            commands::resolve_conflict,
+            commands::conflicted_files,
             commands::create_bundle,
             commands::list_bundles,
             commands::delete_bundle,
