@@ -1,5 +1,6 @@
 mod commands;
 mod git_ops;
+mod graph;
 mod rewrite;
 mod types;
 

@@ -1,0 +1,256 @@
+use crate::git_ops;
+use crate::types::{GraphCommit, HeadInfo, Ref, RefDecoration, RefKind, RepoStatus};
+use std::collections::HashMap;
+use std::path::Path;
+use std::process::Command;
+
+/// The short branch HEAD points at, or None when detached / unborn.
+fn current_branch(repo: &Path) -> Option<String> {
+    let out = Command::new("git")
+        .current_dir(repo)
+        .args(["symbolic-ref", "--short", "-q", "HEAD"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// The commit SHA HEAD resolves to, or None in an unborn repo.
+fn head_commit_sha(repo: &Path) -> Option<String> {
+    let out = Command::new("git")
+        .current_dir(repo)
+        .args(["rev-parse", "-q", "--verify", "HEAD"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Map commit-SHA -> ref labels that decorate it, with authoritative kinds taken
+/// from the refname prefix (not the ambiguous `git log %D` text).
+fn build_ref_decorations(repo: &Path) -> Result<HashMap<String, Vec<RefDecoration>>, String> {
+    let mut map: HashMap<String, Vec<RefDecoration>> = HashMap::new();
+    let mut cmd = Command::new("git");
+    cmd.current_dir(repo)
+        .arg("for-each-ref")
+        .arg("--format=%(objectname)%00%(*objectname)%00%(refname)")
+        .args(["refs/heads", "refs/remotes", "refs/tags"]);
+    let (out, _) = git_ops::run(&mut cmd)?;
+    let current = current_branch(repo);
+
+    for line in out.lines() {
+        let parts: Vec<&str> = line.split('\u{0}').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let obj = parts[0];
+        let deref = parts[1];
+        let refname = parts[2];
+        let target = if deref.is_empty() { obj } else { deref };
+
+        let (kind, name) = if let Some(n) = refname.strip_prefix("refs/heads/") {
+            (RefKind::Local, n.to_string())
+        } else if let Some(n) = refname.strip_prefix("refs/remotes/") {
+            (RefKind::Remote, n.to_string())
+        } else if let Some(n) = refname.strip_prefix("refs/tags/") {
+            (RefKind::Tag, n.to_string())
+        } else {
+            continue;
+        };
+        if kind == RefKind::Remote && name.ends_with("/HEAD") {
+            continue;
+        }
+        let is_head = kind == RefKind::Local && current.as_deref() == Some(name.as_str());
+        map.entry(target.to_string())
+            .or_default()
+            .push(RefDecoration { name, kind, is_head });
+    }
+
+    if current.is_none() {
+        if let Some(h) = head_commit_sha(repo) {
+            map.entry(h).or_default().push(RefDecoration {
+                name: "HEAD".to_string(),
+                kind: RefKind::Head,
+                is_head: true,
+            });
+        }
+    }
+    Ok(map)
+}
+
+/// All commits across all refs, newest first (topological), with parents + ref labels.
+pub fn load_graph(repo: &Path, count: u32, skip: u32) -> Result<Vec<GraphCommit>, String> {
+    if head_commit_sha(repo).is_none() {
+        let empty = build_ref_decorations(repo).map(|m| m.is_empty()).unwrap_or(true);
+        if empty {
+            return Ok(Vec::new());
+        }
+    }
+    let ref_map = build_ref_decorations(repo)?;
+
+    let fmt = "%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%cn%x1f%cI%x1f%s%x1e";
+    let mut cmd = Command::new("git");
+    cmd.current_dir(repo)
+        .args(["-c", "log.showSignature=false", "log", "--all", "--topo-order", "--date-order"])
+        .arg(format!("--pretty=format:{}", fmt))
+        .arg("-n")
+        .arg(count.to_string())
+        .arg(format!("--skip={}", skip));
+    let (stdout, _) = git_ops::run(&mut cmd)?;
+
+    let mut commits = Vec::new();
+    for rec in stdout.split('\x1e') {
+        let rec = rec.trim_matches(|c| c == '\n' || c == '\r');
+        if rec.is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = rec.split('\x1f').collect();
+        if f.len() < 8 {
+            continue;
+        }
+        let sha = f[0].to_string();
+        let parents: Vec<String> = f[1].split_whitespace().map(|s| s.to_string()).collect();
+        let refs = ref_map.get(&sha).cloned().unwrap_or_default();
+        commits.push(GraphCommit {
+            sha,
+            parents,
+            author_name: f[2].to_string(),
+            author_email: f[3].to_string(),
+            author_date: f[4].to_string(),
+            committer_name: f[5].to_string(),
+            committer_date: f[6].to_string(),
+            refs,
+            subject: f[7].to_string(),
+        });
+    }
+    Ok(commits)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::RefKind;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    struct TempRepo {
+        path: PathBuf,
+    }
+
+    impl TempRepo {
+        fn new() -> Self {
+            let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+            let path = std::env::temp_dir().join(format!("gte-graph-{}-{}", std::process::id(), id));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap();
+            let r = TempRepo { path };
+            r.git(&["init", "-q", "-b", "main"]);
+            r.git(&["config", "user.email", "t@example.com"]);
+            r.git(&["config", "user.name", "Tester"]);
+            r
+        }
+
+        fn git(&self, args: &[&str]) {
+            let out = Command::new("git")
+                .current_dir(&self.path)
+                .args(args)
+                .env("GIT_AUTHOR_DATE", "2020-01-01T00:00:00 +0000")
+                .env("GIT_COMMITTER_DATE", "2020-01-01T00:00:00 +0000")
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "git {:?} failed: {}",
+                args,
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+
+        fn write_commit(&self, file: &str, msg: &str) {
+            fs::write(self.path.join(file), msg).unwrap();
+            self.git(&["add", "."]);
+            self.git(&["commit", "-q", "-m", msg]);
+        }
+
+        fn rev(&self, refname: &str) -> String {
+            let out = Command::new("git")
+                .current_dir(&self.path)
+                .args(["rev-parse", refname])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        }
+    }
+
+    impl Drop for TempRepo {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn merge_fixture() -> TempRepo {
+        let r = TempRepo::new();
+        r.write_commit("a.txt", "A");
+        r.git(&["checkout", "-q", "-b", "feature"]);
+        r.write_commit("b.txt", "B");
+        r.git(&["checkout", "-q", "main"]);
+        r.write_commit("c.txt", "C");
+        r.git(&["merge", "-q", "--no-ff", "-m", "M", "feature"]);
+        r.git(&["tag", "v1"]);
+        r
+    }
+
+    #[test]
+    fn load_graph_returns_all_commits_with_parents() {
+        let r = merge_fixture();
+        let commits = load_graph(&r.path, 50, 0).unwrap();
+        assert_eq!(commits.len(), 4);
+
+        let m_sha = r.rev("main");
+        let merge = commits.iter().find(|c| c.sha == m_sha).unwrap();
+        assert_eq!(merge.parents.len(), 2, "merge commit has two parents");
+        assert_eq!(merge.subject, "M");
+
+        let root = commits.iter().find(|c| c.subject == "A").unwrap();
+        assert!(root.parents.is_empty());
+    }
+
+    #[test]
+    fn load_graph_attaches_ref_decorations() {
+        let r = merge_fixture();
+        let commits = load_graph(&r.path, 50, 0).unwrap();
+        let m_sha = r.rev("main");
+        let merge = commits.iter().find(|c| c.sha == m_sha).unwrap();
+
+        let main_ref = merge.refs.iter().find(|d| d.name == "main").unwrap();
+        assert_eq!(main_ref.kind, RefKind::Local);
+        assert!(main_ref.is_head, "HEAD is on main");
+        assert!(merge.refs.iter().any(|d| d.name == "v1" && d.kind == RefKind::Tag));
+
+        let b = commits.iter().find(|c| c.subject == "B").unwrap();
+        assert!(b.refs.iter().any(|d| d.name == "feature" && d.kind == RefKind::Local));
+    }
+
+    #[test]
+    fn load_graph_empty_repo_is_empty() {
+        let r = TempRepo::new();
+        assert!(load_graph(&r.path, 50, 0).unwrap().is_empty());
+    }
+}
