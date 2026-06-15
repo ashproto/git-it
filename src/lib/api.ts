@@ -172,5 +172,5 @@ export const api = {
       onEvent: channel,
     });
   },
-  cancelRemote: (repo: string) => invoke<void>("cancel_remote", { repo }),
+  cancelRemote: () => invoke<void>("cancel_remote", {}),
 };

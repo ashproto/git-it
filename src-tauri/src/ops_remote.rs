@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// Per-process nonce counter for unique scratch-dir names.
 static ASKPASS_NONCE: AtomicU32 = AtomicU32::new(0);
@@ -147,6 +147,8 @@ pub fn remote_set_url(repo: &Path, name: &str, url: &str) -> Result<(), String> 
 #[derive(Default)]
 pub struct RemoteState {
     pub child: Mutex<Option<Child>>,
+    /// Set true while a stream() call is executing; rejects concurrent ops.
+    pub busy: AtomicBool,
 }
 
 /// Returns true if the git output looks like an authentication failure.
@@ -177,6 +179,19 @@ pub fn stream(
     state: &RemoteState,
     on_line: &dyn Fn(String),
 ) -> Result<(bool, String), String> {
+    // Atomic re-entry guard: reject a second op rather than silently clobbering.
+    if state.busy.swap(true, Ordering::SeqCst) {
+        return Err("A remote operation is already in progress.".to_string());
+    }
+    // RAII guard: resets `busy` on every exit path (success, error, panic).
+    struct BusyGuard<'a>(&'a AtomicBool);
+    impl Drop for BusyGuard<'_> {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::SeqCst);
+        }
+    }
+    let _busy = BusyGuard(&state.busy);
+
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("spawn: {}", e))?;
 
@@ -298,6 +313,7 @@ pub fn pull(
 /// When `username` AND `password` are both `Some`, credentials are written to `0600`
 /// temp files and a `GIT_ASKPASS` script is generated — credentials are NEVER placed
 /// on argv, in URLs, or persisted. The scratch dir is deleted after the op.
+#[allow(clippy::too_many_arguments)]
 pub fn push(
     repo: &Path,
     remote: &str,
@@ -346,6 +362,7 @@ pub fn push(
 pub fn cancel(state: &RemoteState) {
     if let Some(mut child) = state.child.lock().unwrap().take() {
         let _ = child.kill();
+        let _ = child.wait(); // reap so the killed git process doesn't linger as a zombie
     }
 }
 
@@ -824,5 +841,59 @@ mod tests {
         assert_eq!(run_askpass(&script, "username for 'https://x':"), "bob");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── Fix 2: atomic busy-guard — concurrent op rejected cleanly ─────────────
+
+    #[test]
+    fn concurrent_stream_rejected_when_busy() {
+        // Directly set the busy flag (simulating an in-flight op) and verify that
+        // a subsequent stream() call returns the "already in progress" error immediately
+        // without spawning or clobbering. This is deterministic — no races.
+        use std::sync::atomic::Ordering;
+
+        let state = RemoteState::default();
+
+        // Simulate: an op is already running by setting busy = true.
+        state.busy.store(true, Ordering::SeqCst);
+
+        // A second stream() attempt must be rejected immediately.
+        let mut cmd = Command::new("git");
+        cmd.arg("--version"); // would succeed if allowed to run
+        let err = stream(cmd, &state, &|_| {})
+            .expect_err("should reject when busy flag is set");
+        assert!(
+            err.contains("already in progress"),
+            "unexpected error: {}",
+            err
+        );
+
+        // Reset so the state is clean after the test.
+        state.busy.store(false, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn busy_guard_resets_after_stream_completes() {
+        // Verify that after a successful stream() call, the busy flag is cleared
+        // and a subsequent call can proceed normally.
+        let state = RemoteState::default();
+
+        // First call: succeeds.
+        let mut cmd1 = Command::new("git");
+        cmd1.arg("--version");
+        let (ok, _) = stream(cmd1, &state, &|_| {}).expect("first stream failed");
+        assert!(ok, "git --version should succeed");
+
+        // busy must be false after stream returns.
+        assert!(
+            !state.busy.load(std::sync::atomic::Ordering::SeqCst),
+            "busy should be false after stream completes"
+        );
+
+        // Second call should also succeed (not get a spurious "already in progress").
+        let mut cmd2 = Command::new("git");
+        cmd2.arg("--version");
+        let (ok2, _) = stream(cmd2, &state, &|_| {}).expect("second stream failed");
+        assert!(ok2, "second git --version should succeed");
     }
 }
