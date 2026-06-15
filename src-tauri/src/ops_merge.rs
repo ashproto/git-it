@@ -514,4 +514,127 @@ mod tests {
         r.commit("f.txt", "x\n", "x");
         assert!(skip(&r.path, "merge").is_err(), "merge has no --skip");
     }
+
+    // ── Test A: DD (both-deleted) via rename/rename conflict ─────────────────
+    // A rename/rename merge deterministically emits a `DD` unmerged record for
+    // the original path, covering the BothDeleted branch in `classify`.
+    #[test]
+    fn conflict_details_classifies_both_deleted_rename_rename() {
+        let r = TempRepo::new();
+        r.commit("f.txt", "base\n", "base");
+
+        // feat branch: rename f.txt → a.txt
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.git(&["mv", "f.txt", "a.txt"]);
+        r.git(&["commit", "-q", "-m", "rename to a"]);
+
+        // main branch: rename f.txt → b.txt
+        r.git(&["checkout", "-q", "main"]);
+        r.git(&["mv", "f.txt", "b.txt"]);
+        r.git(&["commit", "-q", "-m", "rename to b"]);
+
+        let out = merge(&r.path, "feat", false, false).unwrap();
+        assert!(out.conflicted, "rename/rename must conflict");
+
+        let details = conflict_details(&r.path).unwrap();
+
+        // f.txt should appear as BothDeleted (DD) — the original vanished on
+        // both sides, each side only knows the rename target.
+        let f_entry = details.iter().find(|e| e.path == "f.txt");
+        assert!(
+            f_entry.is_some(),
+            "f.txt (the original renamed path) must appear in conflict_details; got: {:?}",
+            details
+        );
+        assert_eq!(
+            f_entry.unwrap().kind,
+            crate::types::ConflictKind::BothDeleted,
+            "f.txt should be classified BothDeleted (DD)"
+        );
+
+        // Resolve the DD entry by removing it, then verify it no longer appears.
+        resolve_remove(&r.path, "f.txt").unwrap();
+        let after = conflict_details(&r.path).unwrap();
+        assert!(
+            after.iter().all(|e| e.path != "f.txt"),
+            "f.txt should be gone from conflict_details after resolve_remove"
+        );
+
+        abort(&r.path, "merge").unwrap();
+    }
+
+    // ── Test B: AA (both-added) → ConflictKind::Both ─────────────────────────
+    // Two independent branches each add a file with the same name but different
+    // contents; git reports the unmerged record with XY == "AA".
+    #[test]
+    fn conflict_details_classifies_both_added() {
+        let r = TempRepo::new();
+        r.commit("base.txt", "base", "base");
+
+        // feat branch: add g.txt
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.commit("g.txt", "feat\n", "add g feat");
+
+        // main branch: add g.txt with different content
+        r.git(&["checkout", "-q", "main"]);
+        r.commit("g.txt", "main\n", "add g main");
+
+        let out = merge(&r.path, "feat", false, false).unwrap();
+        assert!(out.conflicted, "both-added same file must conflict");
+
+        let details = conflict_details(&r.path).unwrap();
+        let g_entry = details.iter().find(|e| e.path == "g.txt");
+        assert!(
+            g_entry.is_some(),
+            "g.txt must appear in conflict_details; got: {:?}",
+            details
+        );
+        assert_eq!(
+            g_entry.unwrap().kind,
+            crate::types::ConflictKind::Both,
+            "g.txt should be classified Both (AA maps to Both)"
+        );
+
+        abort(&r.path, "merge").unwrap();
+    }
+
+    // ── Test C: space-in-path survives -z parse ───────────────────────────────
+    // Verifies that the NUL-delimited porcelain parse handles a space in the
+    // filename correctly: the path field (nth(8) after stripping "u ") must not
+    // be split on the space.
+    #[test]
+    fn conflict_details_handles_space_in_path() {
+        let r = TempRepo::new();
+        r.commit("my file.txt", "base\n", "base");
+
+        // feat branch: modify the spaced filename
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.commit("my file.txt", "feat\n", "feat edit");
+
+        // main branch: modify the same file differently
+        r.git(&["checkout", "-q", "main"]);
+        r.commit("my file.txt", "main\n", "main edit");
+
+        let out = merge(&r.path, "feat", false, false).unwrap();
+        assert!(out.conflicted, "diverging edits to 'my file.txt' must conflict");
+
+        let details = conflict_details(&r.path).unwrap();
+        assert_eq!(
+            details.len(),
+            1,
+            "exactly one conflict entry expected; got: {:?}",
+            details
+        );
+        assert_eq!(
+            details[0].path, "my file.txt",
+            "-z parse must preserve the space in the filename"
+        );
+        assert_eq!(
+            details[0].kind,
+            crate::types::ConflictKind::Both,
+            "both-modified with a space in path must still classify as Both"
+        );
+
+        abort(&r.path, "merge").unwrap();
+    }
 }
