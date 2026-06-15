@@ -4,6 +4,7 @@ mod graph;
 mod ops;
 mod ops_merge;
 mod ops_rewrite;
+mod ops_worktree;
 mod rewrite;
 mod safety;
 mod types;
@@ -84,6 +85,12 @@ pub fn run() {
             commands::rebase_todo_preview,
             commands::rebase_interactive,
             commands::reflog,
+            commands::working_changes,
+            commands::stage,
+            commands::unstage,
+            commands::discard,
+            commands::clean,
+            commands::commit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

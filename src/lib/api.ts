@@ -16,6 +16,7 @@ import type {
   RewriteOptions,
   RewriteResult,
   SafetyRef,
+  WorkingFile,
 } from "./types";
 
 export async function pickRepoFolder(initial?: string): Promise<string | null> {
@@ -103,4 +104,11 @@ export const api = {
   rebaseInteractive: (repo: string, base: string, steps: RebaseStep[], autoBackup: boolean) =>
     invoke<RebaseOutcome>("rebase_interactive", { repo, base, steps, autoBackup }),
   reflog: (repo: string, limit = 50) => invoke<ReflogEntry[]>("reflog", { repo, limit }),
+  workingChanges: (repo: string) => invoke<WorkingFile[]>("working_changes", { repo }),
+  stage: (repo: string, paths: string[]) => invoke<void>("stage", { repo, paths }),
+  unstage: (repo: string, paths: string[]) => invoke<void>("unstage", { repo, paths }),
+  discard: (repo: string, paths: string[]) => invoke<void>("discard", { repo, paths }),
+  clean: (repo: string, paths: string[]) => invoke<void>("clean", { repo, paths }),
+  commit: (repo: string, message: string, signoff = false) =>
+    invoke<void>("commit", { repo, message, signoff }),
 };

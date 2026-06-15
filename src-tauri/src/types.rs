@@ -170,3 +170,21 @@ pub struct RebaseStep {
     pub sha: String,
     pub message: Option<String>, // reword: the new message (else ignored)
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingFile {
+    pub path: String,
+    pub staged: bool,     // has an index change (X)
+    pub unstaged: bool,   // has a worktree change (Y)
+    pub untracked: bool,
+    pub conflicted: bool,
+    pub status: String,   // human label: "modified"|"added"|"deleted"|"renamed"|"untracked"|"conflicted"
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StashEntry {
+    pub index: u32,
+    pub message: String,
+    pub sha: String,
+}

@@ -101,3 +101,14 @@ export type RewriteResult = { undo: UndoSnapshot; bundle: string | null };
 export type RebaseOutcome = { outcome: OpOutcome; undo: UndoSnapshot; bundle: string | null };
 export type ReflogEntry = { sha: string; short: string; selector: string; subject: string };
 export type RebaseStep = { action: string; sha: string; message?: string | null };
+
+export type WorkingFile = {
+  path: string;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: boolean;
+  conflicted: boolean;
+  status: string;
+};
+
+export type StashEntry = { index: number; message: string; sha: string };

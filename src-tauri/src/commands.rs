@@ -3,8 +3,9 @@ use crate::graph;
 use crate::ops;
 use crate::ops_merge;
 use crate::ops_rewrite;
+use crate::ops_worktree;
 use crate::rewrite;
-use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RepoStatus, RewriteOptions, RewriteResult, SafetyRef};
+use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, WorkingFile};
 use std::path::PathBuf;
 use tauri::ipc::Channel;
 
@@ -254,4 +255,34 @@ pub fn rebase_interactive(repo: String, base: String, steps: Vec<RebaseStep>, au
 #[tauri::command]
 pub fn reflog(repo: String, limit: u32) -> Result<Vec<ReflogEntry>, String> {
     ops_rewrite::reflog(&PathBuf::from(repo), limit)
+}
+
+#[tauri::command]
+pub fn working_changes(repo: String) -> Result<Vec<WorkingFile>, String> {
+    ops_worktree::working_changes(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn stage(repo: String, paths: Vec<String>) -> Result<(), String> {
+    ops_worktree::stage(&PathBuf::from(repo), &paths)
+}
+
+#[tauri::command]
+pub fn unstage(repo: String, paths: Vec<String>) -> Result<(), String> {
+    ops_worktree::unstage(&PathBuf::from(repo), &paths)
+}
+
+#[tauri::command]
+pub fn discard(repo: String, paths: Vec<String>) -> Result<(), String> {
+    ops_worktree::discard(&PathBuf::from(repo), &paths)
+}
+
+#[tauri::command]
+pub fn clean(repo: String, paths: Vec<String>) -> Result<(), String> {
+    ops_worktree::clean(&PathBuf::from(repo), &paths)
+}
+
+#[tauri::command]
+pub fn commit(repo: String, message: String, signoff: bool) -> Result<(), String> {
+    ops_worktree::commit(&PathBuf::from(repo), &message, signoff)
 }
