@@ -95,3 +95,9 @@ export type OpOutcome = {
 export type ConflictKind = "both" | "modify-delete" | "both-deleted";
 
 export type ConflictEntry = { path: string; kind: ConflictKind };
+
+export type UndoSnapshot = { branch: string | null; sha: string; label: string };
+export type RewriteResult = { undo: UndoSnapshot; bundle: string | null };
+export type RebaseOutcome = { outcome: OpOutcome; undo: UndoSnapshot; bundle: string | null };
+export type ReflogEntry = { sha: string; short: string; selector: string; subject: string };
+export type RebaseStep = { action: string; sha: string; message?: string | null };

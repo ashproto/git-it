@@ -2,8 +2,9 @@ use crate::git_ops;
 use crate::graph;
 use crate::ops;
 use crate::ops_merge;
+use crate::ops_rewrite;
 use crate::rewrite;
-use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, Ref, RepoStatus, RewriteOptions, SafetyRef};
+use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, Ref, RepoStatus, RewriteOptions, RewriteResult, SafetyRef};
 use std::path::PathBuf;
 use tauri::ipc::Channel;
 
@@ -212,4 +213,25 @@ pub fn resolve_remove(repo: String, path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn op_skip(repo: String, kind: String) -> Result<OpOutcome, String> {
     ops_merge::skip(&PathBuf::from(repo), &kind)
+}
+
+#[tauri::command]
+pub fn reset(repo: String, target: String, mode: String, auto_backup: bool) -> Result<RewriteResult, String> {
+    ops_rewrite::reset(&PathBuf::from(repo), &target, &mode, auto_backup)
+}
+
+#[tauri::command]
+pub fn amend(
+    repo: String,
+    message: Option<String>,
+    reset_author_date: bool,
+    reset_committer_date: bool,
+    auto_backup: bool,
+) -> Result<RewriteResult, String> {
+    ops_rewrite::amend(&PathBuf::from(repo), message.as_deref(), reset_author_date, reset_committer_date, auto_backup)
+}
+
+#[tauri::command]
+pub fn undo_op(repo: String, sha: String) -> Result<(), String> {
+    crate::safety::restore(&PathBuf::from(repo), &sha)
 }

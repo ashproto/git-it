@@ -3,7 +3,9 @@ mod git_ops;
 mod graph;
 mod ops;
 mod ops_merge;
+mod ops_rewrite;
 mod rewrite;
+mod safety;
 mod types;
 
 /// When the app is launched from Finder/Dock, it inherits launchd's bare PATH
@@ -75,6 +77,9 @@ pub fn run() {
             commands::delete_refs,
             commands::preview_callback,
             commands::rewrite_history,
+            commands::reset,
+            commands::amend,
+            commands::undo_op,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

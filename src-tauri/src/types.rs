@@ -131,3 +131,42 @@ pub struct ConflictEntry {
     pub path: String,
     pub kind: ConflictKind,
 }
+
+/// Captured before a destructive op so it can be one-click undone.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UndoSnapshot {
+    pub branch: Option<String>, // current branch, or None if detached HEAD
+    pub sha: String,            // HEAD sha before the op
+    pub label: String,          // "reset" | "amend" | "rebase" | "reflog reset"
+}
+
+/// Result of a non-conflicting destructive op.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RewriteResult {
+    pub undo: UndoSnapshot,
+    pub bundle: Option<String>, // recovery bundle path, if one was made
+}
+
+/// Result of a rebase (which may stop on conflicts).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RebaseOutcome {
+    pub outcome: OpOutcome, // reuse Phase 3a OpOutcome (conflicted/files/message)
+    pub undo: UndoSnapshot,
+    pub bundle: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReflogEntry {
+    pub sha: String,
+    pub short: String,
+    pub selector: String, // e.g. "HEAD@{2}"
+    pub subject: String,  // e.g. "reset: moving to HEAD~1"
+}
+
+/// One line of an interactive-rebase plan from the UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RebaseStep {
+    pub action: String,          // pick|reword|edit|squash|fixup|drop (validated in Rust)
+    pub sha: String,
+    pub message: Option<String>, // reword: the new message (else ignored)
+}

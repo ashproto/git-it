@@ -11,6 +11,7 @@ import type {
   Ref,
   RepoStatus,
   RewriteOptions,
+  RewriteResult,
   SafetyRef,
 } from "./types";
 
@@ -87,4 +88,9 @@ export const api = {
       onEvent: channel,
     });
   },
+  reset: (repo: string, target: string, mode: "soft" | "mixed" | "hard", autoBackup: boolean) =>
+    invoke<RewriteResult>("reset", { repo, target, mode, autoBackup }),
+  amend: (repo: string, message: string | null, resetAuthorDate: boolean, resetCommitterDate: boolean, autoBackup: boolean) =>
+    invoke<RewriteResult>("amend", { repo, message, resetAuthorDate, resetCommitterDate, autoBackup }),
+  undoOp: (repo: string, sha: string) => invoke<void>("undo_op", { repo, sha }),
 };
