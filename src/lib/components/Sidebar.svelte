@@ -7,6 +7,7 @@
   import BackupsPanel from "./BackupsPanel.svelte";
   import ReflogPanel from "./ReflogPanel.svelte";
   import StashPanel from "./StashPanel.svelte";
+  import RemotePanel from "./RemotePanel.svelte";
 
   const refs = $derived(appState.refsByKind);
 
@@ -188,6 +189,9 @@
   </div>
   <div class="backups">
     <StashPanel />
+  </div>
+  <div class="backups">
+    <RemotePanel />
   </div>
 </aside>
 

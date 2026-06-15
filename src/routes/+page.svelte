@@ -15,6 +15,7 @@
   import UndoBar from "$lib/components/UndoBar.svelte";
   import AmendDialog from "$lib/components/AmendDialog.svelte";
   import RebaseTodo from "$lib/components/RebaseTodo.svelte";
+  import RemoteProgress from "$lib/components/RemoteProgress.svelte";
   import { gitActions } from "$lib/gitActions";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
   import { onMount } from "svelte";
@@ -27,6 +28,13 @@
   const detachedHead = $derived(
     currentBranch === null && appState.refsByKind.head.length > 0,
   );
+  const hasRemotes = $derived(appState.remotes.length > 0);
+  const aheadBehind = $derived(
+    appState.currentUpstream !== null && (appState.currentAhead > 0 || appState.currentBehind > 0)
+      ? { ahead: appState.currentAhead, behind: appState.currentBehind }
+      : null,
+  );
+  const noRemoteTitle = "Add a remote first (see Remotes panel in the sidebar)";
 
   onMount(() => {
     const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -42,13 +50,46 @@
     <h1>Git It</h1>
     <span class="sub">Batch-edit commit timestamps via git-filter-repo</span>
     {#if currentBranch}
-      <span class="branch-chip" title="Current branch">{currentBranch}</span>
+      <span class="branch-chip" title="Current branch">
+        {currentBranch}{#if aheadBehind}&nbsp;<span class="ahead-behind" aria-label="{aheadBehind.ahead} ahead, {aheadBehind.behind} behind">↑{aheadBehind.ahead} ↓{aheadBehind.behind}</span>{/if}
+      </span>
     {:else if detachedHead}
       <span class="branch-chip detached" title="Detached HEAD">detached HEAD</span>
     {/if}
-    <button class="fetch-btn" data-no-drag onclick={() => gitActions.fetch()}>Fetch</button>
+    <div class="remote-btns" data-no-drag>
+      <button
+        class="fetch-btn"
+        onclick={() => gitActions.fetch()}
+        title="Fetch all remotes"
+      >Fetch</button>
+      <button
+        class="fetch-btn"
+        disabled={!hasRemotes}
+        title={hasRemotes ? "Pull changes from remote" : noRemoteTitle}
+        onclick={() => gitActions.pull()}
+      >Pull</button>
+      <div class="push-group">
+        <button
+          class="fetch-btn push-main"
+          disabled={!hasRemotes}
+          title={hasRemotes ? "Push to remote" : noRemoteTitle}
+          onclick={() => gitActions.push()}
+        >Push</button><button
+          class="fetch-btn push-arrow"
+          disabled={!hasRemotes}
+          title={hasRemotes ? "Force push with lease" : noRemoteTitle}
+          onclick={async () => {
+            if (!hasRemotes) return;
+            await gitActions.push(true);
+          }}
+          aria-label="Force push with lease"
+        >▾</button>
+      </div>
+    </div>
     <DateFormatMenu />
   </header>
+
+  <RemoteProgress />
 
   <PrereqBanner />
 
@@ -243,8 +284,15 @@
     color: var(--err);
     border-color: var(--err);
   }
-  .fetch-btn {
+  .remote-btns {
     margin-left: auto;
+    align-self: center;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .fetch-btn {
     align-self: center;
     padding: 4px 12px;
     border-radius: 6px;
@@ -254,8 +302,33 @@
     font-size: 12px;
     cursor: pointer;
   }
-  .fetch-btn:hover {
+  .fetch-btn:hover:not(:disabled) {
     background: var(--btn-hover);
+  }
+  .fetch-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* Push button split: left part is "Push", right part is the ▾ for force-push */
+  .push-group {
+    display: flex;
+    align-items: center;
+  }
+  .push-main {
+    border-radius: 6px 0 0 6px;
+    border-right: none;
+  }
+  .push-arrow {
+    padding: 4px 7px;
+    border-radius: 0 6px 6px 0;
+    font-size: 10px;
+  }
+
+  .ahead-behind {
+    font-size: 11px;
+    opacity: 0.75;
+    font-weight: 400;
   }
   .shell {
     display: flex;

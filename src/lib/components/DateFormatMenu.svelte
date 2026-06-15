@@ -126,6 +126,16 @@
         />
         <span>Create backup before destructive ops</span>
       </label>
+      <hr class="divider" />
+      <p class="pop-title">Remote</p>
+      <label class="opt">
+        <input
+          type="checkbox"
+          checked={appState.pullRebase}
+          onchange={() => appState.setPullRebase(!appState.pullRebase)}
+        />
+        <span>Pull with rebase</span>
+      </label>
     </div>
   {/if}
 </div>
