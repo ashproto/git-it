@@ -4,8 +4,6 @@
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
 
   let count = $state(50);
-  let useRange = $state(false);
-  let range = $state("HEAD~50..HEAD");
   let loading = $state(false);
 
   async function browse() {
@@ -58,18 +56,8 @@
       bind:value={count}
       style="width:6rem"
     />
-    <label class="check">
-      <input type="checkbox" bind:checked={useRange} />
-      Custom range
-    </label>
-    <input
-      type="text"
-      bind:value={range}
-      disabled={!useRange}
-      placeholder="HEAD~50..HEAD"
-      style="flex:1"
-      aria-label="Custom git log range"
-    />
+    <span class="note">recent commits across all branches</span>
+    <span class="grow"></span>
     <button type="button" onclick={load} disabled={loading} class="primary">
       {loading ? "Loading…" : "Reload"}
     </button>
@@ -91,11 +79,12 @@
     color: var(--text-muted);
     min-width: 50px;
   }
-  label.check {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    min-width: 0;
+  .note {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .grow {
+    flex: 1;
   }
   input[type="text"],
   input[type="number"] {
