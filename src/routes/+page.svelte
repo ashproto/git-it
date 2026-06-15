@@ -17,6 +17,7 @@
   import RemoteProgress from "$lib/components/RemoteProgress.svelte";
   import RepoTabs from "$lib/components/RepoTabs.svelte";
   import RepoList from "$lib/components/RepoList.svelte";
+  import StatusBar from "$lib/components/StatusBar.svelte";
   import { gitActions, reloadGraph } from "$lib/gitActions";
   import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
@@ -83,7 +84,6 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header class="app-header" onmousedown={onWindowDragMouseDown}>
     <h1>Git It</h1>
-    <span class="sub">Batch-edit commit timestamps via git-filter-repo</span>
     {#if currentBranch}
       <span class="branch-chip" title="Current branch">
         {currentBranch}{#if aheadBehind}&nbsp;<span class="ahead-behind" aria-label="{aheadBehind.ahead} ahead, {aheadBehind.behind} behind">↑{aheadBehind.ahead} ↓{aheadBehind.behind}</span>{/if}
@@ -185,6 +185,7 @@
   <Modal />
   <AmendDialog />
   <RebaseTodo />
+  <StatusBar />
 </main>
 
 <style>
@@ -327,13 +328,11 @@
   }
   h1 {
     margin: 0;
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-  }
-  .sub {
-    color: var(--text-muted);
     font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
 
   .branch-chip {
