@@ -26,6 +26,15 @@ export async function refreshStatus(): Promise<void> {
   }
 }
 
+export async function refreshWorkingChanges(): Promise<void> {
+  if (!isTauri() || !appState.repo) return;
+  try {
+    appState.setWorkingChanges(await api.workingChanges(appState.repo));
+  } catch (e) {
+    console.warn("[gte] working changes refresh failed", e);
+  }
+}
+
 export async function reloadGraph(): Promise<void> {
   if (!isTauri()) {
     appState.setGraphCommits(SAMPLE_GRAPH);
@@ -35,6 +44,7 @@ export async function reloadGraph(): Promise<void> {
   const gc = await api.loadGraph(appState.repo, RELOAD_COUNT, 0);
   appState.setGraphCommits(gc);
   await refreshStatus();
+  await refreshWorkingChanges();
 }
 
 // Run an op with uniform guard / status / refresh / error handling.
@@ -111,6 +121,38 @@ async function runResolve(label: string, fn: () => Promise<unknown>): Promise<bo
   try {
     await fn();
     await refreshStatus();
+    return true;
+  } catch (e) {
+    appState.status = `${label} failed: ${firstLine(e)}`;
+    return false;
+  }
+}
+
+// Run a working-copy op (non-destructive): guard → run → refresh working changes + graph.
+async function runWorktree(label: string, fn: () => Promise<unknown>): Promise<boolean> {
+  if (!isTauri()) {
+    appState.status = "That action needs the desktop app (not the browser preview).";
+    return false;
+  }
+  if (!appState.repo) {
+    appState.status = "Open a repository first.";
+    return false;
+  }
+  try {
+    appState.status = `${label}…`;
+    await fn();
+    // Refresh working changes first (fast), then the full graph.
+    try {
+      await refreshWorkingChanges();
+    } catch (e) {
+      console.warn("[gte] working changes refresh after op failed", e);
+    }
+    try {
+      await reloadGraph();
+    } catch (e) {
+      console.warn("[gte] graph refresh after working-copy op failed", e);
+    }
+    appState.status = `${label} — done.`;
     return true;
   } catch (e) {
     appState.status = `${label} failed: ${firstLine(e)}`;
@@ -260,6 +302,70 @@ export const gitActions = {
       consequence,
       (backup) => api.rebaseInteractive(appState.repo, base, steps, backup),
     ),
+  // ── Working-copy actions (Phase 5) ────────────────────────────────────────
+  stage: (paths: string[]) =>
+    runWorktree(`Stage ${paths.length} file(s)`, () => api.stage(appState.repo, paths)),
+  unstage: (paths: string[]) =>
+    runWorktree(`Unstage ${paths.length} file(s)`, () => api.unstage(appState.repo, paths)),
+  stageHunk: (path: string, hunkIndex: number) =>
+    runWorktree(`Stage hunk in ${path}`, () => api.stageHunk(appState.repo, path, hunkIndex)),
+  unstageHunk: (path: string, hunkIndex: number) =>
+    runWorktree(`Unstage hunk in ${path}`, () => api.unstageHunk(appState.repo, path, hunkIndex)),
+  commitChanges: (message: string) =>
+    runWorktree("Commit", () => api.commit(appState.repo, message)),
+  stashPush: (message: string | null) =>
+    runWorktree("Stash changes", () => api.stashPush(appState.repo, message)),
+  stashApply: (index: number) =>
+    runWorktree(`Apply stash@{${index}}`, () => api.stashApply(appState.repo, index)),
+  stashPop: (index: number) =>
+    runWorktree(`Pop stash@{${index}}`, () => api.stashPop(appState.repo, index)),
+  stashDrop: (index: number) =>
+    runWorktree(`Drop stash@{${index}}`, () => api.stashDrop(appState.repo, index)),
+
+  // Discard (tracked) and clean (untracked) are DESTRUCTIVE and NOT undoable.
+  // Route through a plain danger confirm — no backup bundle (uncommitted work
+  // is not in reflog; a --all bundle wouldn't capture it either). Offer "Stash
+  // instead" in the copy so the user knows the safe alternative.
+  discard: async (paths: string[]): Promise<boolean> => {
+    if (!isTauri()) {
+      appState.status = "That action needs the desktop app (not the browser preview).";
+      return false;
+    }
+    if (!appState.repo) {
+      appState.status = "Open a repository first.";
+      return false;
+    }
+    const n = paths.length;
+    const confirmed = await dialogs.confirm({
+      title: "Discard changes",
+      message: `Permanently discard changes to ${n} file${n === 1 ? "" : "s"}. This cannot be undone. (Stash instead to keep them.)`,
+      confirmLabel: "Discard",
+      danger: true,
+    });
+    if (!confirmed) return false;
+    return runWorktree(`Discard ${n} file(s)`, () => api.discard(appState.repo, paths));
+  },
+
+  clean: async (paths: string[]): Promise<boolean> => {
+    if (!isTauri()) {
+      appState.status = "That action needs the desktop app (not the browser preview).";
+      return false;
+    }
+    if (!appState.repo) {
+      appState.status = "Open a repository first.";
+      return false;
+    }
+    const n = paths.length;
+    const confirmed = await dialogs.confirm({
+      title: "Remove untracked files",
+      message: `Permanently discard changes to ${n} file${n === 1 ? "" : "s"}. This cannot be undone. (Stash instead to keep them.)`,
+      confirmLabel: "Discard",
+      danger: true,
+    });
+    if (!confirmed) return false;
+    return runWorktree(`Clean ${n} file(s)`, () => api.clean(appState.repo, paths));
+  },
+
   undo: () => {
     const u: UndoSnapshot | null = appState.lastUndo;
     if (!u) return Promise.resolve(false);

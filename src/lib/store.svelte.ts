@@ -1,6 +1,6 @@
 // Centralized reactive app state using Svelte 5 runes.
 // Components import this module and read/write fields directly.
-import type { Commit, GraphCommit, RefEntry, RepoStatus, UndoSnapshot } from "./types";
+import type { Commit, GraphCommit, RefEntry, RepoStatus, UndoSnapshot, WorkingFile } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
 import { computeLanes } from "./graph";
@@ -57,6 +57,9 @@ const LINESTYLE_STORE_KEY = "graphLineStyle";
 const AUTOBACKUP_KEY = "gte.safety.autoBackup.v1";
 const AUTOBACKUP_STORE_KEY = "safetyAutoBackup";
 
+const DIFFSPLIT_KEY = "gte.diffSplit.v1";
+const DIFFSPLIT_STORE_KEY = "diffSplit";
+
 function loadSyncLineStyle(): "curved" | "angular" {
   if (isTauri()) return "curved";
   try {
@@ -76,6 +79,17 @@ function loadSyncAutoBackup(): boolean {
     return raw === null ? true : raw !== "false";
   } catch {
     return true;
+  }
+}
+
+function loadSyncDiffSplit(): boolean {
+  if (isTauri()) return false;
+  try {
+    if (typeof localStorage === "undefined") return false;
+    const raw = localStorage.getItem(DIFFSPLIT_KEY);
+    return raw === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -241,6 +255,48 @@ function makeState() {
   // UndoBar to persist across that refresh.
   let lastUndo = $state<UndoSnapshot | null>(null);
 
+  // Working-copy state (Phase 5).
+  // workingChanges: the live file list from `git status`.
+  // selectedFile: which file is being diffed in the working-copy panel.
+  // workingCopySelected: true when the synthetic "Uncommitted changes" row is focused.
+  let workingChanges = $state<WorkingFile[]>([]);
+  let selectedFile = $state<string | null>(null);
+  let workingCopySelected = $state<boolean>(false);
+
+  // diffSplit: persisted preference — true = split mode, false = unified (default).
+  // Mirrors the graphLineStyle pattern.
+  let diffSplit = $state<boolean>(loadSyncDiffSplit());
+  let diffSplitTouched = false;
+
+  const dsHydrate = getStore();
+  if (dsHydrate) {
+    dsHydrate
+      .then((store) => store.get<boolean>(DIFFSPLIT_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !diffSplitTouched) {
+          diffSplit = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load diffSplit setting", e));
+  }
+
+  function persistDiffSplit() {
+    const snapshot = diffSplit;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(DIFFSPLIT_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist diffSplit setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(DIFFSPLIT_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist diffSplit setting", e);
+    }
+  }
+
   return {
     get repo() {
       return repo;
@@ -252,6 +308,10 @@ function makeState() {
       if (v !== repo) {
         lastUndo = null;
         repoStatus = null;
+        // Clear working-copy state — it belongs to the previous repo.
+        workingChanges = [];
+        selectedFile = null;
+        workingCopySelected = false;
       }
       repo = v;
     },
@@ -351,6 +411,8 @@ function makeState() {
     },
     setCurrent(sha: string | null) {
       currentSha = sha;
+      // Focusing a real commit exits working-copy mode.
+      if (sha !== null) workingCopySelected = false;
     },
     get graphLineStyle() {
       return graphLineStyle;
@@ -379,6 +441,37 @@ function makeState() {
     },
     setLastUndo(u: UndoSnapshot | null) {
       lastUndo = u;
+    },
+    // ── Working-copy state (Phase 5) ───────────────────────────────────────────
+    get workingChanges() {
+      return workingChanges;
+    },
+    setWorkingChanges(v: WorkingFile[]) {
+      workingChanges = v;
+    },
+    get selectedFile() {
+      return selectedFile;
+    },
+    setSelectedFile(v: string | null) {
+      selectedFile = v;
+    },
+    get workingCopySelected() {
+      return workingCopySelected;
+    },
+    setWorkingCopySelected(v: boolean) {
+      workingCopySelected = v;
+      // When entering working-copy mode, deselect any real commit so the panels
+      // don't show stale commit detail alongside the working-copy view.
+      if (v) currentSha = null;
+    },
+    // ── diffSplit persisted setting (Phase 5) ──────────────────────────────────
+    get diffSplit() {
+      return diffSplit;
+    },
+    setDiffSplit(v: boolean) {
+      diffSplitTouched = true;
+      diffSplit = v;
+      persistDiffSplit();
     },
     setGraphCommits(gc: GraphCommit[]) {
       graphCommits = gc;
