@@ -1,6 +1,6 @@
 // Centralized reactive app state using Svelte 5 runes.
 // Components import this module and read/write fields directly.
-import type { Commit, GraphCommit, RefEntry, RepoStatus } from "./types";
+import type { Commit, GraphCommit, RefEntry, RepoStatus, UndoSnapshot } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
 import { computeLanes } from "./graph";
@@ -54,6 +54,9 @@ function graphToCommit(g: GraphCommit): Commit {
 const LINESTYLE_KEY = "gte.graphLineStyle.v1";
 const LINESTYLE_STORE_KEY = "graphLineStyle";
 
+const AUTOBACKUP_KEY = "gte.safety.autoBackup.v1";
+const AUTOBACKUP_STORE_KEY = "safetyAutoBackup";
+
 function loadSyncLineStyle(): "curved" | "angular" {
   if (isTauri()) return "curved";
   try {
@@ -62,6 +65,17 @@ function loadSyncLineStyle(): "curved" | "angular" {
     return raw === "angular" ? "angular" : "curved";
   } catch {
     return "curved";
+  }
+}
+
+function loadSyncAutoBackup(): boolean {
+  if (isTauri()) return true;
+  try {
+    if (typeof localStorage === "undefined") return true;
+    const raw = localStorage.getItem(AUTOBACKUP_KEY);
+    return raw === null ? true : raw !== "false";
+  } catch {
+    return true;
   }
 }
 
@@ -188,6 +202,45 @@ function makeState() {
     }
   }
 
+  // Auto-backup setting: persisted boolean (default true). Mirrors graphLineStyle pattern.
+  let autoBackupDestructive = $state<boolean>(loadSyncAutoBackup());
+  let autoBackupDestructiveTouched = false;
+
+  const abHydrate = getStore();
+  if (abHydrate) {
+    abHydrate
+      .then((store) => store.get<boolean>(AUTOBACKUP_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !autoBackupDestructiveTouched) {
+          autoBackupDestructive = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load autoBackup setting", e));
+  }
+
+  function persistAutoBackup() {
+    const snapshot = autoBackupDestructive;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(AUTOBACKUP_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist autoBackup setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(AUTOBACKUP_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist autoBackup setting", e);
+    }
+  }
+
+  // Last destructive-op undo snapshot. Set on success; cleared when consumed or replaced.
+  // Not cleared in setGraphCommits — the graph reloads after the op and we want the
+  // UndoBar to persist across that refresh.
+  let lastUndo = $state<UndoSnapshot | null>(null);
+
   return {
     get repo() {
       return repo;
@@ -306,12 +359,28 @@ function makeState() {
     setRepoStatus(s: RepoStatus | null) {
       repoStatus = s;
     },
+    get autoBackupDestructive() {
+      return autoBackupDestructive;
+    },
+    setAutoBackupDestructive(v: boolean) {
+      autoBackupDestructiveTouched = true;
+      autoBackupDestructive = v;
+      persistAutoBackup();
+    },
+    get lastUndo() {
+      return lastUndo;
+    },
+    setLastUndo(u: UndoSnapshot | null) {
+      lastUndo = u;
+    },
     setGraphCommits(gc: GraphCommit[]) {
       graphCommits = gc;
       commits = gc.map(graphToCommit);
       newDates = new Map();
       selected = new Set();
       currentSha = null;
+      // NOTE: lastUndo is intentionally NOT cleared here — a destructive op reloads the
+      // graph and we want the UndoBar to remain visible after that refresh.
     },
   };
 }

@@ -19,6 +19,14 @@ type DialogState =
       confirmLabel: string;
       danger: boolean;
       resolve: (v: boolean) => void;
+    }
+  | {
+      kind: "destructive";
+      title: string;
+      consequence: string;
+      confirmLabel: string;
+      backup: boolean;
+      resolve: (v: { confirmed: boolean; backup: boolean }) => void;
     };
 
 function makeDialogs() {
@@ -29,6 +37,7 @@ function makeDialogs() {
   function settlePending() {
     if (state.kind === "prompt") state.resolve(null);
     else if (state.kind === "confirm") state.resolve(false);
+    else if (state.kind === "destructive") state.resolve({ confirmed: false, backup: false });
   }
 
   return {
@@ -72,6 +81,36 @@ function makeDialogs() {
           resolve,
         };
       });
+    },
+    confirmDestructive(opts: {
+      title: string;
+      consequence: string;
+      confirmLabel?: string;
+      backupDefault: boolean;
+    }): Promise<{ confirmed: boolean; backup: boolean }> {
+      settlePending();
+      return new Promise((resolve) => {
+        state = {
+          kind: "destructive",
+          title: opts.title,
+          consequence: opts.consequence,
+          confirmLabel: opts.confirmLabel ?? opts.title,
+          backup: opts.backupDefault,
+          resolve,
+        };
+      });
+    },
+    setDestructiveBackup(v: boolean) {
+      if (state.kind === "destructive") {
+        state = { ...state, backup: v };
+      }
+    },
+    resolveDestructive(confirmed: boolean) {
+      if (state.kind === "destructive") {
+        const backup = state.backup;
+        state.resolve({ confirmed, backup });
+        state = { kind: "none" };
+      }
     },
     resolvePrompt(v: string | null) {
       if (state.kind === "prompt") {

@@ -21,6 +21,16 @@
   function cancelPrompt() {
     dialogs.resolvePrompt(null);
   }
+
+  function handleDestructiveKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      dialogs.resolveDestructive(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      dialogs.resolveDestructive(false);
+    }
+  }
 </script>
 
 {#if dialogs.state.kind === "prompt"}
@@ -68,6 +78,38 @@
           class="primary"
           class:danger={dialogs.state.danger}
           onclick={() => dialogs.resolveConfirm(true)}
+        >
+          {dialogs.state.confirmLabel}
+        </button>
+      </div>
+    </div>
+  </div>
+{:else if dialogs.state.kind === "destructive"}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="overlay"
+    onpointerdown={(e) => {
+      if (e.target === e.currentTarget) dialogs.resolveDestructive(false);
+    }}
+    onkeydown={handleDestructiveKey}
+  >
+    <div class="dialog" role="dialog" aria-modal="true" aria-label={dialogs.state.title}>
+      <h3>{dialogs.state.title}</h3>
+      <p class="msg consequence">{dialogs.state.consequence}</p>
+      <label class="backup-row">
+        <input
+          type="checkbox"
+          checked={dialogs.state.backup}
+          onchange={(e) => dialogs.setDestructiveBackup((e.currentTarget as HTMLInputElement).checked)}
+        />
+        Create backup bundle
+      </label>
+      <div class="actions">
+        <button type="button" onclick={() => dialogs.resolveDestructive(false)}>Cancel</button>
+        <button
+          type="button"
+          class="primary danger"
+          onclick={() => dialogs.resolveDestructive(true)}
         >
           {dialogs.state.confirmLabel}
         </button>
@@ -151,5 +193,25 @@
   button.primary.danger {
     background: var(--danger);
     border-color: var(--danger);
+  }
+  .consequence {
+    color: var(--text-muted);
+  }
+  .backup-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    margin-bottom: 14px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .backup-row input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
   }
 </style>

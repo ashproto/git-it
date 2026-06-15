@@ -4,7 +4,8 @@
 import { appState } from "./store.svelte";
 import { api } from "./api";
 import { SAMPLE_GRAPH } from "./graph/sample";
-import type { OpOutcome } from "./types";
+import type { OpOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot } from "./types";
+import { dialogs } from "./dialogs.svelte";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -117,6 +118,92 @@ async function runResolve(label: string, fn: () => Promise<unknown>): Promise<bo
   }
 }
 
+// Confirm (with consequence + backup choice) → run → store undo → refresh. Returns ok.
+async function runDestructive(
+  label: string,
+  consequence: string,
+  fn: (backup: boolean) => Promise<RewriteResult>,
+): Promise<boolean> {
+  if (!isTauri()) {
+    appState.status = "That action needs the desktop app (not the browser preview).";
+    return false;
+  }
+  if (!appState.repo) {
+    appState.status = "Open a repository first.";
+    return false;
+  }
+  const { confirmed, backup } = await dialogs.confirmDestructive({
+    title: label,
+    consequence,
+    confirmLabel: label,
+    backupDefault: appState.autoBackupDestructive,
+  });
+  if (!confirmed) return false;
+  try {
+    appState.status = `${label}…`;
+    const res = await fn(backup);
+    appState.setLastUndo(res.undo);
+    if (res.bundle) appState.appendLog(`[backup] ${res.bundle}`);
+    try {
+      await reloadGraph();
+    } catch (e) {
+      console.warn("[gte] refresh failed", e);
+    }
+    appState.status = `${label} — done.`;
+    return true;
+  } catch (e) {
+    try {
+      await reloadGraph();
+    } catch {}
+    appState.status = `${label} failed: ${firstLine(e)}`;
+    return false;
+  }
+}
+
+// Rebase variant: same confirm+undo, but the result is a RebaseOutcome that may conflict.
+async function runDestructiveRebase(
+  label: string,
+  consequence: string,
+  fn: (backup: boolean) => Promise<RebaseOutcome>,
+): Promise<boolean> {
+  if (!isTauri()) {
+    appState.status = "That action needs the desktop app (not the browser preview).";
+    return false;
+  }
+  if (!appState.repo) {
+    appState.status = "Open a repository first.";
+    return false;
+  }
+  const { confirmed, backup } = await dialogs.confirmDestructive({
+    title: label,
+    consequence,
+    confirmLabel: label,
+    backupDefault: appState.autoBackupDestructive,
+  });
+  if (!confirmed) return false;
+  try {
+    appState.status = `${label}…`;
+    const res = await fn(backup);
+    appState.setLastUndo(res.undo);
+    if (res.bundle) appState.appendLog(`[backup] ${res.bundle}`);
+    try {
+      await reloadGraph();
+    } catch (e) {
+      console.warn("[gte] refresh failed", e);
+    }
+    appState.status = res.outcome.conflicted
+      ? `${label}: ${res.outcome.files.length} conflict(s) to resolve.`
+      : `${label} — done.`;
+    return true;
+  } catch (e) {
+    try {
+      await reloadGraph();
+    } catch {}
+    appState.status = `${label} failed: ${firstLine(e)}`;
+    return false;
+  }
+}
+
 export const gitActions = {
   checkout: (target: string, label?: string) =>
     run(label ?? `Checkout ${target}`, () => api.checkout(appState.repo, target)),
@@ -149,4 +236,36 @@ export const gitActions = {
     runResolve(`Keep ${path}`, () => api.resolveKeep(appState.repo, path)),
   resolveRemove: (path: string) =>
     runResolve(`Remove ${path}`, () => api.resolveRemove(appState.repo, path)),
+  reset: (target: string, mode: "soft" | "mixed" | "hard", consequence: string) =>
+    runDestructive(
+      `Reset (${mode})`,
+      consequence,
+      (backup) => api.reset(appState.repo, target, mode, backup),
+    ),
+  amend: (message: string | null, resetAuthorDate: boolean, resetCommitterDate: boolean) =>
+    runDestructive(
+      "Amend commit",
+      "Rewrites the latest commit (its hash changes).",
+      (backup) => api.amend(appState.repo, message, resetAuthorDate, resetCommitterDate, backup),
+    ),
+  rebaseOnto: (onto: string, consequence: string) =>
+    runDestructiveRebase(
+      `Rebase onto ${onto}`,
+      consequence,
+      (backup) => api.rebase(appState.repo, onto, backup),
+    ),
+  rebaseInteractive: (base: string, steps: RebaseStep[], consequence: string) =>
+    runDestructiveRebase(
+      "Interactive rebase",
+      consequence,
+      (backup) => api.rebaseInteractive(appState.repo, base, steps, backup),
+    ),
+  undo: () => {
+    const u: UndoSnapshot | null = appState.lastUndo;
+    if (!u) return Promise.resolve(false);
+    return run(`Undo ${u.label}`, () => api.undoOp(appState.repo, u.sha)).then((ok) => {
+      if (ok) appState.setLastUndo(null);
+      return ok;
+    });
+  },
 };
