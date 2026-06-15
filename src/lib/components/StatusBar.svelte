@@ -83,19 +83,12 @@
     font-size: 11.5px;
     color: var(--text-muted);
     overflow: hidden;
-    /* Extend to fill the full width, breaking out of main's padding. */
-    /* We rely on the parent <main> to mount us at the bottom; no negative margins needed
-       because main has padding — we use a negative-margin trick to span edge-to-edge. */
     box-sizing: border-box;
-    padding: 0;
-    /* Pull the bar flush against the main padding edges */
-    margin-left: -18px;
-    margin-right: -18px;
-    /* Stick to the bottom of the viewport within the page flow — no position:fixed so
-       it doesn't overlap content; it just sits as the last row of <main>. */
-    margin-bottom: -16px;
-    padding-left: 18px;
-    padding-right: 18px;
+    /* Full-width bottom chrome: a direct flex child of the app-shell <main> (which has no
+       padding), so it spans edge-to-edge with no margin hacks. A little inner padding
+       keeps content off the window edges; sections carry their own padding too. */
+    padding: 0 12px;
+    flex-shrink: 0;
   }
 
   .section {
