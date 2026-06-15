@@ -188,3 +188,9 @@ pub struct StashEntry {
     pub message: String,
     pub sha: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteInfo {
+    pub name: String,
+    pub url: String,
+}

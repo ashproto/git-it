@@ -112,3 +112,5 @@ export type WorkingFile = {
 };
 
 export type StashEntry = { index: number; message: string; sha: string };
+
+export type RemoteInfo = { name: string; url: string };

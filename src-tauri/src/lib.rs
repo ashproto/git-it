@@ -3,6 +3,7 @@ mod git_ops;
 mod graph;
 mod ops;
 mod ops_merge;
+mod ops_remote;
 mod ops_rewrite;
 mod ops_worktree;
 mod rewrite;
@@ -100,6 +101,10 @@ pub fn run() {
             commands::stash_apply,
             commands::stash_pop,
             commands::stash_drop,
+            commands::remotes,
+            commands::remote_add,
+            commands::remote_remove,
+            commands::remote_set_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

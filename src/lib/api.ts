@@ -12,6 +12,7 @@ import type {
   RebaseStep,
   Ref,
   ReflogEntry,
+  RemoteInfo,
   RepoStatus,
   RewriteOptions,
   RewriteResult,
@@ -126,4 +127,10 @@ export const api = {
   stashApply: (repo: string, index: number) => invoke<void>("stash_apply", { repo, index }),
   stashPop: (repo: string, index: number) => invoke<void>("stash_pop", { repo, index }),
   stashDrop: (repo: string, index: number) => invoke<void>("stash_drop", { repo, index }),
+  remotes: (repo: string) => invoke<RemoteInfo[]>("remotes", { repo }),
+  remoteAdd: (repo: string, name: string, url: string) =>
+    invoke<void>("remote_add", { repo, name, url }),
+  remoteRemove: (repo: string, name: string) => invoke<void>("remote_remove", { repo, name }),
+  remoteSetUrl: (repo: string, name: string, url: string) =>
+    invoke<void>("remote_set_url", { repo, name, url }),
 };

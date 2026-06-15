@@ -2,10 +2,11 @@ use crate::git_ops;
 use crate::graph;
 use crate::ops;
 use crate::ops_merge;
+use crate::ops_remote;
 use crate::ops_rewrite;
 use crate::ops_worktree;
 use crate::rewrite;
-use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile};
+use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RemoteInfo, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile};
 use std::path::PathBuf;
 use tauri::ipc::Channel;
 
@@ -330,4 +331,26 @@ pub fn stash_pop(repo: String, index: u32) -> Result<(), String> {
 #[tauri::command]
 pub fn stash_drop(repo: String, index: u32) -> Result<(), String> {
     ops_worktree::stash_drop(&PathBuf::from(repo), index)
+}
+
+// ── Remote management ────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn remotes(repo: String) -> Result<Vec<RemoteInfo>, String> {
+    ops_remote::remotes(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn remote_add(repo: String, name: String, url: String) -> Result<(), String> {
+    ops_remote::remote_add(&PathBuf::from(repo), &name, &url)
+}
+
+#[tauri::command]
+pub fn remote_remove(repo: String, name: String) -> Result<(), String> {
+    ops_remote::remote_remove(&PathBuf::from(repo), &name)
+}
+
+#[tauri::command]
+pub fn remote_set_url(repo: String, name: String, url: String) -> Result<(), String> {
+    ops_remote::remote_set_url(&PathBuf::from(repo), &name, &url)
 }
