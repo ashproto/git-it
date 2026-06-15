@@ -91,6 +91,15 @@ pub fn run() {
             commands::discard,
             commands::clean,
             commands::commit,
+            commands::diff,
+            commands::commit_diff,
+            commands::stage_hunk,
+            commands::unstage_hunk,
+            commands::stash_push,
+            commands::stash_list,
+            commands::stash_apply,
+            commands::stash_pop,
+            commands::stash_drop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -5,7 +5,7 @@ use crate::ops_merge;
 use crate::ops_rewrite;
 use crate::ops_worktree;
 use crate::rewrite;
-use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, WorkingFile};
+use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile};
 use std::path::PathBuf;
 use tauri::ipc::Channel;
 
@@ -285,4 +285,49 @@ pub fn clean(repo: String, paths: Vec<String>) -> Result<(), String> {
 #[tauri::command]
 pub fn commit(repo: String, message: String, signoff: bool) -> Result<(), String> {
     ops_worktree::commit(&PathBuf::from(repo), &message, signoff)
+}
+
+#[tauri::command]
+pub fn diff(repo: String, path: Option<String>, staged: bool) -> Result<String, String> {
+    ops_worktree::diff(&PathBuf::from(repo), path.as_deref(), staged)
+}
+
+#[tauri::command]
+pub fn commit_diff(repo: String, sha: String, path: Option<String>) -> Result<String, String> {
+    ops_worktree::commit_diff(&PathBuf::from(repo), &sha, path.as_deref())
+}
+
+#[tauri::command]
+pub fn stage_hunk(repo: String, path: String, hunk_index: usize) -> Result<(), String> {
+    ops_worktree::stage_hunk(&PathBuf::from(repo), &path, hunk_index)
+}
+
+#[tauri::command]
+pub fn unstage_hunk(repo: String, path: String, hunk_index: usize) -> Result<(), String> {
+    ops_worktree::unstage_hunk(&PathBuf::from(repo), &path, hunk_index)
+}
+
+#[tauri::command]
+pub fn stash_push(repo: String, message: Option<String>) -> Result<(), String> {
+    ops_worktree::stash_push(&PathBuf::from(repo), message.as_deref())
+}
+
+#[tauri::command]
+pub fn stash_list(repo: String) -> Result<Vec<StashEntry>, String> {
+    ops_worktree::stash_list(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn stash_apply(repo: String, index: u32) -> Result<(), String> {
+    ops_worktree::stash_apply(&PathBuf::from(repo), index)
+}
+
+#[tauri::command]
+pub fn stash_pop(repo: String, index: u32) -> Result<(), String> {
+    ops_worktree::stash_pop(&PathBuf::from(repo), index)
+}
+
+#[tauri::command]
+pub fn stash_drop(repo: String, index: u32) -> Result<(), String> {
+    ops_worktree::stash_drop(&PathBuf::from(repo), index)
 }

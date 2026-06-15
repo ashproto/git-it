@@ -1,7 +1,8 @@
 use crate::git_ops;
-use crate::types::WorkingFile;
+use crate::types::{StashEntry, WorkingFile};
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// All working-tree changes (staged, unstaged, untracked, conflicted) as a file list.
 /// Parses `git status --porcelain=v2 -z`. Records: `1`/`2` (ordinary/rename, "XY" code),
@@ -148,6 +149,179 @@ pub fn commit(repo: &Path, message: &str, signoff: bool) -> Result<(), String> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Task 2: diff + hunk staging + stash
+// ---------------------------------------------------------------------------
+
+/// Unified diff text. `staged` → index vs HEAD; else worktree vs index. `path` scopes it.
+pub fn diff(repo: &Path, path: Option<&str>, staged: bool) -> Result<String, String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo).arg("diff").arg("--no-color").arg("-U3");
+    if staged {
+        c.arg("--cached");
+    }
+    c.arg("--");
+    if let Some(p) = path {
+        c.arg(p);
+    }
+    let (out, _) = git_ops::run(&mut c)?;
+    Ok(out)
+}
+
+/// A commit's diff (vs its first parent), for CommitDetail.
+pub fn commit_diff(repo: &Path, sha: &str, path: Option<&str>) -> Result<String, String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo).args([
+        "show",
+        "--no-color",
+        "-U3",
+        "--first-parent",
+        "--format=",
+        "--end-of-options",
+    ]);
+    c.arg(sha).arg("--");
+    if let Some(p) = path {
+        c.arg(p);
+    }
+    let (out, _) = git_ops::run(&mut c)?;
+    Ok(out)
+}
+
+/// Split a `git diff` for a SINGLE file into (header, Vec<hunk_text>). header is everything
+/// before the first `@@`; each hunk starts at an `@@` line and runs to the next `@@`/EOF.
+pub fn split_hunks(diff: &str) -> (String, Vec<String>) {
+    let mut header = String::new();
+    let mut hunks: Vec<String> = Vec::new();
+    let mut in_hunks = false;
+    for line in diff.split_inclusive('\n') {
+        if line.starts_with("@@") {
+            in_hunks = true;
+            hunks.push(String::new());
+        }
+        if in_hunks {
+            if let Some(last) = hunks.last_mut() {
+                last.push_str(line);
+            }
+        } else {
+            header.push_str(line);
+        }
+    }
+    (header, hunks)
+}
+
+/// Pipe a patch (reconstructed from git's own diff output) to `git apply --cached [--reverse]`
+/// via stdin. Never uses a temp file or shell.
+fn git_apply(repo: &Path, patch: &str, reverse: bool) -> Result<(), String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo).arg("apply").arg("--cached");
+    if reverse {
+        c.arg("--reverse");
+    }
+    c.arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = c.spawn().map_err(|e| format!("spawn apply: {}", e))?;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(patch.as_bytes())
+        .map_err(|e| format!("write patch: {}", e))?;
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("apply: {}", e))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
+/// Stage one hunk (by index) of `path`'s UNSTAGED diff.
+pub fn stage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), String> {
+    let d = diff(repo, Some(path), false)?;
+    let (header, hunks) = split_hunks(&d);
+    let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
+    git_apply(repo, &format!("{}{}", header, h), false)
+}
+
+/// Unstage one hunk (by index) of `path`'s STAGED diff.
+pub fn unstage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), String> {
+    let d = diff(repo, Some(path), true)?;
+    let (header, hunks) = split_hunks(&d);
+    let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
+    git_apply(repo, &format!("{}{}", header, h), true)
+}
+
+/// Stash current changes (staged + unstaged). Message is optional.
+pub fn stash_push(repo: &Path, message: Option<&str>) -> Result<(), String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo).args(["stash", "push"]);
+    if let Some(m) = message {
+        c.arg("-m").arg(m);
+    }
+    git_ops::run(&mut c)?;
+    Ok(())
+}
+
+/// List stash entries.
+pub fn stash_list(repo: &Path) -> Result<Vec<StashEntry>, String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo)
+        .args(["stash", "list", "--format=%gd%x1f%H%x1f%gs"]);
+    let (out, _) = git_ops::run(&mut c)?;
+    Ok(out
+        .lines()
+        .filter(|l| !l.is_empty())
+        .enumerate()
+        .map(|(i, l)| {
+            let mut p = l.splitn(3, '\u{1f}');
+            let _selector = p.next().unwrap_or("");
+            let sha = p.next().unwrap_or("").to_string();
+            let message = p.next().unwrap_or("").to_string();
+            StashEntry {
+                index: i as u32,
+                sha,
+                message,
+            }
+        })
+        .collect())
+}
+
+/// Build a stash refspec from a validated u32 index.
+fn stash_ref(index: u32) -> String {
+    format!("stash@{{{}}}", index)
+}
+
+/// Apply a stash (keep it in the stash list).
+pub fn stash_apply(repo: &Path, index: u32) -> Result<(), String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo)
+        .args(["stash", "apply", "--end-of-options", &stash_ref(index)]);
+    git_ops::run(&mut c)?;
+    Ok(())
+}
+
+/// Pop a stash (apply + drop).
+pub fn stash_pop(repo: &Path, index: u32) -> Result<(), String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo)
+        .args(["stash", "pop", "--end-of-options", &stash_ref(index)]);
+    git_ops::run(&mut c)?;
+    Ok(())
+}
+
+/// Drop a stash entry without applying it.
+pub fn stash_drop(repo: &Path, index: u32) -> Result<(), String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo)
+        .args(["stash", "drop", "--end-of-options", &stash_ref(index)]);
+    git_ops::run(&mut c)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,5 +457,43 @@ mod tests {
         r.commit_file("a.txt", "1\n", "init");
         // A path that looks like an option must be a (non-matching) pathspec, not a flag.
         assert!(stage(&r.path, &["--all".into()]).is_err());
+    }
+
+    #[test]
+    fn diff_shows_change() {
+        let r = TempRepo::new();
+        r.commit_file("a.txt", "1\n2\n3\n", "init");
+        r.write("a.txt", "1\nCHANGED\n3\n");
+        let d = diff(&r.path, Some("a.txt"), false).unwrap();
+        assert!(d.contains("+CHANGED"));
+        assert!(d.contains("-2"));
+    }
+
+    #[test]
+    fn stage_hunk_stages_only_that_hunk() {
+        let r = TempRepo::new();
+        // two well-separated change regions → two hunks
+        r.commit_file("a.txt", "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n", "init");
+        r.write("a.txt", "A\nb\nc\nd\ne\nf\ng\nh\ni\nJ\n"); // change line 1 and line 10
+        let d = diff(&r.path, Some("a.txt"), false).unwrap();
+        let (_h, hunks) = split_hunks(&d);
+        assert_eq!(hunks.len(), 2, "two separated edits = two hunks");
+        stage_hunk(&r.path, "a.txt", 0).unwrap();
+        let staged = diff(&r.path, Some("a.txt"), true).unwrap();
+        assert!(staged.contains("+A"));
+        assert!(!staged.contains("+J"), "only hunk 0 should be staged");
+    }
+
+    #[test]
+    fn stash_push_list_pop() {
+        let r = TempRepo::new();
+        r.commit_file("a.txt", "1\n", "init");
+        r.write("a.txt", "2\n");
+        stash_push(&r.path, Some("wip")).unwrap();
+        assert_eq!(fs::read_to_string(r.path.join("a.txt")).unwrap(), "1\n", "stash reverts worktree");
+        let list = stash_list(&r.path).unwrap();
+        assert_eq!(list.len(), 1);
+        stash_pop(&r.path, 0).unwrap();
+        assert_eq!(fs::read_to_string(r.path.join("a.txt")).unwrap(), "2\n", "pop restores");
     }
 }

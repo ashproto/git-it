@@ -16,6 +16,7 @@ import type {
   RewriteOptions,
   RewriteResult,
   SafetyRef,
+  StashEntry,
   WorkingFile,
 } from "./types";
 
@@ -111,4 +112,18 @@ export const api = {
   clean: (repo: string, paths: string[]) => invoke<void>("clean", { repo, paths }),
   commit: (repo: string, message: string, signoff = false) =>
     invoke<void>("commit", { repo, message, signoff }),
+  diff: (repo: string, path: string | null, staged: boolean) =>
+    invoke<string>("diff", { repo, path, staged }),
+  commitDiff: (repo: string, sha: string, path: string | null) =>
+    invoke<string>("commit_diff", { repo, sha, path }),
+  stageHunk: (repo: string, path: string, hunkIndex: number) =>
+    invoke<void>("stage_hunk", { repo, path, hunkIndex }),
+  unstageHunk: (repo: string, path: string, hunkIndex: number) =>
+    invoke<void>("unstage_hunk", { repo, path, hunkIndex }),
+  stashPush: (repo: string, message: string | null) =>
+    invoke<void>("stash_push", { repo, message }),
+  stashList: (repo: string) => invoke<StashEntry[]>("stash_list", { repo }),
+  stashApply: (repo: string, index: number) => invoke<void>("stash_apply", { repo, index }),
+  stashPop: (repo: string, index: number) => invoke<void>("stash_pop", { repo, index }),
+  stashDrop: (repo: string, index: number) => invoke<void>("stash_drop", { repo, index }),
 };
