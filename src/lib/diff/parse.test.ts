@@ -353,6 +353,70 @@ index abc..def 100644
   });
 });
 
+// ─── pure-rename (100% similarity, no hunks, no ---/+++) ─────────────────────
+
+describe("parseDiff — pure rename (no hunks)", () => {
+  // git diff --find-renames output for a 100%-similarity rename produces no
+  // `---`/`+++` lines and no hunk blocks; only the diff --git header plus
+  // `similarity index`, `rename from`, and `rename to` metadata lines.
+  const PATCH = `diff --git a/old/path.ts b/new/path.ts
+similarity index 100%
+rename from old/path.ts
+rename to new/path.ts
+`;
+
+  it("produces one file entry", () => {
+    expect(parseDiff(PATCH).files).toHaveLength(1);
+  });
+
+  it("oldPath is non-empty (from rename from)", () => {
+    expect(parseDiff(PATCH).files[0].oldPath).toBe("old/path.ts");
+  });
+
+  it("newPath is non-empty (from rename to)", () => {
+    expect(parseDiff(PATCH).files[0].newPath).toBe("new/path.ts");
+  });
+
+  it("has no hunks", () => {
+    expect(parseDiff(PATCH).files[0].hunks).toHaveLength(0);
+  });
+
+  it("language detected from new path extension", () => {
+    expect(parseDiff(PATCH).files[0].language).toBe("typescript");
+  });
+});
+
+// ─── mode-only change (no ---/+++ lines, no hunks) ───────────────────────────
+
+describe("parseDiff — mode-only change (no hunks)", () => {
+  // A chmod-only change: git emits only the diff --git header and
+  // `old mode` / `new mode` metadata — no `---`/`+++`, no `@@`.
+  const PATCH = `diff --git a/script.sh b/script.sh
+old mode 100644
+new mode 100755
+`;
+
+  it("produces one file entry", () => {
+    expect(parseDiff(PATCH).files).toHaveLength(1);
+  });
+
+  it("oldPath is non-empty (seeded from diff --git header)", () => {
+    expect(parseDiff(PATCH).files[0].oldPath).toBe("script.sh");
+  });
+
+  it("newPath is non-empty (seeded from diff --git header)", () => {
+    expect(parseDiff(PATCH).files[0].newPath).toBe("script.sh");
+  });
+
+  it("has no hunks", () => {
+    expect(parseDiff(PATCH).files[0].hunks).toHaveLength(0);
+  });
+
+  it("language detected from extension", () => {
+    expect(parseDiff(PATCH).files[0].language).toBe("bash");
+  });
+});
+
 // ─── multi-file patch ─────────────────────────────────────────────────────────
 
 describe("parseDiff — multi-file patch", () => {

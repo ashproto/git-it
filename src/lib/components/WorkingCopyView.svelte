@@ -29,11 +29,13 @@
   );
 
   // Raw patch for the selected file. Re-fetches whenever selectedFile changes OR
-  // workingChanges is refreshed (after every op). We key on both via a combined
-  // derived string so $effect re-runs when either changes.
+  // workingChanges is refreshed (after every op, including hunk ops). We key on a
+  // monotonic revision counter (workingChangesRev) instead of the file count so that
+  // a hunk stage/unstage — which doesn't change the file count but does re-index
+  // hunks on the backend — also triggers a re-fetch and prevents stale hunk indices.
   const diffKey = $derived(
     selectedFile !== null
-      ? `${selectedFile}::${selectedIsStaged ? "staged" : "unstaged"}::${appState.workingChanges.length}`
+      ? `${selectedFile}::${selectedIsStaged ? "staged" : "unstaged"}::${appState.workingChangesRev}`
       : "",
   );
 

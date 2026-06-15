@@ -11,10 +11,7 @@
 
   async function doCommit() {
     if (!canCommit) return;
-    const msg = signoff ? `${message.trim()}\n\nSigned-off-by: ` : message.trim();
-    // If signoff is set the backend adds the trailer via --signoff; we just need
-    // to pass the raw message — the Rust side handles the trailer.
-    await gitActions.commitChanges(message.trim());
+    await gitActions.commitChanges(message.trim(), signoff);
     message = "";
   }
 </script>

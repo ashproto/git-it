@@ -257,9 +257,12 @@ function makeState() {
 
   // Working-copy state (Phase 5).
   // workingChanges: the live file list from `git status`.
+  // workingChangesRev: monotonic counter bumped on every refresh so diff effects
+  //   re-run after hunk ops (which don't change the file COUNT but do re-index hunks).
   // selectedFile: which file is being diffed in the working-copy panel.
   // workingCopySelected: true when the synthetic "Uncommitted changes" row is focused.
   let workingChanges = $state<WorkingFile[]>([]);
+  let workingChangesRev = $state(0);
   let selectedFile = $state<string | null>(null);
   let workingCopySelected = $state<boolean>(false);
 
@@ -310,6 +313,7 @@ function makeState() {
         repoStatus = null;
         // Clear working-copy state — it belongs to the previous repo.
         workingChanges = [];
+        workingChangesRev = 0;
         selectedFile = null;
         workingCopySelected = false;
       }
@@ -448,6 +452,10 @@ function makeState() {
     },
     setWorkingChanges(v: WorkingFile[]) {
       workingChanges = v;
+      workingChangesRev++;
+    },
+    get workingChangesRev() {
+      return workingChangesRev;
     },
     get selectedFile() {
       return selectedFile;

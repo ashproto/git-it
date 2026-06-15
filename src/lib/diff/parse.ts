@@ -85,7 +85,10 @@ export function parseDiff(patch: string): ParsedDiff {
     // Must start with `diff --git` (the split guarantees this for non-first blocks)
     if (!block.startsWith("diff --git ")) continue;
 
-    // --- derive old/new paths from the `---` / `+++` lines ---
+    // --- derive old/new paths ---
+    // Seed from the `diff --git a/<old> b/<new>` header line so that pure-rename
+    // (100% similarity) and mode-only diffs — which have no `---`/`+++` lines —
+    // still yield non-empty paths. `---`/`+++` override if present.
     let oldPath = "";
     let newPath = "";
     let binary = false;
@@ -94,7 +97,29 @@ export function parseDiff(patch: string): ParsedDiff {
     const lines = block.split("\n");
     let i = 0;
 
-    // Parse file header lines (before the first `@@`)
+    // Extract seed paths from the `diff --git a/... b/...` header.
+    // The header has the form: diff --git a/<oldPath> b/<newPath>
+    // Because paths may contain spaces, we cannot simply split on space; however,
+    // since both sides are prefixed we find the ` b/` boundary from the right.
+    const diffGitHeader = lines[0]; // guaranteed to start with "diff --git "
+    const headerRest = diffGitHeader.slice("diff --git ".length); // "a/<old> b/<new>"
+    // Walk right-to-left: find the last " b/" that splits the string correctly.
+    let splitIdx = -1;
+    for (let k = headerRest.length - 3; k >= 2; k--) {
+      if (headerRest[k] === " " && headerRest[k + 1] === "b" && headerRest[k + 2] === "/") {
+        splitIdx = k;
+        break;
+      }
+    }
+    if (splitIdx !== -1) {
+      const seedOld = headerRest.slice(0, splitIdx); // "a/<old>"
+      const seedNew = headerRest.slice(splitIdx + 1); // "b/<new>"
+      oldPath = stripGitPrefix(seedOld);
+      newPath = stripGitPrefix(seedNew);
+    }
+
+    // Parse file header lines (before the first `@@`), overriding the seed paths
+    // with authoritative `---`/`+++`, `rename from`/`rename to`, or `Binary files`.
     while (i < lines.length && !lines[i].startsWith("@@")) {
       const line = lines[i];
 
@@ -102,6 +127,11 @@ export function parseDiff(patch: string): ParsedDiff {
         oldPath = stripGitPrefix(line.slice(4).trim());
       } else if (line.startsWith("+++ ")) {
         newPath = stripGitPrefix(line.slice(4).trim());
+      } else if (line.startsWith("rename from ")) {
+        // Prefer explicit rename metadata over the header seed.
+        oldPath = line.slice("rename from ".length).trim();
+      } else if (line.startsWith("rename to ")) {
+        newPath = line.slice("rename to ".length).trim();
       } else if (line.startsWith("Binary files ")) {
         // "Binary files a/foo and b/foo differ"
         binary = true;

@@ -311,8 +311,8 @@ export const gitActions = {
     runWorktree(`Stage hunk in ${path}`, () => api.stageHunk(appState.repo, path, hunkIndex)),
   unstageHunk: (path: string, hunkIndex: number) =>
     runWorktree(`Unstage hunk in ${path}`, () => api.unstageHunk(appState.repo, path, hunkIndex)),
-  commitChanges: (message: string) =>
-    runWorktree("Commit", () => api.commit(appState.repo, message)),
+  commitChanges: (message: string, signoff = false) =>
+    runWorktree("Commit", () => api.commit(appState.repo, message, signoff)),
   stashPush: (message: string | null) =>
     runWorktree("Stash changes", () => api.stashPush(appState.repo, message)),
   stashApply: (index: number) =>
