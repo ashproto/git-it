@@ -1,8 +1,18 @@
 # RESUME — Git It → Fork/SourceTree-style git client
 
 > Handoff note. **The 6-phase migration is COMPLETE** — all merged to `main`, working
-> tree clean, all gates green as of 2026-06-15. Only optional opportunistic follow-ups
-> remain (listed at the end of the TL;DR).
+> tree clean, all gates green as of 2026-06-15. A follow-on **UI/UX redesign** is now in
+> flight (see the Redesign section just below); only optional opportunistic follow-ups
+> remain from the migration itself (listed at the end of the TL;DR).
+
+## Redesign (post-roadmap shell rework — IN PROGRESS)
+The chrome needed a redesign to turn it
+into a proper multi-repo git-client shell. Built in reviewed, merged slices (same process
+as the phases). Full detail in the `git-client-redesign.md` memory file.
+- **R1 — multi-repo shell — DONE** (`b05e217`): tab strip + sidebar repo list, switchable by a user setting; `openRepos`/`recentRepos`/`repoSwitcherMode` store state; retired RepoLoader; empty state.
+- **R2 — toolbar/status-bar/lazy-load/panels — DONE** (`beb6191`): infinite-scroll commit loading (`load_graph` paging, `appendGraphCommits`); slim header; bottom `StatusBar`; app-shell layout (pinned chrome + scrolling content); grouped recovery panels.
+- **R3 — time-edit on-demand drawer — DONE** (`7a1db36`): time-editing moved out of the always-on main column into a right-side slide-in **`TimeEditDrawer`** (controller `timeEditDrawer.svelte.ts`; re-hosts `EditTabs`+`ApplyPanel` unchanged) opened from an "Edit timestamps…" header button + context-menu item; removed the "New date" column (edited rows now show an inline `.new-pill` + an unclippable `.row.edited` left-bar accent); raised the graph height cap.
+- **R4 — rename + open-source README — NOT STARTED, NEEDS USER INPUT.** "Git It" no longer fits; the puns "git it" / "gitsome" are already taken (`jlord/git-it`, `donnemartin/gitsome`). Pick a distinct name (check GitHub/npm/Homebrew availability) before building R4.
 
 ## TL;DR — where we are
 Building `git-it` into a full Fork/SourceTree-style
