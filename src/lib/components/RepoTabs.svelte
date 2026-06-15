@@ -1,0 +1,304 @@
+<script lang="ts">
+  import { appState } from "../store.svelte";
+  import { pickRepoFolder, api } from "../api";
+
+  function isTauri(): boolean {
+    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  }
+
+  function basename(path: string): string {
+    return path.split("/").filter(Boolean).pop() ?? path;
+  }
+
+  // ── Recent-repos dropdown ────────────────────────────────────────────────────
+  let dropdownOpen = $state(false);
+  let dropdownRoot: HTMLDivElement | undefined = $state();
+
+  function toggleDropdown(e: MouseEvent) {
+    e.stopPropagation();
+    dropdownOpen = !dropdownOpen;
+  }
+
+  function closeDropdown() {
+    dropdownOpen = false;
+  }
+
+  function onDocPointerDown(e: PointerEvent) {
+    if (dropdownRoot && !dropdownRoot.contains(e.target as Node)) closeDropdown();
+  }
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") closeDropdown();
+  }
+
+  // Register / unregister global listeners while the dropdown is open.
+  $effect(() => {
+    if (!dropdownOpen) return;
+    const onBlur = () => closeDropdown();
+    document.addEventListener("pointerdown", onDocPointerDown, true);
+    document.addEventListener("keydown", onKeydown);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      document.removeEventListener("keydown", onKeydown);
+      window.removeEventListener("blur", onBlur);
+    };
+  });
+
+  // Repos in the recent list that aren't already open.
+  const recentNotOpen = $derived(
+    appState.recentRepos.filter((p) => !appState.openRepos.includes(p)),
+  );
+
+  // ── Shared open flow ─────────────────────────────────────────────────────────
+  async function openRepoFlow() {
+    if (!isTauri()) {
+      appState.status = "Opening a repo needs the desktop app.";
+      return;
+    }
+    const p = await pickRepoFolder(appState.repo || undefined);
+    if (!p) return;
+    if (!(await api.isGitRepo(p))) {
+      appState.status = `${p} is not a git repo.`;
+      return;
+    }
+    appState.openRepo(p);
+  }
+
+  async function openRecent(path: string) {
+    closeDropdown();
+    if (!isTauri()) {
+      appState.status = "Opening a repo needs the desktop app.";
+      return;
+    }
+    if (!(await api.isGitRepo(path))) {
+      appState.status = `${path} is not a git repo.`;
+      return;
+    }
+    appState.openRepo(path);
+  }
+</script>
+
+<!-- Tab strip — sits flush against --header-bg -->
+<div class="tab-strip" data-no-drag>
+  {#each appState.openRepos as path (path)}
+    <button
+      class="tab"
+      class:active={path === appState.repo}
+      title={path}
+      onclick={() => appState.setActiveRepo(path)}
+    >
+      <span class="tab-name">{basename(path)}</span>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span
+        class="tab-close"
+        title="Close"
+        onclick={(e) => { e.stopPropagation(); appState.closeRepo(path); }}
+        role="button"
+        tabindex="-1"
+        aria-label="Close {basename(path)}"
+      >×</span>
+    </button>
+  {/each}
+
+  <!-- + button to open a new repo -->
+  <button class="add-btn" title="Open repository…" onclick={openRepoFlow} aria-label="Open repository">
+    +
+  </button>
+
+  <!-- Recent repos dropdown -->
+  <div class="recent-wrap" bind:this={dropdownRoot}>
+    <button
+      class="recent-btn"
+      title="Recent repositories"
+      aria-expanded={dropdownOpen}
+      onclick={toggleDropdown}
+      aria-label="Recent repositories"
+    >▾</button>
+
+    {#if dropdownOpen}
+      <div class="dropdown" role="menu" aria-label="Recent repositories">
+        {#if recentNotOpen.length === 0}
+          <p class="empty">No recent repos</p>
+        {:else}
+          {#each recentNotOpen as path (path)}
+            <button
+              class="drop-item"
+              role="menuitem"
+              title={path}
+              onclick={() => openRecent(path)}
+            >{basename(path)}</button>
+          {/each}
+        {/if}
+      </div>
+    {/if}
+  </div>
+</div>
+
+<style>
+  .tab-strip {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    padding: 0 6px;
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--border);
+    min-height: 34px;
+    overflow-x: auto;
+    scrollbar-width: none; /* Firefox */
+  }
+  .tab-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 10px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    cursor: pointer;
+    white-space: nowrap;
+    border-radius: 0;
+    transition: color 0.1s;
+    flex-shrink: 0;
+  }
+  .tab:hover {
+    color: var(--text);
+    background: var(--row-hover);
+  }
+  .tab.active {
+    color: var(--text);
+    font-weight: 600;
+    border-bottom-color: var(--accent);
+  }
+
+  .tab-name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tab-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.1s, background 0.1s;
+    cursor: pointer;
+  }
+  .tab:hover .tab-close,
+  .tab.active .tab-close {
+    opacity: 1;
+  }
+  .tab-close:hover {
+    background: var(--btn-hover);
+    color: var(--text);
+  }
+
+  .add-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    align-self: center;
+    flex-shrink: 0;
+    margin-left: 2px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--btn-bg);
+    color: var(--text-muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .add-btn:hover {
+    background: var(--btn-hover);
+    color: var(--text);
+  }
+
+  /* Recent dropdown */
+  .recent-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-left: 1px;
+    flex-shrink: 0;
+  }
+
+  .recent-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--btn-bg);
+    color: var(--text-muted);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0;
+  }
+  .recent-btn:hover {
+    background: var(--btn-hover);
+    color: var(--text);
+  }
+
+  .dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 1000;
+    min-width: 200px;
+    max-width: 320px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 4px;
+    background: var(--popover-bg, var(--panel-bg));
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+  }
+
+  .drop-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 6px 10px;
+    border: none;
+    background: none;
+    color: var(--text);
+    font-size: 12.5px;
+    border-radius: 5px;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .drop-item:hover {
+    background: var(--row-hover);
+  }
+
+  .empty {
+    margin: 4px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+</style>
