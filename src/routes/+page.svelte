@@ -2,6 +2,7 @@
   import RepoLoader from "$lib/components/RepoLoader.svelte";
   import GraphHistory from "$lib/components/GraphHistory.svelte";
   import CommitDetail from "$lib/components/CommitDetail.svelte";
+  import WorkingCopyView from "$lib/components/WorkingCopyView.svelte";
   import ConflictView from "$lib/components/ConflictView.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import EditTabs from "$lib/components/EditTabs.svelte";
@@ -60,7 +61,11 @@
       <UndoBar />
       <GraphHistory />
       <ConflictView />
-      <CommitDetail />
+      {#if appState.workingCopySelected}
+        <WorkingCopyView />
+      {:else}
+        <CommitDetail />
+      {/if}
       <div class="two-col">
         <EditTabs />
         <ApplyPanel />

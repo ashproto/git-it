@@ -14,6 +14,34 @@
 
   const commits = $derived(appState.graphCommits);
   const rows = $derived(appState.rows);
+
+  // Synthetic "Uncommitted changes" row: visible whenever there are any working
+  // changes (by count) OR repoStatus signals changes.
+  const hasWorkingChanges = $derived(
+    appState.workingChanges.length > 0 ||
+      (appState.repoStatus !== null &&
+        (appState.repoStatus.staged +
+          appState.repoStatus.unstaged +
+          appState.repoStatus.untracked +
+          appState.repoStatus.conflicted) >
+          0),
+  );
+  const workingChangeCount = $derived(
+    Math.max(
+      appState.workingChanges.length,
+      appState.repoStatus !== null
+        ? appState.repoStatus.staged +
+            appState.repoStatus.unstaged +
+            appState.repoStatus.untracked +
+            appState.repoStatus.conflicted
+        : 0,
+    ),
+  );
+
+  function selectWorkingCopy() {
+    appState.setWorkingCopySelected(true);
+    anchorIndex = null;
+  }
   const heads = $derived(commits.map((c) => c.refs.some((r) => r.is_head)));
   const gutterWidth = $derived(
     12 + Math.max(1, rows.reduce((m, r) => Math.max(m, r.width), 1)) * 16,
@@ -191,6 +219,27 @@
       <div class="gutter-layer" style={`width:${gutterWidth}px`}>
         <GraphGutter {rows} {heads} {rowHeight} lineStyle={appState.graphLineStyle} />
       </div>
+
+      {#if hasWorkingChanges}
+        <div
+          class="row wc-row"
+          class:selected={appState.workingCopySelected}
+          role="row"
+          tabindex="0"
+          onmousedown={selectWorkingCopy}
+          onkeydown={(e) => { if (e.key === " " || e.key === "Enter") selectWorkingCopy(); }}
+        >
+          <div class="spacer" style={`width:${gutterWidth}px`}></div>
+          <div class="subject wc-subject">
+            <span class="wc-dot" aria-hidden="true">●</span>
+            <span class="msg">Uncommitted changes ({workingChangeCount})</span>
+          </div>
+          <div class="author"></div>
+          <div class="date mono"></div>
+          <div class="sha mono"></div>
+          <div class="newdate mono"></div>
+        </div>
+      {/if}
 
       {#each commits as commit, i (commit.sha)}
         <div
@@ -395,5 +444,36 @@
     margin: 6px 0 0 0;
     font-size: 11px;
     color: var(--text-muted);
+  }
+
+  /* ── Synthetic "Uncommitted changes" row ──────────────────────────────────── */
+  .wc-row {
+    border-bottom: 1px solid var(--border);
+    background: var(--header-bg);
+  }
+  .wc-row:hover {
+    background: var(--row-hover);
+  }
+  .wc-row.selected {
+    background: var(--row-selected);
+  }
+  .wc-subject {
+    gap: 8px;
+    font-style: italic;
+  }
+  .wc-dot {
+    font-style: normal;
+    color: var(--accent);
+    font-size: 10px;
+    /* Dashed-look via outline trick — presentational only */
+    border: 1.5px dashed var(--accent);
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    line-height: 1;
   }
 </style>
