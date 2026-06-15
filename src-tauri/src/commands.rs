@@ -1,6 +1,7 @@
 use crate::git_ops;
+use crate::graph;
 use crate::rewrite;
-use crate::types::{BundleInfo, Commit, DateMapping, PrerequisiteCheck, RewriteOptions, SafetyRef};
+use crate::types::{BundleInfo, Commit, DateMapping, GraphCommit, PrerequisiteCheck, Ref, RepoStatus, RewriteOptions, SafetyRef};
 use std::path::PathBuf;
 use tauri::ipc::Channel;
 
@@ -99,4 +100,19 @@ pub async fn rewrite_history(
     })
     .await
     .map_err(|e| format!("join error: {}", e))?
+}
+
+#[tauri::command]
+pub fn load_graph(repo: String, count: u32, skip: u32) -> Result<Vec<GraphCommit>, String> {
+    graph::load_graph(&PathBuf::from(repo), count, skip)
+}
+
+#[tauri::command]
+pub fn list_refs(repo: String) -> Result<Vec<Ref>, String> {
+    graph::list_refs(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn repo_status(repo: String) -> Result<RepoStatus, String> {
+    graph::repo_status(&PathBuf::from(repo))
 }

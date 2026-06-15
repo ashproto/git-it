@@ -4,7 +4,10 @@ import type {
   BundleInfo,
   Commit,
   DateMapping,
+  GraphCommit,
   PrerequisiteCheck,
+  Ref,
+  RepoStatus,
   RewriteOptions,
   SafetyRef,
 } from "./types";
@@ -24,6 +27,10 @@ export const api = {
   isGitRepo: (repo: string) => invoke<boolean>("is_git_repo", { repo }),
   loadCommits: (repo: string, count: number, range?: string) =>
     invoke<Commit[]>("load_commits", { repo, count, range: range ?? null }),
+  loadGraph: (repo: string, count: number, skip = 0) =>
+    invoke<GraphCommit[]>("load_graph", { repo, count, skip }),
+  listRefs: (repo: string) => invoke<Ref[]>("list_refs", { repo }),
+  repoStatus: (repo: string) => invoke<RepoStatus>("repo_status", { repo }),
   createBundle: (repo: string) => invoke<string>("create_bundle", { repo }),
   listBundles: (repo: string) => invoke<BundleInfo[]>("list_bundles", { repo }),
   deleteBundle: (path: string) => invoke<void>("delete_bundle", { path }),
