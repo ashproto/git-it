@@ -206,7 +206,9 @@
   }
   .subject {
     flex: 1 1 auto;
-    min-width: 0;
+    /* Stay readable on narrow windows: keep the description from collapsing to
+       zero — the .wrap scrolls horizontally instead of hiding messages. */
+    min-width: 160px;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -228,6 +230,9 @@
   .date {
     flex: 0 0 168px;
     color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .sha {
     flex: 0 0 84px;
@@ -237,6 +242,9 @@
     flex: 0 0 168px;
     color: var(--accent);
     padding-right: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .row.edited .newdate {
     font-weight: 600;
