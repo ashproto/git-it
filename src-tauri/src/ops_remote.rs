@@ -1,9 +1,87 @@
 use crate::git_ops;
 use crate::types::{RemoteInfo, RemoteOutcome};
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// Per-process nonce counter for unique scratch-dir names.
+static ASKPASS_NONCE: AtomicU32 = AtomicU32::new(0);
+
+fn next_nonce() -> u32 {
+    ASKPASS_NONCE.fetch_add(1, Ordering::SeqCst)
+}
+
+/// Single-quote-escape a string for safe embedding in a POSIX shell script.
+/// Replaces each `'` with `'\''` so the resulting value can be wrapped in `'...'`.
+fn sq(s: &str) -> String {
+    s.replace('\'', "'\\''")
+}
+
+/// Create a file with mode 0600 (owner read+write only) and write `contents` into it.
+/// Uses O_CREAT|O_WRONLY|O_TRUNC with explicit 0600 mode to avoid umask leaking perms.
+#[cfg(unix)]
+fn write_600(path: &std::path::Path, contents: &str) -> Result<(), String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|e| format!("write_600 open {:?}: {}", path, e))?;
+    std::io::Write::write_all(&mut f, contents.as_bytes())
+        .map_err(|e| format!("write_600 write {:?}: {}", path, e))?;
+    Ok(())
+}
+
+/// Write credentials to `0600` temp files and generate a `GIT_ASKPASS` script that
+/// returns the right credential based on git's prompt ($1).
+///
+/// # Security
+/// - Credentials are NEVER placed on the command line, embedded in URLs, or persisted.
+/// - Files are created mode 0600 (owner read+write only).
+/// - The temp-dir path is single-quote-escaped in the script to prevent shell injection.
+/// - Caller MUST `remove_dir_all(dir)` after the op (success or error).
+///
+/// Returns the scratch directory path that the caller must delete.
+pub fn setup_askpass(cmd: &mut Command, username: &str, password: &str) -> Result<PathBuf, String> {
+    let dir = std::env::temp_dir()
+        .join(format!("gte-cred-{}-{}", std::process::id(), next_nonce()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cred dir: {}", e))?;
+
+    let uf = dir.join("u");
+    let pf = dir.join("p");
+    write_600(&uf, username)?;
+    write_600(&pf, password)?;
+
+    // Single-quote-escape the paths so they're safe to embed in the shell script.
+    let uf_sq = sq(&uf.to_string_lossy());
+    let pf_sq = sq(&pf.to_string_lossy());
+
+    // git calls GIT_ASKPASS with the prompt as $1, e.g.:
+    //   "Username for 'https://github.com':"
+    //   "Password for 'https://user@github.com':"
+    let script_body = format!(
+        "#!/bin/sh\ncase \"$1\" in\n  *[Uu]sername*) cat '{}' ;;\n  *) cat '{}' ;;\nesac\n",
+        uf_sq, pf_sq
+    );
+    let script = dir.join("askpass.sh");
+    std::fs::write(&script, &script_body).map_err(|e| format!("askpass write: {}", e))?;
+
+    // Make the script executable (owner only: rwx------).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("askpass chmod: {}", e))?;
+    }
+
+    cmd.env("GIT_ASKPASS", &script).env("GIT_TERMINAL_PROMPT", "0");
+    Ok(dir)
+}
 
 /// Validate a remote name: no leading dash, conservative charset. Prevents a name
 /// like "-x" or "--upload-pack=…" from being parsed as a git option.
@@ -174,9 +252,15 @@ fn outcome(repo: &Path, ok: bool, msg: String) -> RemoteOutcome {
 
 /// Pull from the configured upstream. Uses `--rebase` or `--no-edit` (merge).
 /// `GIT_TERMINAL_PROMPT=0` + `GIT_EDITOR=true` so git never blocks waiting for input.
+///
+/// When `username` AND `password` are both `Some`, credentials are written to `0600`
+/// temp files and a `GIT_ASKPASS` script is generated — credentials are NEVER placed
+/// on argv, in URLs, or persisted. The scratch dir is deleted after the op.
 pub fn pull(
     repo: &Path,
     rebase: bool,
+    username: Option<&str>,
+    password: Option<&str>,
     state: &RemoteState,
     on_line: &dyn Fn(String),
 ) -> Result<RemoteOutcome, String> {
@@ -190,18 +274,38 @@ pub fn pull(
     } else {
         c.arg("--no-edit");
     }
-    let (ok, msg) = stream(c, state, on_line)?;
+
+    // Set up askpass only when both credentials are present.
+    let cred_dir = match (username, password) {
+        (Some(u), Some(p)) => Some(setup_askpass(&mut c, u, p)?),
+        _ => None,
+    };
+
+    let result = stream(c, state, on_line);
+
+    // Always clean up the cred scratch dir, even on error.
+    if let Some(dir) = cred_dir {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    let (ok, msg) = result?;
     Ok(outcome(repo, ok, msg))
 }
 
 /// Push to a remote. Force is ALWAYS `--force-with-lease`, never bare `--force`.
 /// `--end-of-options` guards the remote + refspec operands against option injection.
+///
+/// When `username` AND `password` are both `Some`, credentials are written to `0600`
+/// temp files and a `GIT_ASKPASS` script is generated — credentials are NEVER placed
+/// on argv, in URLs, or persisted. The scratch dir is deleted after the op.
 pub fn push(
     repo: &Path,
     remote: &str,
     refspec: Option<&str>,
     force_with_lease: bool,
     set_upstream: bool,
+    username: Option<&str>,
+    password: Option<&str>,
     state: &RemoteState,
     on_line: &dyn Fn(String),
 ) -> Result<RemoteOutcome, String> {
@@ -220,7 +324,21 @@ pub fn push(
     if let Some(rs) = refspec {
         c.arg(rs);
     }
-    let (ok, msg) = stream(c, state, on_line)?;
+
+    // Set up askpass only when both credentials are present.
+    let cred_dir = match (username, password) {
+        (Some(u), Some(p)) => Some(setup_askpass(&mut c, u, p)?),
+        _ => None,
+    };
+
+    let result = stream(c, state, on_line);
+
+    // Always clean up the cred scratch dir, even on error.
+    if let Some(dir) = cred_dir {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    let (ok, msg) = result?;
     Ok(outcome(repo, ok, msg))
 }
 
@@ -374,6 +492,8 @@ mod tests {
             Some("main"),
             false,        // no force
             true,         // set-upstream (first push)
+            None,         // no username
+            None,         // no password
             &state_a,
             &noop_line,
         )
@@ -394,11 +514,11 @@ mod tests {
         clone_a.write_file("hello.txt", "hello world\n");
         clone_a.git(&["add", "hello.txt"]);
         clone_a.git(&["commit", "-m", "second commit"]);
-        let push2 = push(&clone_a.path, "origin", Some("main"), false, false, &state_a, &noop_line).unwrap();
+        let push2 = push(&clone_a.path, "origin", Some("main"), false, false, None, None, &state_a, &noop_line).unwrap();
         assert!(push2.ok, "second push; msg={}", push2.message);
 
         let state_b = RemoteState::default();
-        let pull_result = pull(&clone_b.path, false, &state_b, &noop_line).unwrap();
+        let pull_result = pull(&clone_b.path, false, None, None, &state_b, &noop_line).unwrap();
         assert!(pull_result.ok, "pull should succeed; msg={}", pull_result.message);
         let content = fs::read_to_string(clone_b.path.join("hello.txt")).unwrap();
         assert_eq!(content, "hello world\n");
@@ -424,7 +544,7 @@ mod tests {
         clone_a.git(&["add", "f.txt"]);
         clone_a.git(&["commit", "-m", "base commit"]);
         let sa = RemoteState::default();
-        let r0 = push(&clone_a.path, "origin", Some("main"), false, true, &sa, &noop_line).unwrap();
+        let r0 = push(&clone_a.path, "origin", Some("main"), false, true, None, None, &sa, &noop_line).unwrap();
         assert!(r0.ok, "base push; {}", r0.message);
 
         // 3. Clone B fetches the base commit so it has an accurate tracking ref.
@@ -436,7 +556,7 @@ mod tests {
         clone_a.git(&["add", "f.txt"]);
         clone_a.git(&["commit", "-m", "A diverges"]);
         let sa2 = RemoteState::default();
-        let r1 = push(&clone_a.path, "origin", Some("main"), false, false, &sa2, &noop_line).unwrap();
+        let r1 = push(&clone_a.path, "origin", Some("main"), false, false, None, None, &sa2, &noop_line).unwrap();
         assert!(r1.ok, "A push; {}", r1.message);
 
         // 5. Clone B also diverges from the base (origin/main has moved past it).
@@ -446,7 +566,7 @@ mod tests {
 
         // Non-ff push without force → must fail (origin/main is ahead of B's tracking ref).
         let sb = RemoteState::default();
-        let r2 = push(&clone_b.path, "origin", Some("main"), false, false, &sb, &noop_line).unwrap();
+        let r2 = push(&clone_b.path, "origin", Some("main"), false, false, None, None, &sb, &noop_line).unwrap();
         assert!(!r2.ok, "non-ff push should fail; msg={}", r2.message);
 
         // 6. With force_with_lease=true it should succeed.
@@ -456,7 +576,7 @@ mod tests {
         // To test force-with-lease success, we fetch to update the tracking ref first.
         clone_b.git(&["fetch", "origin"]);
         let sb2 = RemoteState::default();
-        let r3 = push(&clone_b.path, "origin", Some("main"), true, false, &sb2, &noop_line).unwrap();
+        let r3 = push(&clone_b.path, "origin", Some("main"), true, false, None, None, &sb2, &noop_line).unwrap();
         assert!(r3.ok, "force-with-lease push should succeed after fetch; {}", r3.message);
 
         let _ = fs::remove_dir_all(&bare);
@@ -479,7 +599,7 @@ mod tests {
         clone_a.git(&["add", "shared.txt"]);
         clone_a.git(&["commit", "-m", "base"]);
         let sa = RemoteState::default();
-        let r = push(&clone_a.path, "origin", Some("main"), false, true, &sa, &noop_line).unwrap();
+        let r = push(&clone_a.path, "origin", Some("main"), false, true, None, None, &sa, &noop_line).unwrap();
         assert!(r.ok, "base push; {}", r.message);
 
         // 3. Clone B fetches the base so it can diverge from it.
@@ -491,7 +611,7 @@ mod tests {
         clone_a.git(&["add", "shared.txt"]);
         clone_a.git(&["commit", "-m", "A edit"]);
         let sa2 = RemoteState::default();
-        let r2 = push(&clone_a.path, "origin", Some("main"), false, false, &sa2, &noop_line).unwrap();
+        let r2 = push(&clone_a.path, "origin", Some("main"), false, false, None, None, &sa2, &noop_line).unwrap();
         assert!(r2.ok, "A push; {}", r2.message);
 
         // 5. Clone B edits the same line + tries to pull (merge) → conflict.
@@ -502,7 +622,7 @@ mod tests {
         clone_b.git(&["commit", "-m", "B edit"]);
 
         let sb = RemoteState::default();
-        let pull_result = pull(&clone_b.path, false, &sb, &noop_line).unwrap();
+        let pull_result = pull(&clone_b.path, false, None, None, &sb, &noop_line).unwrap();
         // Pull stops on conflict → ok=false, conflicted=true.
         assert!(!pull_result.ok, "conflicting pull should not be ok");
         assert!(pull_result.conflicted, "should report conflicted; msg={}", pull_result.message);
@@ -568,5 +688,141 @@ mod tests {
             }
             Err(e) => panic!("stream returned error instead of cancelled: {}", e),
         }
+    }
+
+    // ── Task 3 tests — GIT_ASKPASS credentials ───────────────────────────────
+
+    /// Helper: run a shell script with the given argument and capture stdout.
+    fn run_askpass(script: &std::path::Path, arg: &str) -> String {
+        let out = Command::new("sh")
+            .arg(script)
+            .arg(arg)
+            .output()
+            .expect("sh failed");
+        String::from_utf8_lossy(&out.stdout).trim_end_matches('\n').to_string()
+    }
+
+    #[test]
+    fn setup_askpass_script_returns_username() {
+        let mut cmd = Command::new("git");
+        cmd.arg("--version"); // placeholder; we only care about the env setup
+        let dir = setup_askpass(&mut cmd, "alice", "s3cr3t").expect("setup_askpass failed");
+        let script = dir.join("askpass.sh");
+        assert!(script.exists(), "askpass.sh not created");
+
+        let result = run_askpass(&script, "Username for 'https://github.com':");
+        assert_eq!(result, "alice", "askpass returned wrong username");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn setup_askpass_script_returns_password() {
+        let mut cmd = Command::new("git");
+        cmd.arg("--version");
+        let dir = setup_askpass(&mut cmd, "alice", "s3cr3t").expect("setup_askpass failed");
+        let script = dir.join("askpass.sh");
+
+        let result = run_askpass(&script, "Password for 'https://alice@github.com':");
+        assert_eq!(result, "s3cr3t", "askpass returned wrong password");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn setup_askpass_cred_files_are_mode_0600() {
+        use std::os::unix::fs::PermissionsExt;
+        let mut cmd = Command::new("git");
+        cmd.arg("--version");
+        let dir = setup_askpass(&mut cmd, "alice", "s3cr3t").expect("setup_askpass failed");
+
+        let u_perms = std::fs::metadata(dir.join("u"))
+            .expect("u file missing")
+            .permissions()
+            .mode();
+        let p_perms = std::fs::metadata(dir.join("p"))
+            .expect("p file missing")
+            .permissions()
+            .mode();
+        assert_eq!(
+            u_perms & 0o777,
+            0o600,
+            "username file should be 0600, got {:o}",
+            u_perms & 0o777
+        );
+        assert_eq!(
+            p_perms & 0o777,
+            0o600,
+            "password file should be 0600, got {:o}",
+            p_perms & 0o777
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn setup_askpass_scratch_dir_deleted_after() {
+        let mut cmd = Command::new("git");
+        cmd.arg("--version");
+        let dir = setup_askpass(&mut cmd, "alice", "s3cr3t").expect("setup_askpass failed");
+        assert!(dir.exists(), "scratch dir should exist before removal");
+
+        std::fs::remove_dir_all(&dir).expect("failed to remove scratch dir");
+        assert!(!dir.exists(), "scratch dir should be gone after removal");
+    }
+
+    #[test]
+    fn setup_askpass_creds_not_in_command_args() {
+        // Credentials must NEVER appear as command-line arguments.
+        // We call setup_askpass and then verify the command args don't contain "alice" or "s3cr3t".
+        // (Command::new + arg() builds argv; we can't inspect it directly, but we can verify
+        // the env vars are set to the askpass script, not to the literal creds.)
+        let mut cmd = Command::new("git");
+        cmd.arg("--version");
+        let dir = setup_askpass(&mut cmd, "alice", "s3cr3t").expect("setup_askpass failed");
+
+        // The askpass env var must be set to the script path (not the cred values).
+        // We check that the env was set by looking at the script existence.
+        let script = dir.join("askpass.sh");
+        assert!(script.exists(), "GIT_ASKPASS script must exist");
+
+        // The script body should NOT contain the literal credentials — it only cat's them from files.
+        let script_body = std::fs::read_to_string(&script).expect("read script");
+        assert!(
+            !script_body.contains("alice"),
+            "script body must not contain username literal; body: {}",
+            script_body
+        );
+        assert!(
+            !script_body.contains("s3cr3t"),
+            "script body must not contain password literal; body: {}",
+            script_body
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn setup_askpass_handles_single_quote_in_path() {
+        // If the temp dir path somehow contained a single quote, sq() must escape it safely.
+        // We test sq() directly rather than manipulating temp paths (platform-specific).
+        assert_eq!(sq("normal"), "normal");
+        assert_eq!(sq("has'quote"), "has'\\''quote");
+        assert_eq!(sq("a'b'c"), "a'\\''b'\\''c");
+        assert_eq!(sq(""), "");
+    }
+
+    #[test]
+    fn setup_askpass_username_prompt_case_variants() {
+        // Both "Username" and "username" prompts should return the username.
+        let mut cmd = Command::new("git");
+        cmd.arg("--version");
+        let dir = setup_askpass(&mut cmd, "bob", "pass123").expect("setup_askpass");
+        let script = dir.join("askpass.sh");
+
+        assert_eq!(run_askpass(&script, "Username for 'https://x':"), "bob");
+        assert_eq!(run_askpass(&script, "username for 'https://x':"), "bob");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

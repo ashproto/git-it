@@ -367,6 +367,8 @@ pub fn remote_set_url(repo: String, name: String, url: String) -> Result<(), Str
 pub async fn pull(
     repo: String,
     rebase: bool,
+    username: Option<String>,
+    password: Option<String>,
     on_event: Channel<String>,
     state: State<'_, Arc<ops_remote::RemoteState>>,
 ) -> Result<RemoteOutcome, String> {
@@ -374,7 +376,14 @@ pub async fn pull(
     let repo_path = PathBuf::from(repo);
     let chan = on_event.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        ops_remote::pull(&repo_path, rebase, &st, &|l| { let _ = chan.send(l); })
+        ops_remote::pull(
+            &repo_path,
+            rebase,
+            username.as_deref(),
+            password.as_deref(),
+            &st,
+            &|l| { let _ = chan.send(l); },
+        )
     })
     .await
     .map_err(|e| format!("join: {}", e))?
@@ -387,6 +396,8 @@ pub async fn push(
     refspec: Option<String>,
     force_with_lease: bool,
     set_upstream: bool,
+    username: Option<String>,
+    password: Option<String>,
     on_event: Channel<String>,
     state: State<'_, Arc<ops_remote::RemoteState>>,
 ) -> Result<RemoteOutcome, String> {
@@ -400,6 +411,8 @@ pub async fn push(
             refspec.as_deref(),
             force_with_lease,
             set_upstream,
+            username.as_deref(),
+            password.as_deref(),
             &st,
             &|l| { let _ = chan.send(l); },
         )

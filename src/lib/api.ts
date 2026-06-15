@@ -134,10 +134,21 @@ export const api = {
   remoteRemove: (repo: string, name: string) => invoke<void>("remote_remove", { repo, name }),
   remoteSetUrl: (repo: string, name: string, url: string) =>
     invoke<void>("remote_set_url", { repo, name, url }),
-  pull: (repo: string, rebase: boolean, onEvent: (line: string) => void) => {
+  pull: (
+    repo: string,
+    rebase: boolean,
+    onEvent: (line: string) => void,
+    creds?: { username: string; password: string },
+  ) => {
     const channel = new Channel<string>();
     channel.onmessage = onEvent;
-    return invoke<RemoteOutcome>("pull", { repo, rebase, onEvent: channel });
+    return invoke<RemoteOutcome>("pull", {
+      repo,
+      rebase,
+      username: creds?.username ?? null,
+      password: creds?.password ?? null,
+      onEvent: channel,
+    });
   },
   push: (
     repo: string,
@@ -146,6 +157,7 @@ export const api = {
     forceWithLease: boolean,
     setUpstream: boolean,
     onEvent: (line: string) => void,
+    creds?: { username: string; password: string },
   ) => {
     const channel = new Channel<string>();
     channel.onmessage = onEvent;
@@ -155,6 +167,8 @@ export const api = {
       refspec,
       forceWithLease,
       setUpstream,
+      username: creds?.username ?? null,
+      password: creds?.password ?? null,
       onEvent: channel,
     });
   },
