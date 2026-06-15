@@ -4,6 +4,7 @@
   import { contextMenu } from "../contextMenu.svelte";
   import { dialogs } from "../dialogs.svelte";
   import { gitActions } from "../gitActions";
+  import { amendDialog } from "../amendDialog.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import GraphGutter from "./GraphGutter.svelte";
 
@@ -26,12 +27,31 @@
     return d ? formatCommitDate(d, appState.dateFormat) : "";
   }
 
+  function currentBranchName(): string {
+    return appState.refsByKind.local.find((r) => r.isHead)?.name ?? "HEAD";
+  }
+
+  function doReset(sha: string, mode: "soft" | "mixed" | "hard") {
+    const branch = currentBranchName();
+    // graphCommits is newest-first; HEAD is index 0.
+    const headIdx = appState.graphCommits.findIndex((c) => c.refs.some((r) => r.is_head));
+    const targetIdx = appState.graphCommits.findIndex((c) => c.sha === sha);
+    // n = how many commits back from HEAD we're resetting to
+    const n = targetIdx >= 0 && headIdx >= 0 ? targetIdx - headIdx : 0;
+    const consequence =
+      `Move ${branch} back ${n} commit(s)` +
+      (mode === "hard" ? "; uncommitted changes will be lost." : ".");
+    gitActions.reset(sha, mode, consequence);
+  }
+
   function onRowContext(event: MouseEvent, sha: string, index: number) {
     event.preventDefault();
     appState.setCurrent(sha);
     appState.selected = new Set([sha]);
     anchorIndex = index;
     const short = sha.slice(0, 9);
+    const commit = commits[index];
+    const isHead = commit.refs.some((r) => r.is_head);
     contextMenu.openAt(event.clientX, event.clientY, [
       {
         label: `Checkout ${short} (detached)`,
@@ -68,6 +88,28 @@
         label: "Revert commit",
         action: () => gitActions.revert([sha], `Revert ${short}`),
       },
+      { separator: true },
+      {
+        label: `Reset ${currentBranchName()} here (mixed)`,
+        action: () => doReset(sha, "mixed"),
+      },
+      {
+        label: `Reset ${currentBranchName()} here (soft)`,
+        action: () => doReset(sha, "soft"),
+      },
+      {
+        label: `Reset ${currentBranchName()} here (hard)`,
+        danger: true,
+        action: () => doReset(sha, "hard"),
+      },
+      ...(isHead
+        ? [
+            {
+              label: "Amend this commit…",
+              action: () => amendDialog.openWith(sha, commit.subject),
+            },
+          ]
+        : []),
       { separator: true },
       { label: "Copy SHA", action: () => navigator.clipboard?.writeText(sha) },
     ]);

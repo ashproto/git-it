@@ -116,6 +116,16 @@
         />
         <span>Show month name</span>
       </label>
+      <hr class="divider" />
+      <p class="pop-title">Safety</p>
+      <label class="opt">
+        <input
+          type="checkbox"
+          checked={appState.autoBackupDestructive}
+          onchange={() => appState.setAutoBackupDestructive(!appState.autoBackupDestructive)}
+        />
+        <span>Create backup before destructive ops</span>
+      </label>
     </div>
   {/if}
 </div>
@@ -192,5 +202,10 @@
   .opt input:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
+  }
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 6px 0 4px;
   }
 </style>

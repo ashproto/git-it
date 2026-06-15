@@ -11,6 +11,8 @@
   import DateFormatMenu from "$lib/components/DateFormatMenu.svelte";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import UndoBar from "$lib/components/UndoBar.svelte";
+  import AmendDialog from "$lib/components/AmendDialog.svelte";
   import { gitActions } from "$lib/gitActions";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
   import { onMount } from "svelte";
@@ -54,6 +56,7 @@
       <Sidebar />
     </aside>
     <div class="main-col">
+      <UndoBar />
       <GraphHistory />
       <ConflictView />
       <CommitDetail />
@@ -67,6 +70,7 @@
 
   <ContextMenu />
   <Modal />
+  <AmendDialog />
 </main>
 
 <style>
