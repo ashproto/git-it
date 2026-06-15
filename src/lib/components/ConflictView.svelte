@@ -146,6 +146,11 @@
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
+  .done {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
   .cf {
     display: flex;
     gap: 8px;

@@ -58,7 +58,7 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
     appState.status = `${label} — done.`;
     return true;
   } catch (e) {
-    appState.status = `${label} failed: ${e}`;
+    appState.status = `${label} failed: ${firstLine(e)}`;
     return false;
   }
 }
