@@ -149,36 +149,43 @@
 
   <PrereqBanner />
 
-  <div class="shell">
-    <aside class="side-col">
-      {#if appState.repoSwitcherMode === "sidebar"}
-        <RepoList />
-      {/if}
-      <Sidebar />
-    </aside>
-    {#if isEmpty}
-      <!-- Empty state: no repos open yet -->
-      <div class="empty-state main-col">
-        <p class="empty-prompt">Open a repository to get started</p>
-        <button class="open-btn" onclick={openRepoFlow}>Open Repository…</button>
-      </div>
-    {:else}
-      <div class="main-col">
-        <UndoBar />
-        <GraphHistory />
-        <ConflictView />
-        {#if appState.workingCopySelected}
-          <WorkingCopyView />
+  <!-- Scrolling content area: the shell (sidebar + main columns) scrolls here;
+       the header/tabs/RemoteProgress/PrereqBanner above and StatusBar below are
+       fixed chrome that never scroll. -->
+  <div class="scroll-area">
+    <div class="scroll-inner">
+      <div class="shell">
+        <aside class="side-col">
+          {#if appState.repoSwitcherMode === "sidebar"}
+            <RepoList />
+          {/if}
+          <Sidebar />
+        </aside>
+        {#if isEmpty}
+          <!-- Empty state: no repos open yet -->
+          <div class="empty-state main-col">
+            <p class="empty-prompt">Open a repository to get started</p>
+            <button class="open-btn" onclick={openRepoFlow}>Open Repository…</button>
+          </div>
         {:else}
-          <CommitDetail />
+          <div class="main-col">
+            <UndoBar />
+            <GraphHistory />
+            <ConflictView />
+            {#if appState.workingCopySelected}
+              <WorkingCopyView />
+            {:else}
+              <CommitDetail />
+            {/if}
+            <div class="two-col">
+              <EditTabs />
+              <ApplyPanel />
+            </div>
+            <LogPanel />
+          </div>
         {/if}
-        <div class="two-col">
-          <EditTabs />
-          <ApplyPanel />
-        </div>
-        <LogPanel />
       </div>
-    {/if}
+    </div>
   </div>
 
   <ContextMenu />
@@ -290,9 +297,13 @@
   }
 
   main {
-    padding: 16px 18px;
-    max-width: 1400px;
-    margin: 0 auto;
+    /* App-shell: fills the full viewport as a flex column so fixed chrome
+       (header, tabs, status bar) never scrolls and the content area takes
+       all remaining height. */
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
   /* In glass mode the very top of the window must be a draggable element so
      the user can grab the strip around the traffic-light buttons. We move the
@@ -322,9 +333,11 @@
        a text selection that would preempt the window drag. */
     user-select: none;
     -webkit-user-select: none;
-    padding-bottom: 14px;
+    /* Horizontal padding matches the former main padding so the header content
+       lines up with the scrolling content area below it. */
+    padding: 16px 18px 14px;
     border-bottom: 1px solid var(--border);
-    margin-bottom: 14px;
+    flex-shrink: 0;
   }
   h1 {
     margin: 0;
@@ -426,6 +439,22 @@
   .mode-btn.active {
     background: var(--accent);
     color: #fff;
+  }
+
+  /* Scrolling content area: takes all remaining height and provides the single
+     vertical scroll container for the shell (sidebar + main columns). */
+  .scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  /* Inner wrapper centers content and restores the former main padding. */
+  .scroll-inner {
+    padding: 16px 18px;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   /* Empty state — centered "Open a repository" prompt in the main column area */
