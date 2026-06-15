@@ -1,6 +1,9 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
   import { parseISO, formatCommitDate } from "../dates";
+  import { contextMenu } from "../contextMenu.svelte";
+  import { dialogs } from "../dialogs.svelte";
+  import { gitActions } from "../gitActions";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import GraphGutter from "./GraphGutter.svelte";
 
@@ -21,6 +24,44 @@
   function newDateLabel(sha: string): string {
     const d = appState.newDates.get(sha);
     return d ? formatCommitDate(d, appState.dateFormat) : "";
+  }
+
+  function onRowContext(event: MouseEvent, sha: string, index: number) {
+    event.preventDefault();
+    appState.setCurrent(sha);
+    appState.selected = new Set([sha]);
+    anchorIndex = index;
+    const short = sha.slice(0, 9);
+    contextMenu.openAt(event.clientX, event.clientY, [
+      {
+        label: `Checkout ${short} (detached)`,
+        action: () => gitActions.checkout(sha, `Checkout ${short}`),
+      },
+      {
+        label: "Create branch here…",
+        action: async () => {
+          const name = await dialogs.prompt({
+            title: "New branch",
+            label: "Branch name",
+            placeholder: "feature/x",
+          });
+          if (name) gitActions.createBranch(name, sha);
+        },
+      },
+      {
+        label: "Create tag here…",
+        action: async () => {
+          const name = await dialogs.prompt({
+            title: "New tag",
+            label: "Tag name",
+            placeholder: "v1.0.0",
+          });
+          if (name) gitActions.createTag(name, sha);
+        },
+      },
+      { separator: true },
+      { label: "Copy SHA", action: () => navigator.clipboard?.writeText(sha) },
+    ]);
   }
 
   function onRowMouseDown(event: MouseEvent, sha: string, index: number) {
@@ -98,6 +139,7 @@
           class:edited={appState.newDates.has(commit.sha)}
           style={`height:${rowHeight}px`}
           onmousedown={(e) => onRowMouseDown(e, commit.sha, i)}
+          oncontextmenu={(e) => onRowContext(e, commit.sha, i)}
           onkeydown={(e) => { if (e.key === " " || e.key === "Enter") onRowMouseDown(e as unknown as MouseEvent, commit.sha, i); }}
         >
           <div class="spacer" style={`width:${gutterWidth}px`}></div>

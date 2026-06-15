@@ -8,6 +8,9 @@
   import LogPanel from "$lib/components/LogPanel.svelte";
   import PrereqBanner from "$lib/components/PrereqBanner.svelte";
   import DateFormatMenu from "$lib/components/DateFormatMenu.svelte";
+  import ContextMenu from "$lib/components/ContextMenu.svelte";
+  import Modal from "$lib/components/Modal.svelte";
+  import { gitActions } from "$lib/gitActions";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
   import { onMount } from "svelte";
   import { appState } from "$lib/store.svelte";
@@ -38,6 +41,7 @@
     {:else if detachedHead}
       <span class="branch-chip detached" title="Detached HEAD">detached HEAD</span>
     {/if}
+    <button class="fetch-btn" data-no-drag onclick={() => gitActions.fetch()}>Fetch</button>
     <DateFormatMenu />
   </header>
 
@@ -58,6 +62,9 @@
       <LogPanel />
     </div>
   </div>
+
+  <ContextMenu />
+  <Modal />
 </main>
 
 <style>
@@ -222,6 +229,20 @@
   .branch-chip.detached {
     color: var(--err);
     border-color: var(--err);
+  }
+  .fetch-btn {
+    margin-left: auto;
+    align-self: center;
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .fetch-btn:hover {
+    background: var(--btn-hover);
   }
   .shell {
     display: flex;
