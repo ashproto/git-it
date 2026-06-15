@@ -2,6 +2,7 @@
   import RepoLoader from "$lib/components/RepoLoader.svelte";
   import GraphHistory from "$lib/components/GraphHistory.svelte";
   import CommitDetail from "$lib/components/CommitDetail.svelte";
+  import ConflictView from "$lib/components/ConflictView.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import EditTabs from "$lib/components/EditTabs.svelte";
   import ApplyPanel from "$lib/components/ApplyPanel.svelte";
@@ -54,6 +55,7 @@
     </aside>
     <div class="main-col">
       <GraphHistory />
+      <ConflictView />
       <CommitDetail />
       <div class="two-col">
         <EditTabs />
