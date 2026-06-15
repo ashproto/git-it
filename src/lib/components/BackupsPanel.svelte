@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { appState } from "../store.svelte";
   import { api } from "../api";
   import type { BundleInfo, SafetyRef } from "../types";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
+
+  function isTauri(): boolean {
+    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  }
 
   let tab = $state<"bundles" | "safety">("bundles");
   let bundles = $state<BundleInfo[]>([]);
@@ -11,17 +14,13 @@
   let selectedBundle = $state<string | null>(null);
   let selectedRefs = $state<Set<string>>(new Set());
 
-  // Refresh bundles whenever the repo changes (also on initial mount).
+  // Refresh bundles whenever the repo changes — only in Tauri.
   $effect(() => {
-    if (appState.repo) refreshBundles();
-  });
-
-  onMount(() => {
-    refreshBundles();
+    if (isTauri() && appState.repo) refreshBundles();
   });
 
   async function refreshBundles() {
-    if (!appState.repo) return;
+    if (!isTauri() || !appState.repo) return;
     try {
       bundles = await api.listBundles(appState.repo);
     } catch (e) {
@@ -29,7 +28,7 @@
     }
   }
   async function refreshSafetyRefs() {
-    if (!appState.repo) return;
+    if (!isTauri() || !appState.repo) return;
     try {
       safetyRefs = await api.listSafetyRefs(appState.repo);
     } catch (e) {
@@ -132,7 +131,9 @@
     </div>
   {/snippet}
 
-  {#if tab === "bundles"}
+  {#if !isTauri()}
+    <p class="note">Desktop app only — backups are not available in the browser preview.</p>
+  {:else if tab === "bundles"}
     <div class="row">
       <button type="button" class="primary" onclick={createBundleNow}>Create bundle now</button>
       <button type="button" onclick={refreshBundles}>Refresh</button>
@@ -181,6 +182,12 @@
 </CollapsiblePanel>
 
 <style>
+  .note {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
   .mode-tabs {
     display: flex;
     gap: 2px;

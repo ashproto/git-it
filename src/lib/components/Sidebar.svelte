@@ -4,10 +4,7 @@
   import { dialogs } from "../dialogs.svelte";
   import { gitActions } from "../gitActions";
   import type { RefEntry } from "../types";
-  import BackupsPanel from "./BackupsPanel.svelte";
-  import ReflogPanel from "./ReflogPanel.svelte";
-  import StashPanel from "./StashPanel.svelte";
-  import RemotePanel from "./RemotePanel.svelte";
+  import RecoveryPanels from "./RecoveryPanels.svelte";
 
   const refs = $derived(appState.refsByKind);
 
@@ -181,18 +178,7 @@
     {/if}
   </section>
 
-  <div class="backups">
-    <BackupsPanel />
-  </div>
-  <div class="backups">
-    <ReflogPanel />
-  </div>
-  <div class="backups">
-    <StashPanel />
-  </div>
-  <div class="backups">
-    <RemotePanel />
-  </div>
+  <RecoveryPanels />
 </aside>
 
 <style>
@@ -298,7 +284,5 @@
     color: var(--text-muted);
     font-style: italic;
   }
-  .backups {
-    margin-top: 10px;
-  }
+
 </style>
