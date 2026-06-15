@@ -17,11 +17,20 @@ interface RowRec {
 /**
  * Turn a topologically ordered commit list (children before parents, as from
  * `git log --topo-order`) into per-row lane/edge layout. Pure + deterministic.
+ *
+ * Shared-commit rendering: when a commit has several children, each child reserves
+ * it in that child's own lane, so the commit shows one incoming line per child and
+ * they converge at its row (Fork-style). This applies uniformly to a merge's two
+ * parents (the classic diamond) and to criss-cross histories, so such a commit may
+ * occupy more than one transient lane before its row — intentional, not a glitch.
+ * See lanes.edgecases.test.ts for the locked behavior.
  */
 export function computeLanes(commits: LaneCommit[]): RowLayout[] {
   const lanes: LaneSlot[] = [];
   let nextColor = 0;
 
+  // Returns a reusable empty lane index, APPENDING a new lane if none is free
+  // (so it mutates `lanes`). Used to place a tip or open a merge lane.
   const firstFree = (): number => {
     for (let i = 0; i < lanes.length; i++) {
       if (lanes[i].sha === null) return i;
@@ -53,9 +62,14 @@ export function computeLanes(commits: LaneCommit[]): RowLayout[] {
 
     const forks: number[] = [];
     if (commit.parents.length === 0) {
-      lanes[lane] = { sha: null, color: 0 };
+      lanes[lane] = { sha: null, color: 0 }; // root: this lane ends here
     } else {
+      // First parent continues this commit's lane, keeping its color, so a
+      // first-parent chain stays one color all the way down.
       lanes[lane] = { sha: commit.parents[0], color };
+      // Extra parents (a merge) each take a lane: reuse one already reserved for
+      // that parent, else open a new lane + color. Recorded as `forks` so a
+      // branch edge is drawn out of this commit (in the edge pass below).
       for (let p = 1; p < commit.parents.length; p++) {
         const parent = commit.parents[p];
         let target = lanes.findIndex((s) => s.sha === parent);
@@ -81,6 +95,7 @@ export function computeLanes(commits: LaneCommit[]): RowLayout[] {
   for (let r = 0; r < recs.length; r++) {
     const rec = recs[r];
     const next = recs[r + 1];
+    // A Set so a merge listing the same parent twice still yields one branch edge.
     const forkSet = new Set(rec.forks);
     const edges: Edge[] = [];
 
