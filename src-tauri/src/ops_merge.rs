@@ -6,7 +6,7 @@ use std::process::Command;
 /// Run a git command, returning (success, combined-output) instead of erroring on
 /// a non-zero exit — so we can tell a *conflict* (expected, exit 1) apart from a
 /// hard error (bad ref, exit 128).
-fn run_status(cmd: &mut Command) -> Result<(bool, String), String> {
+pub fn run_status(cmd: &mut Command) -> Result<(bool, String), String> {
     let out = cmd.output().map_err(|e| format!("Failed to spawn command: {}", e))?;
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
@@ -46,11 +46,11 @@ fn sequencer_in_progress(repo: &Path, sub: &str) -> bool {
     control_file_exists(repo, head) || control_file_exists(repo, "sequencer")
 }
 
-/// Interpret a finished op. `sub` is the git subcommand ("merge"|"cherry-pick"|"revert").
+/// Interpret a finished op. `sub` is the git subcommand ("merge"|"cherry-pick"|"revert"|"rebase").
 /// Returns: clean success; an expected conflict (with files); or — for a cherry-pick/
 /// revert that stopped on an EMPTY (already-applied) commit, which otherwise strands
 /// the repo mid-sequence — auto-skip that commit and report a clean outcome; else Err.
-fn outcome_for(repo: &Path, sub: &str, ok: bool, message: String) -> Result<OpOutcome, String> {
+pub fn outcome_for(repo: &Path, sub: &str, ok: bool, message: String) -> Result<OpOutcome, String> {
     if ok {
         return Ok(OpOutcome { conflicted: false, files: vec![], message });
     }
@@ -58,6 +58,7 @@ fn outcome_for(repo: &Path, sub: &str, ok: bool, message: String) -> Result<OpOu
     if !files.is_empty() {
         return Ok(OpOutcome { conflicted: true, files, message });
     }
+    // Rebase relies only on the conflicted/err paths above; it has no empty-commit auto-skip.
     if (sub == "cherry-pick" || sub == "revert") && sequencer_in_progress(repo, sub) {
         // Non-zero, no conflicts, but the sequence is stuck — an empty/no-op commit.
         // Skip it so the user isn't stranded mid-operation.
@@ -126,6 +127,7 @@ fn op_subcommand(kind: &str) -> Result<&'static str, String> {
         "merge" => Ok("merge"),
         "cherry-pick" => Ok("cherry-pick"),
         "revert" => Ok("revert"),
+        "rebase" => Ok("rebase"),
         _ => Err(format!("Unknown operation: {}", kind)),
     }
 }

@@ -80,6 +80,10 @@ pub fn run() {
             commands::reset,
             commands::amend,
             commands::undo_op,
+            commands::rebase,
+            commands::rebase_todo_preview,
+            commands::rebase_interactive,
+            commands::reflog,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -8,7 +8,10 @@ import type {
   GraphCommit,
   OpOutcome,
   PrerequisiteCheck,
+  RebaseOutcome,
+  RebaseStep,
   Ref,
+  ReflogEntry,
   RepoStatus,
   RewriteOptions,
   RewriteResult,
@@ -93,4 +96,11 @@ export const api = {
   amend: (repo: string, message: string | null, resetAuthorDate: boolean, resetCommitterDate: boolean, autoBackup: boolean) =>
     invoke<RewriteResult>("amend", { repo, message, resetAuthorDate, resetCommitterDate, autoBackup }),
   undoOp: (repo: string, sha: string) => invoke<void>("undo_op", { repo, sha }),
+  rebase: (repo: string, onto: string, autoBackup: boolean) =>
+    invoke<RebaseOutcome>("rebase", { repo, onto, autoBackup }),
+  rebaseTodoPreview: (repo: string, base: string) =>
+    invoke<ReflogEntry[]>("rebase_todo_preview", { repo, base }),
+  rebaseInteractive: (repo: string, base: string, steps: RebaseStep[], autoBackup: boolean) =>
+    invoke<RebaseOutcome>("rebase_interactive", { repo, base, steps, autoBackup }),
+  reflog: (repo: string, limit = 50) => invoke<ReflogEntry[]>("reflog", { repo, limit }),
 };

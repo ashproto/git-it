@@ -4,7 +4,7 @@ use crate::ops;
 use crate::ops_merge;
 use crate::ops_rewrite;
 use crate::rewrite;
-use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, Ref, RepoStatus, RewriteOptions, RewriteResult, SafetyRef};
+use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RepoStatus, RewriteOptions, RewriteResult, SafetyRef};
 use std::path::PathBuf;
 use tauri::ipc::Channel;
 
@@ -234,4 +234,24 @@ pub fn amend(
 #[tauri::command]
 pub fn undo_op(repo: String, sha: String) -> Result<(), String> {
     crate::safety::restore(&PathBuf::from(repo), &sha)
+}
+
+#[tauri::command]
+pub fn rebase(repo: String, onto: String, auto_backup: bool) -> Result<RebaseOutcome, String> {
+    ops_rewrite::rebase(&PathBuf::from(repo), &onto, auto_backup)
+}
+
+#[tauri::command]
+pub fn rebase_todo_preview(repo: String, base: String) -> Result<Vec<ReflogEntry>, String> {
+    ops_rewrite::rebase_todo_preview(&PathBuf::from(repo), &base)
+}
+
+#[tauri::command]
+pub fn rebase_interactive(repo: String, base: String, steps: Vec<RebaseStep>, auto_backup: bool) -> Result<RebaseOutcome, String> {
+    ops_rewrite::rebase_interactive(&PathBuf::from(repo), &base, &steps, auto_backup)
+}
+
+#[tauri::command]
+pub fn reflog(repo: String, limit: u32) -> Result<Vec<ReflogEntry>, String> {
+    ops_rewrite::reflog(&PathBuf::from(repo), limit)
 }
