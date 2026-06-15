@@ -33,13 +33,26 @@ pub fn amend(
 ) -> Result<RewriteResult, String> {
     let bundle = safety::maybe_backup(repo, auto_backup)?;
     let undo = safety::snapshot(repo, "amend")?;
+
+    // When asked to PRESERVE the committer date, capture it before the amend rewrites it.
+    // `git commit --amend` always resets the committer date to now unless we pin it via
+    // GIT_COMMITTER_DATE.  The author date is controlled by --date=now / no flag.
+    let preserved_committer_date: Option<String> = if !reset_committer_date {
+        let mut gc = Command::new("git");
+        gc.current_dir(repo).args(["log", "-1", "--format=%cI", "HEAD"]);
+        git_ops::run(&mut gc).ok().map(|(out, _)| out.trim().to_string())
+    } else {
+        None
+    };
+
     let mut c = Command::new("git");
     c.current_dir(repo);
-    // Clear any inherited date env vars so --date=now / current time are authoritative.
-    if reset_author_date || reset_committer_date {
-        c.env_remove("GIT_AUTHOR_DATE");
-        c.env_remove("GIT_COMMITTER_DATE");
+
+    // Pin the committer date to the pre-amend value when the flag is OFF.
+    if let Some(ref cd) = preserved_committer_date {
+        c.env("GIT_COMMITTER_DATE", cd);
     }
+
     c.arg("commit").arg("--amend");
     match message {
         Some(m) => {
@@ -93,6 +106,12 @@ pub fn rebase_todo_preview(repo: &Path, base: &str) -> Result<Vec<ReflogEntry>, 
 
 const REBASE_ACTIONS: &[&str] = &["pick", "reword", "edit", "squash", "fixup", "drop"];
 
+/// Shell-safe single-quote a path for use in generated sh scripts.
+/// Replaces every `'` in the path with `'\''` so the result is safe inside `'…'`.
+fn sq(p: &std::path::Path) -> String {
+    format!("'{}'", p.display().to_string().replace('\'', "'\\''"))
+}
+
 /// Interactive rebase driven entirely non-interactively. `base` is the commit BELOW the
 /// edited range (git rebase -i <base> edits base..HEAD). `steps` are in final todo order.
 /// reword becomes `pick` + a git-rebase run-command line (`x git commit --amend -F <file>`)
@@ -107,9 +126,17 @@ pub fn rebase_interactive(repo: &Path, base: &str, steps: &[RebaseStep], auto_ba
     let bundle = safety::maybe_backup(repo, auto_backup)?;
     let undo = safety::snapshot(repo, "rebase")?;
 
-    // Scratch dir for the todo, the seq-editor script, and reword message files.
-    let suffix = undo.sha.get(0..7).unwrap_or("x");
-    let dir = std::env::temp_dir().join(format!("gte-rebase-{}-{}", std::process::id(), suffix));
+    // Scratch dir: stable per-(process, repo) so msg files survive a mid-rebase
+    // conflict pause and `--continue` can still find them.  Using a hash of the
+    // canonical repo path keeps parallel test repos (each a different path) from
+    // colliding even though they share a pid.
+    // The leftover from a prior conflicted run is reclaimed here before recreating.
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    repo.hash(&mut h);
+    let repo_hash = h.finish();
+    let dir = std::env::temp_dir().join(format!("gte-rebase-{}-{:x}", std::process::id(), repo_hash));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).map_err(|e| format!("scratch dir: {}", e))?;
 
@@ -123,7 +150,7 @@ pub fn rebase_interactive(repo: &Path, base: &str, steps: &[RebaseStep], auto_ba
                 let mf = dir.join(format!("msg-{}", msg_i));
                 fs::write(&mf, s.message.clone().unwrap_or_default()).map_err(|e| format!("msg file: {}", e))?;
                 // `x` is git's documented shorthand for the run-command todo verb.
-                todo.push_str(&format!("x git commit --amend -F '{}'\n", mf.display()));
+                todo.push_str(&format!("x git commit --amend -F {}\n", sq(&mf)));
                 msg_i += 1;
             }
             other => {
@@ -136,7 +163,7 @@ pub fn rebase_interactive(repo: &Path, base: &str, steps: &[RebaseStep], auto_ba
 
     // GIT_SEQUENCE_EDITOR script: copy our todo over the file git passes ($1).
     let seq = dir.join("seq-editor.sh");
-    fs::write(&seq, format!("#!/bin/sh\ncp '{}' \"$1\"\n", todo_path.display()))
+    fs::write(&seq, format!("#!/bin/sh\ncp {} \"$1\"\n", sq(&todo_path)))
         .map_err(|e| format!("seq script: {}", e))?;
     #[cfg(unix)]
     {
@@ -154,7 +181,13 @@ pub fn rebase_interactive(repo: &Path, base: &str, steps: &[RebaseStep], auto_ba
         .arg(base);
     let (ok, msg) = ops_merge::run_status(&mut c)?;
     let outcome = ops_merge::outcome_for(repo, "rebase", ok, msg)?;
-    let _ = fs::remove_dir_all(&dir); // best-effort cleanup
+    // Only clean up when the rebase actually finished. If still conflicted, leave the
+    // msg-N files in place so the pending `x git commit --amend -F <file>` todo line
+    // can complete after `git rebase --continue`. The dir is reclaimed at the top of
+    // the NEXT call to rebase_interactive.
+    if !outcome.conflicted {
+        let _ = fs::remove_dir_all(&dir);
+    }
     Ok(RebaseOutcome { outcome, undo, bundle })
 }
 
@@ -372,5 +405,102 @@ mod tests {
         let log = reflog(&r.path, 10).unwrap();
         assert!(log.len() >= 2);
         assert!(log[0].selector.starts_with("HEAD@{"));
+    }
+
+    // Fix 2: prove that reword message files survive a mid-rebase conflict so that
+    // after `git rebase --continue` the reworded subject actually lands.
+    //
+    // Scenario (all commits touch file "f" except the last which adds file "g"):
+    //   base  → A (f="a\n")  → B (f="b\n")  → C_orig (g="g\n")   [on main/HEAD]
+    //
+    // Interactive rebase of base..HEAD reorders so B replays before A:
+    //   pick B, pick A, reword C_orig → "NEW C"
+    //
+    // Replaying B then A on the same file "f" guarantees a conflict (A was the
+    // parent of B in the original history, so applying B first then A creates a
+    // textual conflict on "f").  C touches only "g" so the reword step is safe.
+    //
+    // The test resolves the conflict in a bounded loop using continue_op, then
+    // asserts HEAD subject == "NEW C".
+    #[test]
+    fn interactive_reword_after_conflict_survives_continue() {
+        let r = TempRepo::new();
+        // base commit — anchor point, no content we'll conflict on
+        r.commit("base", "0\n", "base");
+        let base = r.rev("HEAD");
+
+        // A: sets f to "a\n"
+        r.commit("f", "a\n", "A");
+        let sha_a = r.rev("HEAD");
+
+        // B: sets f to "b\n" (diverges from A's value)
+        r.commit("f", "b\n", "B");
+        let sha_b = r.rev("HEAD");
+
+        // C: touches a different file so the reword step is conflict-free
+        r.commit("g", "g\n", "C_orig");
+        let sha_c = r.rev("HEAD");
+
+        // Reorder: pick B first, then A — this conflicts on "f" because B's parent
+        // recorded "a\n" but now its parent is base which has no "f" at all, so
+        // applying B (patch: "" → "b\n") then A (patch: "a\n" → "b\n"… actually
+        // A's patch is base→"a\n", B's patch is A→"b\n"; replaying B before A means
+        // B's patch applies cleanly (base has no f, adds f="b\n"), but then A's patch
+        // tries to set f="a\n" where B already wrote "b\n" → conflict on "f").
+        let steps = vec![
+            RebaseStep { action: "pick".into(),   sha: sha_b.clone(), message: None },
+            RebaseStep { action: "pick".into(),   sha: sha_a.clone(), message: None },
+            RebaseStep { action: "reword".into(), sha: sha_c.clone(), message: Some("NEW C".into()) },
+        ];
+
+        let out = rebase_interactive(&r.path, &base, &steps, false).unwrap();
+        assert!(out.outcome.conflicted, "reordering B before A must conflict on file 'f'");
+
+        // Resolve in a bounded loop: write a definitive "resolved\n" and continue.
+        let mut final_outcome = out.outcome;
+        for _ in 0..5 {
+            if !final_outcome.conflicted { break; }
+            // Write resolved content over the conflicted file.
+            fs::write(r.path.join("f"), "resolved\n").unwrap();
+            // Stage the resolution.
+            let mut add = Command::new("git");
+            add.current_dir(&r.path).args(["add", "--", "f"]);
+            add.output().unwrap();
+            // Continue the rebase.
+            final_outcome = crate::ops_merge::continue_op(&r.path, "rebase").unwrap();
+        }
+
+        assert!(!final_outcome.conflicted, "rebase should complete after resolving the conflict");
+        assert_eq!(r.subject("HEAD"), "NEW C",
+            "reword message must survive the conflict pause (Fix 1: conditional cleanup)");
+    }
+
+    // Fix 4: prove that amend(reset_author_date=false, reset_committer_date=false)
+    // leaves both dates identical to the pre-amend values.
+    #[test]
+    fn amend_preserves_dates_when_flags_off() {
+        let r = TempRepo::new();
+        // commit() sets both dates to 2020-01-01T00:00:00+00:00 via env.
+        r.commit("f", "1", "original");
+
+        let get_date = |fmt: &str| -> String {
+            let o = Command::new("git")
+                .current_dir(&r.path)
+                .args(["log", "-1", &format!("--format={}", fmt)])
+                .output().unwrap();
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        };
+
+        let before_ad = get_date("%aI");
+        let before_cd = get_date("%cI");
+
+        // Amend with both reset flags OFF — message changes, dates must not.
+        amend(&r.path, Some("reworded"), false, false, false).unwrap();
+
+        let after_ad = get_date("%aI");
+        let after_cd = get_date("%cI");
+
+        assert_eq!(before_ad, after_ad, "author date must be preserved when reset_author_date=false");
+        assert_eq!(before_cd, after_cd, "committer date must be preserved when reset_committer_date=false (Fix 3)");
     }
 }
