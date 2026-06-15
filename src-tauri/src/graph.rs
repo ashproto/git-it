@@ -140,6 +140,67 @@ pub fn load_graph(repo: &Path, count: u32, skip: u32) -> Result<Vec<GraphCommit>
     Ok(commits)
 }
 
+/// Parse a `git for-each-ref %(upstream:track)` value like "[ahead 2, behind 1]"
+/// into (ahead, behind). Empty / "[gone]" -> (0, 0).
+fn parse_track(track: &str) -> (u32, u32) {
+    let mut ahead = 0;
+    let mut behind = 0;
+    for part in track.trim_matches(|c| c == '[' || c == ']').split(',') {
+        let part = part.trim();
+        if let Some(n) = part.strip_prefix("ahead ") {
+            ahead = n.trim().parse().unwrap_or(0);
+        } else if let Some(n) = part.strip_prefix("behind ") {
+            behind = n.trim().parse().unwrap_or(0);
+        }
+    }
+    (ahead, behind)
+}
+
+/// All branches (local + remote-tracking) and tags, for the sidebar.
+pub fn list_refs(repo: &Path) -> Result<Vec<Ref>, String> {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(repo)
+        .arg("for-each-ref")
+        .arg("--format=%(refname)%00%(objectname)%00%(*objectname)%00%(upstream:short)%00%(upstream:track)")
+        .args(["refs/heads", "refs/remotes", "refs/tags"]);
+    let (out, _) = git_ops::run(&mut cmd)?;
+
+    let mut refs = Vec::new();
+    for line in out.lines() {
+        let p: Vec<&str> = line.split('\u{0}').collect();
+        if p.len() < 5 {
+            continue;
+        }
+        let refname = p[0];
+        let obj = p[1];
+        let deref = p[2];
+        let upstream_short = p[3];
+        let track = p[4];
+
+        let (kind, name) = if let Some(n) = refname.strip_prefix("refs/heads/") {
+            (RefKind::Local, n.to_string())
+        } else if let Some(n) = refname.strip_prefix("refs/remotes/") {
+            (RefKind::Remote, n.to_string())
+        } else if let Some(n) = refname.strip_prefix("refs/tags/") {
+            (RefKind::Tag, n.to_string())
+        } else {
+            continue;
+        };
+        if kind == RefKind::Remote && name.ends_with("/HEAD") {
+            continue;
+        }
+        let target_sha = if deref.is_empty() { obj.to_string() } else { deref.to_string() };
+        let upstream = if upstream_short.is_empty() {
+            None
+        } else {
+            Some(upstream_short.to_string())
+        };
+        let (ahead, behind) = parse_track(track);
+        refs.push(Ref { name, kind, target_sha, upstream, ahead, behind });
+    }
+    Ok(refs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,5 +313,28 @@ mod tests {
     fn load_graph_empty_repo_is_empty() {
         let r = TempRepo::new();
         assert!(load_graph(&r.path, 50, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_track_reads_ahead_behind() {
+        assert_eq!(parse_track("[ahead 2, behind 1]"), (2, 1));
+        assert_eq!(parse_track("[ahead 3]"), (3, 0));
+        assert_eq!(parse_track("[behind 4]"), (0, 4));
+        assert_eq!(parse_track("[gone]"), (0, 0));
+        assert_eq!(parse_track(""), (0, 0));
+    }
+
+    #[test]
+    fn list_refs_lists_branches_and_tags() {
+        let r = merge_fixture();
+        let refs = list_refs(&r.path).unwrap();
+
+        let main = refs.iter().find(|x| x.name == "main").unwrap();
+        assert_eq!(main.kind, RefKind::Local);
+        assert_eq!(main.target_sha, r.rev("main"));
+
+        assert!(refs.iter().any(|x| x.name == "feature" && x.kind == RefKind::Local));
+        assert!(refs.iter().any(|x| x.name == "v1" && x.kind == RefKind::Tag));
+        assert!(!refs.iter().any(|x| x.kind == RefKind::Remote));
     }
 }
