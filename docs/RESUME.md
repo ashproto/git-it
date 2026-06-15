@@ -8,15 +8,16 @@
 Building `git-it` into a full Fork/SourceTree-style
 git client. Designed up-front; built in reviewed, merged phases.
 
-**Done & on `main`** (35 Rust tests + 25 Vitest, `cargo check`/`svelte-check` clean):
+**Done & on `main`** (49 Rust tests + 25 Vitest, `cargo check`/`svelte-check` clean):
 - Up-front design (6-phase spec).
 - Phase 1 — commit graph: lane engine (pure TS) · Rust data layer · rendered graph view.
 - 3-pane shell: sidebar ref tree · graph · bottom commit-detail · branch chip.
 - Phase 2 — nav/ref operations: checkout, branch/tag CRUD, fetch + right-click menus & dialogs.
 - Phase 3a — integrate ops backend: merge / cherry-pick / revert + conflict handling.
 - Phase 3b — conflict-resolution UI: `ConflictView` panel · gitActions `OpOutcome` wrappers · merge (plain/no-ff) + cherry-pick + revert context menus. (Squash merge deferred to Phase 5.)
+- Phase 4 — history rewriting: `safety.rs` (snapshot/restore/backup) · reset (soft/mixed/hard) · amend (msg + date reset/preserve) · rebase onto · **interactive rebase** (RebaseTodo editor; headless via `GIT_SEQUENCE_EDITOR` + reword as `x …--amend -F`) · configurable auto-backup + confirm dialogs · **two-layer undo** (one-click snapshot + reflog browser). Rebase conflicts reuse the Phase 3b ConflictView (`op_subcommand` now handles "rebase").
 
-**NEXT: Phase 4** — history rewriting (rebase / reset / amend). Then Phases 5–6.
+**NEXT: Phase 5** — working copy + diff viewer (status/stage/unstage/discard/diff/commit/stash; bundle a highlighter via npm, not CDN; also the deferred squash-merge commit-UI). Then Phase 6 (remote: pull/push).
 
 ## Process (FOLLOW THIS — it's been catching real bugs)
 Per phase: `writing-plans` (spec the slice) → build → **adversarial code review** (Agent `superpowers:code-reviewer`, model opus) → fix findings → merge to `main`.
