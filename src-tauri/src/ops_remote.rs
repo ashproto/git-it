@@ -151,13 +151,17 @@ pub struct RemoteState {
     pub busy: AtomicBool,
 }
 
-/// Returns true if the git output looks like an authentication failure.
+/// Returns true if the git output looks like an HTTPS authentication failure.
+///
+/// Deliberately excludes bare "permission denied" because SSH key failures
+/// ("Permission denied (publickey)") produce that phrase — but askpass cannot
+/// supply an SSH key, so prompting for credentials would be useless and confusing.
+/// SSH failures are correctly left as plain (non-auth) errors.
 pub fn looks_like_auth_failure(s: &str) -> bool {
     let l = s.to_lowercase();
     l.contains("authentication failed")
         || l.contains("could not read username")
         || l.contains("could not read password")
-        || l.contains("permission denied")
         || l.contains("terminal prompts disabled")
         || l.contains("invalid username or password")
         || l.contains("fatal: authentication")
@@ -649,12 +653,20 @@ mod tests {
 
     #[test]
     fn looks_like_auth_failure_detects_patterns() {
+        // HTTPS auth failure phrases must be detected.
         assert!(looks_like_auth_failure("Authentication failed for 'https://github.com/'"));
         assert!(looks_like_auth_failure("fatal: could not read Username"));
         assert!(looks_like_auth_failure("fatal: could not read Password for 'https://...':"));
-        assert!(looks_like_auth_failure("Permission denied (publickey)"));
         assert!(looks_like_auth_failure("terminal prompts disabled"));
         assert!(looks_like_auth_failure("Invalid username or password"));
+        assert!(looks_like_auth_failure("fatal: Authentication failed"));
+
+        // SSH key failures must NOT be classified as auth failures — askpass cannot
+        // supply an SSH key, so triggering the credentials prompt would be useless.
+        assert!(!looks_like_auth_failure("Permission denied (publickey)."));
+        assert!(!looks_like_auth_failure("git@github.com: Permission denied (publickey)."));
+
+        // Unrelated errors must not be classified as auth failures.
         assert!(!looks_like_auth_failure("Everything is fine"));
         assert!(!looks_like_auth_failure("error: failed to push some refs"));
     }

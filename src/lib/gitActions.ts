@@ -269,6 +269,7 @@ async function runRemote(
   label: string,
   fn: (onLine: (l: string) => void, creds?: { username: string; password: string }) => Promise<RemoteOutcome>,
 ): Promise<boolean> {
+  if (appState.remoteOpActive) { appState.status = "A remote operation is already in progress."; return false; }
   if (!isTauri()) {
     appState.status = "That action needs the desktop app (not the browser preview).";
     return false;

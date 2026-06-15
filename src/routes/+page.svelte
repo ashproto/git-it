@@ -64,19 +64,19 @@
       >Fetch</button>
       <button
         class="fetch-btn"
-        disabled={!hasRemotes}
+        disabled={!hasRemotes || appState.remoteOpActive}
         title={hasRemotes ? "Pull changes from remote" : noRemoteTitle}
         onclick={() => gitActions.pull()}
       >Pull</button>
       <div class="push-group">
         <button
           class="fetch-btn push-main"
-          disabled={!hasRemotes}
+          disabled={!hasRemotes || appState.remoteOpActive}
           title={hasRemotes ? "Push to remote" : noRemoteTitle}
           onclick={() => gitActions.push()}
         >Push</button><button
           class="fetch-btn push-arrow"
-          disabled={!hasRemotes}
+          disabled={!hasRemotes || appState.remoteOpActive}
           title={hasRemotes ? "Force push with lease" : noRemoteTitle}
           onclick={async () => {
             if (!hasRemotes) return;

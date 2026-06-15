@@ -3,14 +3,18 @@
 
   let inputValue = $state("");
   let inputEl = $state<HTMLInputElement | undefined>();
+  let credUsernameEl = $state<HTMLInputElement | undefined>();
 
   // When a prompt opens, seed + focus the field.
+  // When a credentials dialog opens, focus the username input.
   $effect(() => {
     const s = dialogs.state;
     if (s.kind === "prompt") {
       inputValue = s.value;
       inputEl?.focus();
       inputEl?.select();
+    } else if (s.kind === "credentials") {
+      credUsernameEl?.focus();
     }
   });
 
@@ -152,6 +156,7 @@
       <label class="lbl" for="cred-username">Username</label>
       <input
         id="cred-username"
+        bind:this={credUsernameEl}
         type="text"
         autocomplete="username"
         value={dialogs.state.username}
