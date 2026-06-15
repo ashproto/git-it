@@ -8,7 +8,9 @@ pub fn checkout(repo: &Path, target: &str) -> Result<String, String> {
     let mut c = Command::new("git");
     c.current_dir(repo)
         .env("GIT_TERMINAL_PROMPT", "0")
-        .args(["checkout", target]);
+        // --end-of-options so a target like "-f" can't smuggle in a flag that
+        // would discard uncommitted work.
+        .args(["checkout", "--end-of-options", target]);
     let (o, e) = git_ops::run(&mut c)?;
     Ok(format!("{}{}", o, e).trim().to_string())
 }
@@ -16,14 +18,15 @@ pub fn checkout(repo: &Path, target: &str) -> Result<String, String> {
 /// Create a branch at `start_point` without switching to it.
 pub fn create_branch(repo: &Path, name: &str, start_point: &str) -> Result<(), String> {
     let mut c = Command::new("git");
-    c.current_dir(repo).args(["branch", name, start_point]);
+    // `--` so an option-like name (e.g. "-D") is treated as an operand, not a flag.
+    c.current_dir(repo).args(["branch", "--", name, start_point]);
     git_ops::run(&mut c)?;
     Ok(())
 }
 
 pub fn rename_branch(repo: &Path, old: &str, new: &str) -> Result<(), String> {
     let mut c = Command::new("git");
-    c.current_dir(repo).args(["branch", "-m", old, new]);
+    c.current_dir(repo).args(["branch", "-m", "--", old, new]);
     git_ops::run(&mut c)?;
     Ok(())
 }
@@ -33,7 +36,7 @@ pub fn rename_branch(repo: &Path, old: &str, new: &str) -> Result<(), String> {
 pub fn delete_branch(repo: &Path, name: &str, force: bool) -> Result<(), String> {
     let flag = if force { "-D" } else { "-d" };
     let mut c = Command::new("git");
-    c.current_dir(repo).args(["branch", flag, name]);
+    c.current_dir(repo).args(["branch", flag, "--", name]);
     git_ops::run(&mut c)?;
     Ok(())
 }
@@ -45,7 +48,7 @@ pub fn create_tag(repo: &Path, name: &str, target: &str, message: Option<&str>) 
     if let Some(m) = message {
         c.args(["-a", "-m", m]);
     }
-    c.args([name, target]);
+    c.args(["--", name, target]);
     git_ops::run(&mut c)?;
     Ok(())
 }
@@ -64,6 +67,9 @@ pub fn fetch(repo: &Path, remote: Option<&str>) -> Result<String, String> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .args(["fetch", "--prune"]);
     if let Some(r) = remote {
+        // --end-of-options so a remote like "--upload-pack=<cmd>" can't inject a flag
+        // (that vector is arbitrary command execution).
+        c.arg("--end-of-options");
         c.arg(r);
     }
     let (o, e) = git_ops::run(&mut c)?;
@@ -254,5 +260,44 @@ mod tests {
 
         let _ = fs::remove_dir_all(&bare);
         let _ = fs::remove_dir_all(&local);
+    }
+
+    // --- option-injection regressions (must fail safely) ---
+
+    #[test]
+    fn create_branch_rejects_option_like_name() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        r.git(&["checkout", "-q", "-b", "victim"]);
+        r.commit("b.txt", "B"); // unmerged work that `git branch -D victim` would destroy
+        r.git(&["checkout", "-q", "main"]);
+        assert!(
+            create_branch(&r.path, "-D", "victim").is_err(),
+            "an option-like branch name must not be parsed as a flag"
+        );
+        assert!(r.has_ref("refs/heads/victim"), "victim branch must survive");
+    }
+
+    #[test]
+    fn fetch_rejects_option_like_remote() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let marker = unique_dir("pwned");
+        let payload = format!("--upload-pack=touch {}", marker.to_str().unwrap());
+        let _ = fetch(&r.path, Some(&payload));
+        assert!(!marker.exists(), "an option-injected --upload-pack payload must not run");
+    }
+
+    #[test]
+    fn checkout_rejects_option_like_target() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        fs::write(r.path.join("a.txt"), "DIRTY").unwrap();
+        let _ = checkout(&r.path, "-f");
+        assert_eq!(
+            fs::read_to_string(r.path.join("a.txt")).unwrap(),
+            "DIRTY",
+            "an option-like checkout target must not discard uncommitted work"
+        );
     }
 }
