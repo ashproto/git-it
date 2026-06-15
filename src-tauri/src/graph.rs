@@ -1,7 +1,7 @@
 use crate::git_ops;
 use crate::types::{GraphCommit, HeadInfo, Ref, RefDecoration, RefKind, RepoStatus};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// The short branch HEAD points at, or None when detached / unborn.
@@ -215,19 +215,40 @@ fn count_xy(rest: &str, staged: &mut u32, unstaged: &mut u32) {
     }
 }
 
-/// Detect an in-progress multi-step operation from control files under .git.
+/// Resolve a control-file path under the git dir, correct for linked worktrees
+/// (where `.git` is a file pointer, not a directory). Falls back to a plain
+/// `.git/<name>` join if `git rev-parse` is unavailable.
+fn git_path(repo: &Path, name: &str) -> PathBuf {
+    if let Ok(out) = Command::new("git")
+        .current_dir(repo)
+        .args(["rev-parse", "--git-path", name])
+        .output()
+    {
+        if out.status.success() {
+            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !p.is_empty() {
+                let pb = PathBuf::from(&p);
+                return if pb.is_absolute() { pb } else { repo.join(pb) };
+            }
+        }
+    }
+    repo.join(".git").join(name)
+}
+
+/// Detect an in-progress multi-step operation from the repo's control files
+/// (worktree-aware via `git rev-parse --git-path`).
 fn detect_operation(repo: &Path) -> Option<String> {
-    let g = repo.join(".git");
-    if g.join("MERGE_HEAD").exists() {
+    let exists = |name: &str| git_path(repo, name).exists();
+    if exists("MERGE_HEAD") {
         return Some("merge".to_string());
     }
-    if g.join("rebase-merge").exists() || g.join("rebase-apply").exists() {
+    if exists("rebase-merge") || exists("rebase-apply") {
         return Some("rebase".to_string());
     }
-    if g.join("CHERRY_PICK_HEAD").exists() {
+    if exists("CHERRY_PICK_HEAD") {
         return Some("cherry-pick".to_string());
     }
-    if g.join("REVERT_HEAD").exists() {
+    if exists("REVERT_HEAD") {
         return Some("revert".to_string());
     }
     None
@@ -443,5 +464,46 @@ mod tests {
 
         r.git(&["add", "new.txt"]);
         assert_eq!(repo_status(&r.path).unwrap().staged, 1);
+    }
+
+    #[test]
+    fn repo_status_detects_in_progress_merge() {
+        let r = TempRepo::new();
+        r.write_commit("base.txt", "base");
+        r.git(&["checkout", "-q", "-b", "side"]);
+        r.write_commit("side.txt", "side");
+        r.git(&["checkout", "-q", "main"]);
+        r.write_commit("main.txt", "main");
+        // --no-commit leaves the merge in progress (MERGE_HEAD set), no conflict.
+        let _ = Command::new("git")
+            .current_dir(&r.path)
+            .args(["merge", "--no-commit", "--no-ff", "side"])
+            .env("GIT_AUTHOR_DATE", "2020-01-01T00:00:00 +0000")
+            .env("GIT_COMMITTER_DATE", "2020-01-01T00:00:00 +0000")
+            .output()
+            .unwrap();
+        assert_eq!(repo_status(&r.path).unwrap().operation.as_deref(), Some("merge"));
+    }
+
+    #[test]
+    fn detect_operation_resolves_linked_worktree_gitdir() {
+        let r = TempRepo::new();
+        r.write_commit("base.txt", "base");
+        r.git(&["checkout", "-q", "-b", "side"]);
+        r.write_commit("side.txt", "side");
+        r.git(&["checkout", "-q", "main"]);
+        // Linked worktree inside the repo dir so TempRepo::drop cleans it up.
+        let wt = r.path.join("wt");
+        r.git(&["worktree", "add", "-q", "-b", "wtbranch", wt.to_str().unwrap(), "main"]);
+        // In-progress merge INSIDE the worktree, whose .git is a file pointer.
+        let _ = Command::new("git")
+            .current_dir(&wt)
+            .args(["merge", "--no-commit", "--no-ff", "side"])
+            .env("GIT_AUTHOR_DATE", "2020-01-01T00:00:00 +0000")
+            .env("GIT_COMMITTER_DATE", "2020-01-01T00:00:00 +0000")
+            .output()
+            .unwrap();
+        // Pre-fix this returned None because <wt>/.git is a file, not a directory.
+        assert_eq!(repo_status(&wt).unwrap().operation.as_deref(), Some("merge"));
     }
 }

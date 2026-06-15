@@ -134,10 +134,10 @@ New Rust types (mirrored in `src/lib/types.ts`):
 ```rust
 struct GraphCommit { sha, parents: Vec<String>, author_name, author_email,
                      author_date, committer_name, committer_date, refs: Vec<RefDecoration>, subject }
-struct RefDecoration { name: String, kind: RefKind, is_head: bool }   // kind: LocalBranch|RemoteBranch|Tag|Head
+struct RefDecoration { name: String, kind: RefKind, is_head: bool }   // RefKind (as built) serializes lowercase: "local"|"remote"|"tag"|"head"
 struct Ref { name, kind: RefKind, target_sha, upstream: Option<String>, ahead: u32, behind: u32 }
 struct RepoStatus { head: HeadInfo, staged: u32, unstaged: u32, untracked: u32, conflicted: u32,
-                    operation: Option<OperationKind> }  // OperationKind: Merge|Rebase|CherryPick|Revert
+                    operation: Option<String> }  // (as built) "merge"|"rebase"|"cherry-pick"|"revert" or null
 ```
 
 New commands: `load_graph(repo, count, skip)`, `list_refs(repo)`, `repo_status(repo)`.
