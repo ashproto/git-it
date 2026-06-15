@@ -63,6 +63,37 @@ const DIFFSPLIT_STORE_KEY = "diffSplit";
 const PULLREBASE_KEY = "gte.pullRebase.v1";
 const PULLREBASE_STORE_KEY = "pullRebase";
 
+const OPENREPOS_KEY = "gte.openRepos.v1";       const OPENREPOS_STORE_KEY = "openRepos";
+const RECENTREPOS_KEY = "gte.recentRepos.v1";   const RECENTREPOS_STORE_KEY = "recentRepos";
+const REPOMODE_KEY = "gte.repoSwitcherMode.v1"; const REPOMODE_STORE_KEY = "repoSwitcherMode";
+const RECENT_CAP = 12;
+
+// Parse a JSON string[] from localStorage; returns [] on any error or in Tauri
+// (where the durable Store value arrives async and wins).
+function loadSyncStringList(lsKey: string): string[] {
+  if (isTauri()) return [];
+  try {
+    if (typeof localStorage === "undefined") return [];
+    const raw = localStorage.getItem(lsKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadSyncRepoMode(): "tabs" | "sidebar" {
+  if (isTauri()) return "tabs";
+  try {
+    if (typeof localStorage === "undefined") return "tabs";
+    const raw = localStorage.getItem(REPOMODE_KEY);
+    return raw === "sidebar" ? "sidebar" : "tabs";
+  } catch {
+    return "tabs";
+  }
+}
+
 function loadSyncLineStyle(): "curved" | "angular" {
   if (isTauri()) return "curved";
   try {
@@ -349,6 +380,89 @@ function makeState() {
     }
   }
 
+  // ── Multi-repo state (Redesign R1) ───────────────────────────────────────
+  // openRepos: the set of repos the user has open (tab strip / sidebar list).
+  // recentRepos: MRU list capped at RECENT_CAP; persisted for the recent menu.
+  // repoSwitcherMode: whether repos are shown as tabs or a sidebar list.
+  // The active repo is still the existing `repo` state above — these are a thin
+  // layer on top; switching = set `repo` via the existing setter which clears
+  // all per-repo state.
+  let openRepos = $state<string[]>(loadSyncStringList(OPENREPOS_KEY));
+  let recentRepos = $state<string[]>(loadSyncStringList(RECENTREPOS_KEY));
+  let repoSwitcherMode = $state<"tabs" | "sidebar">(loadSyncRepoMode());
+  let openReposTouched = false;
+  let recentReposTouched = false;
+  let repoSwitcherModeTouched = false;
+
+  const orHydrate = getStore();
+  if (orHydrate) {
+    orHydrate
+      .then((store) => store.get<string[]>(OPENREPOS_STORE_KEY))
+      .then((saved) => {
+        if (Array.isArray(saved) && !openReposTouched) openRepos = saved as string[];
+      })
+      .catch((e) => console.warn("[gte] could not load openRepos", e));
+  }
+
+  const rrHydrate = getStore();
+  if (rrHydrate) {
+    rrHydrate
+      .then((store) => store.get<string[]>(RECENTREPOS_STORE_KEY))
+      .then((saved) => {
+        if (Array.isArray(saved) && !recentReposTouched) recentRepos = saved as string[];
+      })
+      .catch((e) => console.warn("[gte] could not load recentRepos", e));
+  }
+
+  const rmHydrate = getStore();
+  if (rmHydrate) {
+    rmHydrate
+      .then((store) => store.get<string>(REPOMODE_STORE_KEY))
+      .then((saved) => {
+        if ((saved === "tabs" || saved === "sidebar") && !repoSwitcherModeTouched) {
+          repoSwitcherMode = saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load repoSwitcherMode", e));
+  }
+
+  // Write-through helper for string[] settings (openRepos / recentRepos).
+  // Mirrors persistDiffSplit — fire-and-forget with explicit save().
+  function persistStringList(storeKey: string, lsKey: string, value: string[]) {
+    const snapshot = [...value]; // plain copy — don't send the $state proxy over IPC
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(storeKey, snapshot);
+        await store.save();
+      }).catch((e) => console.warn(`[gte] could not persist ${storeKey}`, e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(lsKey, JSON.stringify(snapshot));
+    } catch (e) {
+      console.warn(`[gte] could not persist ${storeKey}`, e);
+    }
+  }
+
+  function persistRepoMode() {
+    const snapshot = repoSwitcherMode;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(REPOMODE_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist repoSwitcherMode", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(REPOMODE_KEY, snapshot);
+    } catch (e) {
+      console.warn("[gte] could not persist repoSwitcherMode", e);
+    }
+  }
+
   // ── Remote state (Phase 6) ────────────────────────────────────────────────
   // refsDetailed: the result of api.listRefs (includes upstream/ahead/behind).
   // remotes: the result of api.remotes (name + url).
@@ -615,6 +729,50 @@ function makeState() {
     },
     get currentBehind() {
       return currentBehind;
+    },
+    // ── Multi-repo state (Redesign R1) ────────────────────────────────────────
+    get openRepos() {
+      return openRepos;
+    },
+    get recentRepos() {
+      return recentRepos;
+    },
+    get repoSwitcherMode() {
+      return repoSwitcherMode;
+    },
+    setRepoSwitcherMode(m: "tabs" | "sidebar") {
+      repoSwitcherModeTouched = true;
+      repoSwitcherMode = m;
+      persistRepoMode();
+    },
+
+    // Add `path` to the open set + recents (MRU) and make it active.
+    openRepo(path: string) {
+      if (!path) return;
+      if (!openRepos.includes(path)) {
+        openRepos = [...openRepos, path];
+        openReposTouched = true;
+      }
+      recentRepos = [path, ...recentRepos.filter((p) => p !== path)].slice(0, RECENT_CAP);
+      recentReposTouched = true;
+      persistStringList(OPENREPOS_STORE_KEY, OPENREPOS_KEY, openRepos);
+      persistStringList(RECENTREPOS_STORE_KEY, RECENTREPOS_KEY, recentRepos);
+      this.repo = path; // existing setter: clears per-repo state; the +page effect reloads
+    },
+
+    // Switch active to an already-open repo.
+    setActiveRepo(path: string) {
+      if (path && path !== repo) this.repo = path;
+    },
+
+    // Close a tab; if it was active, fall back to a neighbor (or empty).
+    closeRepo(path: string) {
+      const idx = openRepos.indexOf(path);
+      if (idx === -1) return;
+      openRepos = openRepos.filter((p) => p !== path);
+      openReposTouched = true;
+      persistStringList(OPENREPOS_STORE_KEY, OPENREPOS_KEY, openRepos);
+      if (repo === path) this.repo = openRepos[idx] ?? openRepos[idx - 1] ?? openRepos[0] ?? "";
     },
   };
 }
