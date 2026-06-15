@@ -1,5 +1,4 @@
 <script lang="ts">
-  import RepoLoader from "$lib/components/RepoLoader.svelte";
   import GraphHistory from "$lib/components/GraphHistory.svelte";
   import CommitDetail from "$lib/components/CommitDetail.svelte";
   import WorkingCopyView from "$lib/components/WorkingCopyView.svelte";
@@ -16,7 +15,10 @@
   import AmendDialog from "$lib/components/AmendDialog.svelte";
   import RebaseTodo from "$lib/components/RebaseTodo.svelte";
   import RemoteProgress from "$lib/components/RemoteProgress.svelte";
-  import { gitActions } from "$lib/gitActions";
+  import RepoTabs from "$lib/components/RepoTabs.svelte";
+  import RepoList from "$lib/components/RepoList.svelte";
+  import { gitActions, reloadGraph } from "$lib/gitActions";
+  import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
   import { onMount } from "svelte";
   import { appState } from "$lib/store.svelte";
@@ -36,12 +38,41 @@
   );
   const noRemoteTitle = "Add a remote first (see Remotes panel in the sidebar)";
 
+  // ── Reload-on-switch effect (Tauri only) ─────────────────────────────────────
+  // Fires once per actual repo change; the lastLoaded guard prevents re-running
+  // on unrelated reactive state changes. The browser keeps the sample graph.
+  let lastLoaded = "";
+  $effect(() => {
+    const r = appState.repo;
+    const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+    if (inTauri && r && r !== lastLoaded) { lastLoaded = r; reloadGraph(); }
+  });
+
+  // ── Empty-state open flow ─────────────────────────────────────────────────────
+  async function openRepoFlow() {
+    const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+    if (!inTauri) {
+      appState.status = "Opening a repo needs the desktop app.";
+      return;
+    }
+    const p = await pickRepoFolder(appState.repo || undefined);
+    if (!p) return;
+    if (!(await api.isGitRepo(p))) {
+      appState.status = `${p} is not a git repo.`;
+      return;
+    }
+    appState.openRepo(p);
+  }
+
   onMount(() => {
     const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
     if (!inTauri && appState.graphCommits.length === 0) {
       appState.setGraphCommits(SAMPLE_GRAPH);
     }
   });
+
+  // Derived: is there no active repo and no open repos?
+  const isEmpty = $derived(appState.openRepos.length === 0 && !appState.repo);
 </script>
 
 <main>
@@ -86,8 +117,29 @@
         >▾</button>
       </div>
     </div>
+    <!-- Repo switcher mode toggle: Tabs | Sidebar -->
+    <div class="mode-toggle" data-no-drag aria-label="Repo switcher mode">
+      <button
+        class="mode-btn"
+        class:active={appState.repoSwitcherMode === "tabs"}
+        onclick={() => appState.setRepoSwitcherMode("tabs")}
+        title="Show open repos as tabs"
+        aria-pressed={appState.repoSwitcherMode === "tabs"}
+      >Tabs</button><button
+        class="mode-btn"
+        class:active={appState.repoSwitcherMode === "sidebar"}
+        onclick={() => appState.setRepoSwitcherMode("sidebar")}
+        title="Show open repos in sidebar"
+        aria-pressed={appState.repoSwitcherMode === "sidebar"}
+      >Sidebar</button>
+    </div>
     <DateFormatMenu />
   </header>
+
+  <!-- Repo tab strip (tabs mode only) — sits between header and shell -->
+  {#if appState.repoSwitcherMode === "tabs"}
+    <RepoTabs />
+  {/if}
 
   <RemoteProgress />
 
@@ -95,24 +147,34 @@
 
   <div class="shell">
     <aside class="side-col">
-      <RepoLoader />
+      {#if appState.repoSwitcherMode === "sidebar"}
+        <RepoList />
+      {/if}
       <Sidebar />
     </aside>
-    <div class="main-col">
-      <UndoBar />
-      <GraphHistory />
-      <ConflictView />
-      {#if appState.workingCopySelected}
-        <WorkingCopyView />
-      {:else}
-        <CommitDetail />
-      {/if}
-      <div class="two-col">
-        <EditTabs />
-        <ApplyPanel />
+    {#if isEmpty}
+      <!-- Empty state: no repos open yet -->
+      <div class="empty-state main-col">
+        <p class="empty-prompt">Open a repository to get started</p>
+        <button class="open-btn" onclick={openRepoFlow}>Open Repository…</button>
       </div>
-      <LogPanel />
-    </div>
+    {:else}
+      <div class="main-col">
+        <UndoBar />
+        <GraphHistory />
+        <ConflictView />
+        {#if appState.workingCopySelected}
+          <WorkingCopyView />
+        {:else}
+          <CommitDetail />
+        {/if}
+        <div class="two-col">
+          <EditTabs />
+          <ApplyPanel />
+        </div>
+        <LogPanel />
+      </div>
+    {/if}
   </div>
 
   <ContextMenu />
@@ -330,6 +392,68 @@
     opacity: 0.75;
     font-weight: 400;
   }
+
+  /* Segmented Tabs | Sidebar toggle — matches GraphHistory curved/angular control */
+  .mode-toggle {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  .mode-btn {
+    padding: 3px 9px;
+    border: none;
+    background: var(--btn-bg);
+    color: var(--text-muted);
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+    white-space: nowrap;
+  }
+  .mode-btn + .mode-btn {
+    border-left: 1px solid var(--border);
+  }
+  .mode-btn:hover {
+    background: var(--btn-hover);
+    color: var(--text);
+  }
+  .mode-btn.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* Empty state — centered "Open a repository" prompt in the main column area */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    min-height: 320px;
+  }
+  .empty-prompt {
+    margin: 0;
+    font-size: 15px;
+    color: var(--text-muted);
+  }
+  .open-btn {
+    padding: 8px 20px;
+    border-radius: 7px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .open-btn:hover {
+    background: var(--accent-hover);
+  }
+
   .shell {
     display: flex;
     gap: 14px;
