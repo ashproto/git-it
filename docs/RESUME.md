@@ -1,14 +1,14 @@
 # RESUME — Git It → Fork/SourceTree-style git client
 
-> Handoff note for continuing after a context compaction. Read this first, then
-> continue with **Phase 3b** (or whatever the user asks). Everything below is true
-> as of 2026-06-14, all merged to `main`, working tree clean, all gates green.
+> Handoff note. **The 6-phase migration is COMPLETE** — all merged to `main`, working
+> tree clean, all gates green as of 2026-06-15. Only optional opportunistic follow-ups
+> remain (listed at the end of the TL;DR).
 
 ## TL;DR — where we are
 Building `git-it` into a full Fork/SourceTree-style
 git client. Designed up-front; built in reviewed, merged phases.
 
-**Done & on `main`** (59 Rust tests + 96 Vitest, `cargo check`/`svelte-check`/`npm run build` clean):
+**Done & on `main`** (76 Rust tests + 96 Vitest, `cargo check`/`svelte-check`/`npm run build` clean) — **ALL 6 PHASES COMPLETE**:
 - Up-front design (6-phase spec).
 - Phase 1 — commit graph: lane engine (pure TS) · Rust data layer · rendered graph view.
 - 3-pane shell: sidebar ref tree · graph · bottom commit-detail · branch chip.
@@ -18,7 +18,9 @@ git client. Designed up-front; built in reviewed, merged phases.
 - Phase 4 — history rewriting: `safety.rs` (snapshot/restore/backup) · reset (soft/mixed/hard) · amend (msg + date reset/preserve) · rebase onto · **interactive rebase** (RebaseTodo editor; headless via `GIT_SEQUENCE_EDITOR` + reword as `x …--amend -F`) · configurable auto-backup + confirm dialogs · **two-layer undo** (one-click snapshot + reflog browser). Rebase conflicts reuse the Phase 3b ConflictView (`op_subcommand` now handles "rebase").
 - Phase 5 — working copy + diff viewer: `ops_worktree.rs` (file list · stage/unstage/discard/clean · commit · diff · **hunk staging** via reconstructed one-hunk patch piped to `git apply` · stash) · pure-TS `parseDiff` (71 vitest cases) · **`DiffView`** (Shiki-highlighted, unified/split, per-hunk staging) · `WorkingCopyView` + `CommitComposer` reached via a synthetic **"Uncommitted changes"** graph row · `StashPanel` · DiffView also fills CommitDetail. Shiki bundled offline (npm, no CDN).
 
-**NEXT: Phase 6 (the last roadmap phase)** — remote: pull, push (`--force-with-lease`, never bare `--force`), credentials (system helper / SSH agent; `GIT_TERMINAL_PROMPT=0` + a `GIT_ASKPASS`/credentials prompt); run network ops off the UI thread with a spinner. Deferred opportunistic follow-ups: line-level staging · the `--squash` merge commit-UI (now feasible) · the interactive-rebase `edit` pause-to-amend bespoke flow.
+- Phase 6 — remote: management (add/remove/set-url) · streamed **pull** (merge/rebase) + **push** (`--force-with-lease`, `--set-upstream`) with progress + **Cancel** · ahead/behind chip + Pull/Push buttons · **GIT_ASKPASS credentials** prompt+retry (0600 files, never stored) · pull conflicts reuse the ConflictView.
+
+**✅ ROADMAP COMPLETE — all 6 phases merged to `main`.** `git-it` is a full Fork/SourceTree-style git client (graph · nav/ref ops · merge/cherry-pick/revert + conflict UI · reset/amend/rebase/interactive-rebase + undo/reflog · working-copy/diff/stage/commit/stash + Shiki diff viewer · remote pull/push/credentials). Remaining work = **OPTIONAL** opportunistic follow-ups only: line-level (intra-line) staging · the `--squash` merge commit-UI (now feasible with the commit composer) · the interactive-rebase `edit` pause-to-amend bespoke flow · per-remote push-target picker · arbitrary-refspec push · large-repo graph virtualization. Manual-only (user): `npm run tauri build` to use against real repos; decide whether to add a git remote to this workspace's own repo.
 
 ## Process (FOLLOW THIS — it's been catching real bugs)
 Per phase: `writing-plans` (spec the slice) → build → **adversarial code review** (Agent `superpowers:code-reviewer`, model opus) → fix findings → merge to `main`.
