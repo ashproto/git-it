@@ -25,6 +25,7 @@
 
   function onRowMouseDown(event: MouseEvent, sha: string, index: number) {
     event.preventDefault();
+    appState.setCurrent(sha);
     const cmd = event.metaKey || event.ctrlKey;
     const shift = event.shiftKey;
     if (shift && anchorIndex !== null) {
@@ -90,6 +91,7 @@
       {#each commits as commit, i (commit.sha)}
         <div
           class="row"
+          id={`gc-row-${commit.sha}`}
           role="row"
           tabindex="0"
           class:selected={appState.selected.has(commit.sha)}

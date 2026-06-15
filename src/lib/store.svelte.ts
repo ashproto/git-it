@@ -130,6 +130,27 @@ function makeState() {
   const rows = $derived(
     computeLanes(graphCommits.map((c) => ({ sha: c.sha, parents: c.parents }))),
   );
+  // The commit shown in the bottom detail panel (the most recently focused row).
+  let currentSha = $state<string | null>(null);
+  const selectedCommit = $derived(
+    currentSha ? (graphCommits.find((c) => c.sha === currentSha) ?? null) : null,
+  );
+  // Sidebar ref tree, derived from the loaded graph's ref decorations so it works
+  // in both Tauri and the browser preview without a separate list_refs call.
+  const refsByKind = $derived.by(() => {
+    const local: { name: string; sha: string; isHead: boolean }[] = [];
+    const remote: { name: string; sha: string; isHead: boolean }[] = [];
+    const tags: { name: string; sha: string; isHead: boolean }[] = [];
+    for (const c of graphCommits) {
+      for (const r of c.refs) {
+        const entry = { name: r.name, sha: c.sha, isHead: r.is_head };
+        if (r.kind === "local") local.push(entry);
+        else if (r.kind === "remote") remote.push(entry);
+        else if (r.kind === "tag") tags.push(entry);
+      }
+    }
+    return { local, remote, tags };
+  });
   let graphLineStyle = $state<"curved" | "angular">(loadSyncLineStyle());
   let graphLineStyleTouched = false;
 
@@ -254,6 +275,18 @@ function makeState() {
     get rows() {
       return rows;
     },
+    get currentSha() {
+      return currentSha;
+    },
+    get selectedCommit() {
+      return selectedCommit;
+    },
+    get refsByKind() {
+      return refsByKind;
+    },
+    setCurrent(sha: string | null) {
+      currentSha = sha;
+    },
     get graphLineStyle() {
       return graphLineStyle;
     },
@@ -267,6 +300,7 @@ function makeState() {
       commits = gc.map(graphToCommit);
       newDates = new Map();
       selected = new Set();
+      currentSha = null;
     },
   };
 }
