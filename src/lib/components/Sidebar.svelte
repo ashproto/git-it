@@ -89,6 +89,15 @@
         },
       });
     }
+
+    // Merge this ref into the current branch (contract e: ff/no-ff/squash are
+    // distinct items, never combined). Skip when this IS the checked-out branch.
+    if (!(kind === "local" && r.isHead)) {
+      items.push({ separator: true });
+      items.push({ label: `Merge ${r.name} into current`, action: () => gitActions.merge(r.name) });
+      items.push({ label: `Merge ${r.name} (no-ff)`, action: () => gitActions.merge(r.name, { noFf: true }) });
+      items.push({ label: `Merge ${r.name} (squash)`, action: () => gitActions.merge(r.name, { squash: true }) });
+    }
     contextMenu.openAt(event.clientX, event.clientY, items);
   }
 </script>

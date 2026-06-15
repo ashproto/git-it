@@ -60,6 +60,15 @@
         },
       },
       { separator: true },
+      {
+        label: "Cherry-pick onto current",
+        action: () => gitActions.cherryPick([sha], `Cherry-pick ${short}`),
+      },
+      {
+        label: "Revert commit",
+        action: () => gitActions.revert([sha], `Revert ${short}`),
+      },
+      { separator: true },
       { label: "Copy SHA", action: () => navigator.clipboard?.writeText(sha) },
     ]);
   }
