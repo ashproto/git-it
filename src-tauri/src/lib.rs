@@ -99,6 +99,8 @@ pub fn run() {
             commands::commit_diff,
             commands::stage_hunk,
             commands::unstage_hunk,
+            commands::stage_lines,
+            commands::unstage_lines,
             commands::stash_push,
             commands::stash_list,
             commands::stash_apply,

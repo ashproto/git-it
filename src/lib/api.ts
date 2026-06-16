@@ -122,6 +122,10 @@ export const api = {
     invoke<void>("stage_hunk", { repo, path, hunkIndex }),
   unstageHunk: (repo: string, path: string, hunkIndex: number) =>
     invoke<void>("unstage_hunk", { repo, path, hunkIndex }),
+  stageLines: (repo: string, path: string, hunkIndex: number, selected: number[]) =>
+    invoke<void>("stage_lines", { repo, path, hunkIndex, selected }),
+  unstageLines: (repo: string, path: string, hunkIndex: number, selected: number[]) =>
+    invoke<void>("unstage_lines", { repo, path, hunkIndex, selected }),
   stashPush: (repo: string, message: string | null) =>
     invoke<void>("stash_push", { repo, message }),
   stashList: (repo: string) => invoke<StashEntry[]>("stash_list", { repo }),

@@ -311,6 +311,16 @@ pub fn unstage_hunk(repo: String, path: String, hunk_index: usize) -> Result<(),
 }
 
 #[tauri::command]
+pub fn stage_lines(repo: String, path: String, hunk_index: usize, selected: Vec<usize>) -> Result<(), String> {
+    ops_worktree::stage_lines(&PathBuf::from(repo), &path, hunk_index, &selected)
+}
+
+#[tauri::command]
+pub fn unstage_lines(repo: String, path: String, hunk_index: usize, selected: Vec<usize>) -> Result<(), String> {
+    ops_worktree::unstage_lines(&PathBuf::from(repo), &path, hunk_index, &selected)
+}
+
+#[tauri::command]
 pub fn stash_push(repo: String, message: Option<String>) -> Result<(), String> {
     ops_worktree::stash_push(&PathBuf::from(repo), message.as_deref())
 }

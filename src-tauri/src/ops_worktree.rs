@@ -269,6 +269,134 @@ pub fn unstage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), St
     git_apply(repo, &format!("{}{}", header, h), true)
 }
 
+// ---------------------------------------------------------------------------
+// Line-level (intra-hunk) staging
+// ---------------------------------------------------------------------------
+
+/// Build a partial single-hunk patch keeping only the selected change lines.
+/// `selected` holds ORDINALS over the hunk's change lines (the +/- lines, counted
+/// in order starting at 0; context and `\ No newline` lines are NOT counted).
+/// Unselected `+` lines are dropped; unselected `-` lines become context; context
+/// is kept; the `@@` counts are recomputed (newStart = oldStart). A trailing
+/// `\ No newline…` marker is kept iff the body line it follows was emitted.
+/// Returns None when the selection keeps no change line (caller should no-op).
+fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>) -> Option<String> {
+    let mut lines = hunk.splitn(2, '\n');
+    let at_line = lines.next().unwrap_or("");
+    let body = lines.next().unwrap_or("");
+
+    // Parse @@ -A[,B] +C[,D] @@ [heading]
+    // We only need A (old_start). Be tolerant of missing counts.
+    let old_start: u64 = {
+        // Find "-A" after "@@"
+        let after_at = at_line.trim_start_matches('@').trim_start_matches(' ');
+        // e.g. "-12,6 +12,7 @@ heading" or "-5 +5 @@"
+        let old_part = after_at.trim_start_matches('-');
+        let end = old_part.find(|c: char| c == ',' || c == ' ').unwrap_or(old_part.len());
+        old_part[..end].parse().unwrap_or(1)
+    };
+
+    let mut old_n: u64 = 0;
+    let mut new_n: u64 = 0;
+    let mut ord: usize = 0;
+    let mut last_emitted = false;
+    let mut any_real_change = false;
+    let mut out = String::new();
+
+    for raw_line in body.split_inclusive('\n') {
+        // strip_inclusive('\n') preserves the newline; handle lines that may or
+        // may not end with \n (last line of hunk).
+        let first = raw_line.chars().next();
+        match first {
+            Some(' ') => {
+                out.push_str(raw_line);
+                old_n += 1;
+                new_n += 1;
+                last_emitted = true;
+            }
+            Some('+') => {
+                let this = ord;
+                ord += 1;
+                if selected.contains(&this) {
+                    out.push_str(raw_line);
+                    new_n += 1;
+                    last_emitted = true;
+                    any_real_change = true;
+                } else {
+                    last_emitted = false;
+                }
+            }
+            Some('-') => {
+                let this = ord;
+                ord += 1;
+                if selected.contains(&this) {
+                    out.push_str(raw_line);
+                    old_n += 1;
+                    last_emitted = true;
+                    any_real_change = true;
+                } else {
+                    // demote to context
+                    let rest = &raw_line[1..];
+                    out.push(' ');
+                    out.push_str(rest);
+                    old_n += 1;
+                    new_n += 1;
+                    last_emitted = true;
+                }
+            }
+            Some('\\') => {
+                // "\ No newline at end of file" — keep only if last line was emitted
+                if last_emitted {
+                    out.push_str(raw_line);
+                }
+                // do not change counts or last_emitted
+            }
+            None | Some(_) => {
+                // bare empty line or other: treat as context
+                if !raw_line.trim().is_empty() || raw_line.contains('\n') {
+                    let content = if raw_line.trim().is_empty() {
+                        // empty context line: emit as " \n" or " " without trailing \n
+                        if raw_line.ends_with('\n') { " \n".to_string() } else { " ".to_string() }
+                    } else {
+                        format!(" {}", raw_line)
+                    };
+                    out.push_str(&content);
+                    old_n += 1;
+                    new_n += 1;
+                    last_emitted = true;
+                }
+            }
+        }
+    }
+
+    if !any_real_change {
+        return None;
+    }
+
+    let header = format!("@@ -{},{} +{},{} @@\n", old_start, old_n, old_start, new_n);
+    Some(format!("{}{}", header, out))
+}
+
+/// Stage selected lines (change-line ordinals) of one hunk of `path`'s UNSTAGED diff.
+pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize]) -> Result<(), String> {
+    let d = diff(repo, Some(path), false)?;
+    let (header, hunks) = split_hunks(&d);
+    let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
+    let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
+    let partial = build_partial_hunk(h, &set).ok_or("no lines selected to stage")?;
+    git_apply(repo, &format!("{}{}", header, partial), false)
+}
+
+/// Unstage selected lines (change-line ordinals) of one hunk of `path`'s STAGED diff.
+pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize]) -> Result<(), String> {
+    let d = diff(repo, Some(path), true)?;
+    let (header, hunks) = split_hunks(&d);
+    let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
+    let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
+    let partial = build_partial_hunk(h, &set).ok_or("no lines selected to unstage")?;
+    git_apply(repo, &format!("{}{}", header, partial), true)
+}
+
 /// Stash current changes (staged + unstaged). Message is optional.
 pub fn stash_push(repo: &Path, message: Option<&str>) -> Result<(), String> {
     let mut c = Command::new("git");
@@ -511,6 +639,110 @@ mod tests {
         assert_eq!(list.len(), 1);
         stash_pop(&r.path, 0).unwrap();
         assert_eq!(fs::read_to_string(r.path.join("a.txt")).unwrap(), "2\n", "pop restores");
+    }
+
+    // ── build_partial_hunk unit tests ────────────────────────────────────────
+
+    fn set(v: &[usize]) -> std::collections::HashSet<usize> {
+        v.iter().copied().collect()
+    }
+
+    /// Two added lines; select only ordinal 0. The second add is dropped; new_n reduced by 1.
+    #[test]
+    fn partial_hunk_two_adds_select_first() {
+        let hunk = "@@ -10,3 +10,5 @@\n context\n+add0\n+add1\n context2\n";
+        let result = build_partial_hunk(hunk, &set(&[0])).expect("should produce patch");
+        assert!(result.contains("+add0"), "selected add kept");
+        assert!(!result.contains("+add1"), "unselected add dropped");
+        // old_n: 2 context lines = 2; new_n: 2 context + 1 kept add = 3
+        assert!(result.starts_with("@@ -10,2 +10,3 @@\n"), "header: {}", result);
+    }
+
+    /// A `-` line that IS selected stays as removal; one that is NOT selected becomes context.
+    #[test]
+    fn partial_hunk_minus_kept_vs_demoted() {
+        // hunk with two `-` lines (ordinals 0,1); select only 0
+        let hunk = "@@ -5,4 +5,2 @@\n ctx\n-keep\n-demote\n ctx2\n";
+        let result = build_partial_hunk(hunk, &set(&[0])).expect("should produce patch");
+        // "keep" stays as `-keep`
+        assert!(result.contains("-keep"), "kept minus preserved");
+        // "demote" becomes ` demote` (context)
+        assert!(result.contains(" demote"), "unselected minus demoted to context");
+        assert!(!result.contains("-demote"), "unselected minus not a removal");
+    }
+
+    /// Mixed ctx,-,+,ctx; select only the `+` (the `-` becomes context).
+    /// old_n = 3 (ctx + demoted_minus + ctx), new_n = 4 (ctx + demoted_as_ctx + kept_add + ctx).
+    #[test]
+    fn partial_hunk_mixed_select_plus_only() {
+        let hunk = "@@ -12,4 +12,4 @@\n ctx1\n-removed\n+added\n ctx2\n";
+        // ordinal 0 = `-removed`, ordinal 1 = `+added`; select only 1
+        let result = build_partial_hunk(hunk, &set(&[1])).expect("should produce patch");
+        assert!(result.starts_with("@@ -12,3 +12,4 @@\n"), "header: {}", &result);
+        assert!(result.contains(" removed"), "demoted to context");
+        assert!(!result.contains("-removed"), "not a removal");
+        assert!(result.contains("+added"), "add kept");
+    }
+
+    /// `\ No newline` kept when its line was emitted, dropped when its `+` was dropped.
+    #[test]
+    fn partial_hunk_no_newline_marker() {
+        let hunk = "@@ -1,1 +1,1 @@\n-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n";
+        // ordinal 0 = `-old`, ordinal 1 = `+new`
+        // select only 1 (the add); `-old` becomes context
+        let result_add_only = build_partial_hunk(hunk, &set(&[1])).expect("patch");
+        // The no-newline after `-old` becomes context so last_emitted=true → marker kept
+        // The no-newline after `+new` which is kept → also kept
+        assert!(result_add_only.contains("\\ No newline"), "marker kept after emitted lines");
+
+        // Now select only 0 (the remove); `+new` is dropped
+        let result_rm_only = build_partial_hunk(hunk, &set(&[0])).expect("patch");
+        // The no-newline after `-old` (which is kept): last_emitted=true → kept
+        // The no-newline after `+new` (which is dropped): last_emitted=false → dropped
+        // We expect marker after the kept `-old`, but not a second one after dropped `+new`
+        let count = result_rm_only.matches("\\ No newline").count();
+        assert_eq!(count, 1, "only one no-newline marker (after kept line), got: {}", result_rm_only);
+    }
+
+    /// Empty selection → None.
+    #[test]
+    fn partial_hunk_empty_selection_is_none() {
+        let hunk = "@@ -1,2 +1,3 @@\n ctx\n+add\n ctx2\n";
+        assert!(build_partial_hunk(hunk, &set(&[])).is_none());
+    }
+
+    /// Count-omitted header `@@ -5 +5 @@` parses old_start as 5.
+    #[test]
+    fn partial_hunk_count_omitted_header() {
+        let hunk = "@@ -5 +5 @@\n+newline\n";
+        let result = build_partial_hunk(hunk, &set(&[0])).expect("patch");
+        assert!(result.starts_with("@@ -5,"), "old_start=5: {}", result);
+    }
+
+    // ── stage_lines integration test ─────────────────────────────────────────
+
+    #[test]
+    fn stage_lines_stages_only_selected_lines() {
+        let r = TempRepo::new();
+        // file with multiple added lines in one hunk
+        r.commit_file("f.txt", "base\n", "init");
+        // overwrite with base + 3 new lines (all in one hunk since they're adjacent)
+        r.write("f.txt", "base\nline1\nline2\nline3\n");
+        // get the live diff and confirm 1 hunk with 3 change lines (ordinals 0,1,2)
+        let d = diff(&r.path, Some("f.txt"), false).unwrap();
+        let (_h, hunks) = split_hunks(&d);
+        assert_eq!(hunks.len(), 1, "expect 1 hunk");
+        // stage only ordinal 1 (line2)
+        stage_lines(&r.path, "f.txt", 0, &[1]).unwrap();
+        // staged diff should contain only +line2
+        let staged = diff(&r.path, Some("f.txt"), true).unwrap();
+        assert!(staged.contains("+line2"), "line2 should be staged");
+        assert!(!staged.contains("+line1"), "line1 should not be staged");
+        assert!(!staged.contains("+line3"), "line3 should not be staged");
+        // unstaged diff should still show line1 and line3
+        let unstaged = diff(&r.path, Some("f.txt"), false).unwrap();
+        assert!(unstaged.contains("+line1"), "line1 still unstaged");
+        assert!(unstaged.contains("+line3"), "line3 still unstaged");
     }
 
     #[test]
