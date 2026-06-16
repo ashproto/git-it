@@ -4,6 +4,10 @@
   import type { EditMode } from "../types";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
 
+  // When bare, render without the CollapsiblePanel chrome (the mode-tabs become a
+  // top row) so this nests inside a parent panel (InlineEditCommit).
+  let { bare = false }: { bare?: boolean } = $props();
+
   let mode = $state<EditMode>("offset");
 
   // Offset state
@@ -200,27 +204,27 @@
   }
 </script>
 
-<CollapsiblePanel title="Edit">
-  {#snippet headerActions()}
-    <div class="mode-tabs">
-      <button
-        type="button"
-        class:active={mode === "offset"}
-        onclick={() => (mode = "offset")}>Offset</button
-      >
-      <button
-        type="button"
-        class:active={mode === "exact"}
-        onclick={() => (mode = "exact")}>Exact</button
-      >
-      <button
-        type="button"
-        class:active={mode === "compress"}
-        onclick={() => (mode = "compress")}>Compress</button
-      >
-    </div>
-  {/snippet}
+{#snippet modeTabs()}
+  <div class="mode-tabs">
+    <button
+      type="button"
+      class:active={mode === "offset"}
+      onclick={() => (mode = "offset")}>Offset</button
+    >
+    <button
+      type="button"
+      class:active={mode === "exact"}
+      onclick={() => (mode = "exact")}>Exact</button
+    >
+    <button
+      type="button"
+      class:active={mode === "compress"}
+      onclick={() => (mode = "compress")}>Compress</button
+    >
+  </div>
+{/snippet}
 
+{#snippet body()}
   {#if mode === "offset"}
     <div class="row">
       <label class="check">
@@ -280,9 +284,33 @@
   <div class="row" style="margin-top:8px">
     <button type="button" onclick={clearNewDatesSel}>Clear new dates (selected)</button>
   </div>
-</CollapsiblePanel>
+{/snippet}
+
+{#if bare}
+  <div class="edit-bare">
+    {@render modeTabs()}
+    {@render body()}
+  </div>
+{:else}
+  <CollapsiblePanel title="Edit">
+    {#snippet headerActions()}
+      {@render modeTabs()}
+    {/snippet}
+    {@render body()}
+  </CollapsiblePanel>
+{/if}
 
 <style>
+  /* Bare layout: mode-tabs row above the body, no panel chrome. The tabs sit
+     left-aligned (the panel header right-aligns them via .actions). */
+  .edit-bare {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .edit-bare .mode-tabs {
+    align-self: flex-start;
+  }
   .mode-tabs {
     display: flex;
     gap: 2px;

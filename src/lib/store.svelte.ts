@@ -66,6 +66,9 @@ const RELDATES_STORE_KEY = "relativeDates";
 const PULLREBASE_KEY = "gitit.pullRebase.v1";
 const PULLREBASE_STORE_KEY = "pullRebase";
 
+const AUTOSHOWEDIT_KEY = "gitit.autoShowEditTools.v1";
+const AUTOSHOWEDIT_STORE_KEY = "autoShowEditTools";
+
 const BRANCHCOLORS_KEY = "gitit.branchColors.v1";
 const BRANCHCOLORS_STORE_KEY = "branchColors";
 
@@ -149,6 +152,17 @@ function loadSyncPullRebase(): boolean {
   try {
     if (typeof localStorage === "undefined") return false;
     const raw = localStorage.getItem(PULLREBASE_KEY);
+    return raw === "true";
+  } catch {
+    return false;
+  }
+}
+
+function loadSyncAutoShowEditTools(): boolean {
+  if (isTauri()) return false;
+  try {
+    if (typeof localStorage === "undefined") return false;
+    const raw = localStorage.getItem(AUTOSHOWEDIT_KEY);
     return raw === "true";
   } catch {
     return false;
@@ -552,6 +566,43 @@ function makeState() {
       if (typeof localStorage !== "undefined") localStorage.setItem(PULLREBASE_KEY, String(snapshot));
     } catch (e) {
       console.warn("[gte] could not persist pullRebase setting", e);
+    }
+  }
+
+  // ── autoShowEditTools persisted setting ───────────────────────────────────
+  // When true, the inline "Edit commit(s)" tools show below the commit details
+  // (and the standalone button/menu-item are hidden). Mirrors the diffSplit
+  // pattern exactly; defaults to false.
+  let autoShowEditTools = $state<boolean>(loadSyncAutoShowEditTools());
+  let autoShowEditToolsTouched = false;
+
+  const aseHydrate = getStore();
+  if (aseHydrate) {
+    aseHydrate
+      .then((store) => store.get<boolean>(AUTOSHOWEDIT_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !autoShowEditToolsTouched) {
+          autoShowEditTools = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load autoShowEditTools setting", e));
+  }
+
+  function persistAutoShowEditTools() {
+    const snapshot = autoShowEditTools;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(AUTOSHOWEDIT_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist autoShowEditTools setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(AUTOSHOWEDIT_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist autoShowEditTools setting", e);
     }
   }
 
@@ -981,6 +1032,15 @@ function makeState() {
       pullRebaseTouched = true;
       pullRebase = v;
       persistPullRebase();
+    },
+    // ── autoShowEditTools persisted setting ───────────────────────────────────
+    get autoShowEditTools() {
+      return autoShowEditTools;
+    },
+    setAutoShowEditTools(v: boolean) {
+      autoShowEditToolsTouched = true;
+      autoShowEditTools = v;
+      persistAutoShowEditTools();
     },
     // ── Remote detailed refs + remotes (Phase 6) ──────────────────────────────
     get refsDetailed() {

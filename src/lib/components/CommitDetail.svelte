@@ -4,6 +4,7 @@
   import { parseISO, formatCommitDate } from "../dates";
   import { parseDiff } from "../diff/parse";
   import CommitFilesDiff from "./CommitFilesDiff.svelte";
+  import CollapsiblePanel from "./CollapsiblePanel.svelte";
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -59,7 +60,7 @@
   const fileCount = $derived(diffPatch ? parseDiff(diffPatch).files.length : 0);
 </script>
 
-<div class="detail panel">
+<CollapsiblePanel title="Commit">
   {#if c}
     <div class="hdr">
       <div class="avatar" aria-hidden="true">{initials(c.author_name)}</div>
@@ -109,12 +110,9 @@
   {:else}
     <p class="empty">Select a commit to see its details.</p>
   {/if}
-</div>
+</CollapsiblePanel>
 
 <style>
-  .detail {
-    padding: 12px 14px;
-  }
   .hdr {
     display: flex;
     align-items: center;

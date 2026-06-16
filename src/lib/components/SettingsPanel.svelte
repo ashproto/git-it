@@ -153,6 +153,14 @@
         />
         <span>Pull with rebase (instead of merge)</span>
       </label>
+      <label class="opt">
+        <input
+          type="checkbox"
+          checked={appState.autoShowEditTools}
+          onchange={() => appState.setAutoShowEditTools(!appState.autoShowEditTools)}
+        />
+        <span>Show edit tools below commit details</span>
+      </label>
     </div>
   </div>
 {/if}

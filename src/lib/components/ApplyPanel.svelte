@@ -4,6 +4,10 @@
   import { toEpochTz } from "../dates";
   import type { DateMapping, RewriteOptions } from "../types";
 
+  // When bare, drop the .panel card chrome so this nests cleanly inside a parent
+  // panel (InlineEditCommit).
+  let { bare = false }: { bare?: boolean } = $props();
+
   let updateAuthor = $state(true);
   let autoBundle = $state(true);
   let preserveRemote = $state(true);
@@ -61,7 +65,7 @@
   }
 </script>
 
-<section class="panel">
+<section class="apply-row" class:panel={!bare}>
   <div class="opts">
     <label class="check">
       <input type="checkbox" bind:checked={updateAuthor} />
@@ -94,16 +98,18 @@
 </section>
 
 <style>
-  .panel {
-    background: var(--panel-bg);
-    border-radius: 10px;
-    padding: 10px 14px;
-    border: 1px solid var(--border);
+  .apply-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
     flex-wrap: wrap;
+  }
+  .apply-row.panel {
+    background: var(--panel-bg);
+    border-radius: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
   }
   .opts {
     display: flex;

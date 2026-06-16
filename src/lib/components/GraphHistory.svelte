@@ -176,11 +176,15 @@
         label: "Interactive rebase from here…",
         action: () => rebaseEditor.openWith(sha),
       },
-      { separator: true },
-      {
-        label: "Edit commit(s)…",
-        action: () => timeEditDrawer.openDrawer(),
-      },
+      ...(!appState.autoShowEditTools
+        ? [
+            { separator: true },
+            {
+              label: "Edit commit(s)…",
+              action: () => timeEditDrawer.openDrawer(),
+            },
+          ]
+        : []),
       { separator: true },
       { label: "Copy SHA", action: () => navigator.clipboard?.writeText(sha) },
     ]);
@@ -284,13 +288,15 @@
     <span class="count">{appState.selected.size} selected of {commits.length}</span>
     <button type="button" onclick={selectAll}>Select all</button>
     <button type="button" onclick={clearSel}>Clear</button>
-    <button
-      type="button"
-      class="edit-ts"
-      disabled={appState.selected.size === 0}
-      title={appState.selected.size === 0 ? "Select one or more commits first" : "Edit the selected commit(s)"}
-      onclick={() => timeEditDrawer.openDrawer()}
-    >Edit commit(s)…</button>
+    {#if !appState.autoShowEditTools}
+      <button
+        type="button"
+        class="edit-ts"
+        disabled={appState.selected.size === 0}
+        title={appState.selected.size === 0 ? "Select one or more commits first" : "Edit the selected commit(s)"}
+        onclick={() => timeEditDrawer.openDrawer()}
+      >Edit commit(s)…</button>
+    {/if}
   {/snippet}
 
   <div class="wrap" bind:this={wrapEl} onscroll={onWrapScroll}>

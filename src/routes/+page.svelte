@@ -1,6 +1,7 @@
 <script lang="ts">
   import GraphHistory from "$lib/components/GraphHistory.svelte";
   import CommitDetail from "$lib/components/CommitDetail.svelte";
+  import InlineEditCommit from "$lib/components/InlineEditCommit.svelte";
   import WorkingCopyView from "$lib/components/WorkingCopyView.svelte";
   import ConflictView from "$lib/components/ConflictView.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -248,6 +249,9 @@
               <WorkingCopyView />
             {:else}
               <CommitDetail />
+              {#if appState.autoShowEditTools && appState.selectedCommit}
+                <InlineEditCommit />
+              {/if}
             {/if}
             <LogPanel />
           </div>
