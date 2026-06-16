@@ -13,9 +13,11 @@
     staged?: boolean;
     onStageHunk?: (i: number) => void;
     onUnstageHunk?: (i: number) => void;
+    onStageLines?: (hunkIndex: number, selected: number[]) => void;
+    onUnstageLines?: (hunkIndex: number, selected: number[]) => void;
   }
 
-  let { patch, language, staged = false, onStageHunk, onUnstageHunk }: Props = $props();
+  let { patch, language, staged = false, onStageHunk, onUnstageHunk, onStageLines, onUnstageLines }: Props = $props();
 
   // ─── Theme detection ──────────────────────────────────────────────────────────
 
@@ -180,6 +182,47 @@
     });
   }
 
+  // ─── Line-level selection ─────────────────────────────────────────────────────
+
+  // Map keyed by "${fi}:${hi}" → Set of change-line ordinals (0-based among +/- lines).
+  let selected = $state<Map<string, Set<number>>>(new Map());
+
+  // Clear selection whenever the patch changes (file/diff switch).
+  $effect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    patch;
+    selected = new Map();
+  });
+
+  /** Map each +/- line of a hunk to its 0-based change ordinal (context lines excluded). */
+  function hunkOrdinals(hunk: DiffHunk): Map<DiffLine, number> {
+    const m = new Map<DiffLine, number>();
+    let ord = 0;
+    for (const line of hunk.lines) if (line.kind !== "context") m.set(line, ord++);
+    return m;
+  }
+
+  function keyOf(fi: number, hi: number) { return `${fi}:${hi}`; }
+  function isSelected(fi: number, hi: number, ord: number) { return selected.get(keyOf(fi, hi))?.has(ord) ?? false; }
+
+  function toggleLine(fi: number, hi: number, ord: number) {
+    const k = keyOf(fi, hi);
+    const next = new Map(selected);
+    const s = new Set(next.get(k) ?? []);
+    if (s.has(ord)) s.delete(ord); else s.add(ord);
+    if (s.size) next.set(k, s); else next.delete(k);
+    selected = next;
+  }
+
+  function selCount(fi: number, hi: number) { return selected.get(keyOf(fi, hi))?.size ?? 0; }
+
+  function applyLines(fi: number, hi: number) {
+    const ords = [...(selected.get(keyOf(fi, hi)) ?? [])].sort((a, b) => a - b);
+    if (!ords.length) return;
+    if (staged) onUnstageLines?.(hi, ords); else onStageLines?.(hi, ords);
+    const next = new Map(selected); next.delete(keyOf(fi, hi)); selected = next;
+  }
+
   // ─── Split view helpers ───────────────────────────────────────────────────────
 
   interface SplitRow {
@@ -326,6 +369,14 @@
                           <button class="hunk-btn" onclick={() => onUnstageHunk!(hi)}>Unstage hunk</button>
                         {/if}
                       {/if}
+                      {#if selCount(fi, hi) > 0}
+                        {#if !staged && onStageLines}
+                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Stage {selCount(fi, hi)} line(s)</button>
+                        {/if}
+                        {#if staged && onUnstageLines}
+                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Unstage {selCount(fi, hi)} line(s)</button>
+                        {/if}
+                      {/if}
                     </td>
                   {:else}
                     <td class="gutter" colspan="2"></td>
@@ -339,15 +390,32 @@
                           <button class="hunk-btn" onclick={() => onUnstageHunk!(hi)}>Unstage hunk</button>
                         {/if}
                       {/if}
+                      {#if selCount(fi, hi) > 0}
+                        {#if !staged && onStageLines}
+                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Stage {selCount(fi, hi)} line(s)</button>
+                        {/if}
+                        {#if staged && onUnstageLines}
+                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Unstage {selCount(fi, hi)} line(s)</button>
+                        {/if}
+                      {/if}
                     </td>
                   {/if}
                 </tr>
 
                 {#if !appState.diffSplit}
                   <!-- ── UNIFIED view ── -->
+                  {@const ords = hunkOrdinals(hunk)}
                   {#each indexHunkLines(hunk) as { line, beforeIdx, afterIdx } (line.oldNo ?? `a${line.newNo}`)}
                     {@const toks = lineTokens(fi, hi, line, beforeIdx, afterIdx)}
-                    <tr class="diff-row {line.kind}">
+                    {@const ord = line.kind !== "context" ? ords.get(line) : undefined}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <tr
+                      class="diff-row {line.kind}"
+                      class:selected={ord !== undefined && isSelected(fi, hi, ord)}
+                      style={line.kind !== "context" ? "cursor: pointer" : ""}
+                      onclick={() => { if (ord !== undefined) toggleLine(fi, hi, ord); }}
+                      onkeydown={(e) => { if (ord !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, ord); } }}
+                    >
                       <td class="gutter old-gutter">{line.oldNo ?? ""}</td>
                       <td class="gutter new-gutter">{line.newNo ?? ""}</td>
                       <td class="diff-cell">
@@ -363,14 +431,22 @@
                   {/each}
                 {:else}
                   <!-- ── SPLIT view ── -->
+                  {@const ords = hunkOrdinals(hunk)}
                   {#each toSplitRows(hunk) as row, ri (ri)}
+                    {@const oldOrd = row.oldLine?.kind === "del" ? ords.get(row.oldLine) : undefined}
+                    {@const newOrd = row.newLine?.kind === "add" ? ords.get(row.newLine) : undefined}
                     <tr class="diff-row split-row">
                       <!-- Old side -->
                       <td class="gutter old-gutter">{row.oldLine?.oldNo ?? ""}</td>
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <td
                         class="diff-cell split-cell"
                         class:del={row.oldLine?.kind === "del"}
                         class:context={row.oldLine?.kind === "context"}
+                        class:selected={oldOrd !== undefined && isSelected(fi, hi, oldOrd)}
+                        style={row.oldLine?.kind === "del" ? "cursor: pointer" : ""}
+                        onclick={() => { if (oldOrd !== undefined) toggleLine(fi, hi, oldOrd); }}
+                        onkeydown={(e) => { if (oldOrd !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, oldOrd); } }}
                       >
                         {#if row.oldLine}
                           {@const toks = row.oldLine.kind === "del"
@@ -388,10 +464,15 @@
 
                       <!-- New side -->
                       <td class="gutter new-gutter">{row.newLine?.newNo ?? ""}</td>
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <td
                         class="diff-cell split-cell"
                         class:add={row.newLine?.kind === "add"}
                         class:context={row.newLine?.kind === "context"}
+                        class:selected={newOrd !== undefined && isSelected(fi, hi, newOrd)}
+                        style={row.newLine?.kind === "add" ? "cursor: pointer" : ""}
+                        onclick={() => { if (newOrd !== undefined) toggleLine(fi, hi, newOrd); }}
+                        onkeydown={(e) => { if (newOrd !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, newOrd); } }}
                       >
                         {#if row.newLine}
                           {@const toks = row.newLine.kind === "add"
@@ -652,6 +733,24 @@
   }
   .hunk-btn:hover {
     background: var(--btn-hover);
+  }
+  .hunk-btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .hunk-btn.primary:hover {
+    opacity: 0.88;
+  }
+
+  /* ── Line-level selection highlight ─────────────────────────────────────────── */
+  .diff-row.selected {
+    box-shadow: inset 2px 0 0 var(--accent);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+  .split-cell.selected {
+    box-shadow: inset 2px 0 0 var(--accent);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   /* ── Mono utility ───────────────────────────────────────────────────────────── */

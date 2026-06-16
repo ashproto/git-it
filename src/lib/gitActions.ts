@@ -403,6 +403,10 @@ export const gitActions = {
     runWorktree(`Stage hunk in ${path}`, () => api.stageHunk(appState.repo, path, hunkIndex)),
   unstageHunk: (path: string, hunkIndex: number) =>
     runWorktree(`Unstage hunk in ${path}`, () => api.unstageHunk(appState.repo, path, hunkIndex)),
+  stageLines: (path: string, hunkIndex: number, selected: number[]) =>
+    runWorktree(`Stage ${selected.length} line(s) in ${path}`, () => api.stageLines(appState.repo, path, hunkIndex, selected)),
+  unstageLines: (path: string, hunkIndex: number, selected: number[]) =>
+    runWorktree(`Unstage ${selected.length} line(s) in ${path}`, () => api.unstageLines(appState.repo, path, hunkIndex, selected)),
   commitChanges: (message: string, signoff = false) =>
     runWorktree("Commit", () => api.commit(appState.repo, message, signoff)),
   stashPush: (message: string | null) =>

@@ -243,6 +243,12 @@
             onUnstageHunk={selectedIsStaged
               ? (i) => gitActions.unstageHunk(selectedFile!, i)
               : undefined}
+            onStageLines={selectedIsStaged
+              ? undefined
+              : (hi, sel) => gitActions.stageLines(selectedFile!, hi, sel)}
+            onUnstageLines={selectedIsStaged
+              ? (hi, sel) => gitActions.unstageLines(selectedFile!, hi, sel)
+              : undefined}
           />
         {/if}
       </div>
