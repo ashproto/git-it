@@ -3,6 +3,7 @@
   import { contextMenu, type MenuItem } from "../contextMenu.svelte";
   import { dialogs } from "../dialogs.svelte";
   import { gitActions } from "../gitActions";
+  import { graphView } from "../graphView.svelte";
   import type { RefEntry } from "../types";
   import RecoveryPanels from "./RecoveryPanels.svelte";
 
@@ -17,8 +18,9 @@
   function jumpTo(sha: string) {
     appState.setCurrent(sha);
     appState.selected = new Set([sha]);
-    const el = document.getElementById(`gc-row-${sha}`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    // The graph virtualizes rows, so the target may not be in the DOM — ask the
+    // graph view to resolve it by index and scroll (instead of getElementById).
+    graphView.scrollToCommit(sha);
   }
 
   async function confirmDeleteBranch(name: string) {

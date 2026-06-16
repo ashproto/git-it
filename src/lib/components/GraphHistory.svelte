@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { appState } from "../store.svelte";
+  import { graphView } from "../graphView.svelte";
   import { parseISO, formatCommitDate } from "../dates";
   import { contextMenu } from "../contextMenu.svelte";
   import { dialogs } from "../dialogs.svelte";
@@ -9,10 +11,23 @@
   import { timeEditDrawer } from "../timeEditDrawer.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import GraphGutter from "./GraphGutter.svelte";
-  import { LANE_WIDTH, OFFSET_X } from "../graph";
+  import { LANE_WIDTH, OFFSET_X, commitWindow } from "../graph";
 
   const rowHeight = 30;
+  // Overscan rows above/below the viewport so fast scrolling never reveals a gap.
+  const BUFFER = 8;
   let anchorIndex = $state<number | null>(null);
+
+  // Virtualization: only the rows in [winStart, winEnd) are in the DOM; two
+  // spacer divs reserve the height of the rows above/below so the scrollbar,
+  // scroll position and infinite-scroll trigger behave exactly as a full list.
+  let wrapEl = $state<HTMLElement>();
+  let headEl = $state<HTMLElement>();
+  let histEl = $state<HTMLElement>();
+  let winStart = $state(0);
+  // Seed a generous initial window so the very first paint shows rows before the
+  // geometry effect refines the range (avoids an empty flash on mount).
+  let winEnd = $state(50);
 
   const commits = $derived(appState.graphCommits);
   const rows = $derived(appState.rows);
@@ -39,6 +54,10 @@
         : 0,
     ),
   );
+
+  // The synthetic wc-row occupies the first row slot (height = rowHeight) when
+  // present, so the commit list — and the gutter SVG overlay — start one row down.
+  const wcOffset = $derived(hasWorkingChanges ? rowHeight : 0);
 
   function selectWorkingCopy() {
     appState.setWorkingCopySelected(true);
@@ -193,8 +212,59 @@
     anchorIndex = null;
   }
 
+  // Map the measured scroll geometry to a visible commit range. Reads layout
+  // directly (getBoundingClientRect) rather than hard-coding the sticky header
+  // height, so it stays correct if the chrome changes. The wc-row offset is
+  // subtracted because commit 0 starts one row down when it is present.
+  function recomputeWindow() {
+    if (!wrapEl || !histEl) return;
+    const wrapRect = wrapEl.getBoundingClientRect();
+    const histTop = histEl.getBoundingClientRect().top;
+    const headBottom = headEl ? headEl.getBoundingClientRect().bottom : wrapRect.top;
+    const scrolledPx = headBottom - histTop - wcOffset;
+    const viewportPx = wrapRect.bottom - headBottom;
+    const w = commitWindow(scrolledPx, viewportPx, rowHeight, commits.length, BUFFER);
+    winStart = w.start;
+    winEnd = w.end;
+  }
+
+  // Re-window when the data set or the wc-row's presence changes (and on mount).
+  // recomputeWindow reads commits.length and wcOffset, so this effect re-runs
+  // exactly when either changes; the geometry reads are non-reactive.
+  $effect(() => {
+    recomputeWindow();
+  });
+
+  // Recompute when the scroll container resizes (panel collapse, window resize,
+  // diff pane opening) — a resize with no scroll would otherwise leave a stale window.
+  $effect(() => {
+    if (!wrapEl) return;
+    const ro = new ResizeObserver(() => recomputeWindow());
+    ro.observe(wrapEl);
+    return () => ro.disconnect();
+  });
+
+  // Resolve an external "scroll to commit" request (Sidebar jump-to-ref). Keyed
+  // only on the nonce — untrack the rest so appending commits doesn't re-scroll.
+  $effect(() => {
+    const n = graphView.nonce;
+    if (n === 0) return;
+    untrack(() => {
+      const sha = graphView.requestSha;
+      if (!sha || !wrapEl) return;
+      const idx = commits.findIndex((c) => c.sha === sha);
+      if (idx < 0) return;
+      const headH = headEl ? headEl.getBoundingClientRect().height : 0;
+      const usable = Math.max(0, wrapEl.clientHeight - headH);
+      // Center the target row; the scroll event then renders it via the window.
+      const target = wcOffset + idx * rowHeight + rowHeight / 2 - usable / 2;
+      wrapEl.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+    });
+  });
+
   function onWrapScroll(e: Event) {
     const el = e.currentTarget as HTMLElement;
+    recomputeWindow();
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
       loadMoreGraph();
     }
@@ -215,17 +285,24 @@
     >Edit timestamps…</button>
   {/snippet}
 
-  <div class="wrap" onscroll={onWrapScroll}>
-    <div class="head-row" style={`padding-left:${gutterWidth}px`}>
+  <div class="wrap" bind:this={wrapEl} onscroll={onWrapScroll}>
+    <div class="head-row" bind:this={headEl} style={`padding-left:${gutterWidth}px`}>
       <span class="h subject">Description</span>
       <span class="h author">Author</span>
       <span class="h date">Date</span>
       <span class="h sha">Commit</span>
     </div>
 
-    <div class="history">
-      <div class="gutter-layer" style={`width:${gutterWidth}px`}>
-        <GraphGutter {rows} {heads} {rowHeight} lineStyle={appState.graphLineStyle} />
+    <div class="history" bind:this={histEl}>
+      <div class="gutter-layer" style={`width:${gutterWidth}px; top:${wcOffset}px`}>
+        <GraphGutter
+          {rows}
+          {heads}
+          {rowHeight}
+          lineStyle={appState.graphLineStyle}
+          renderStart={winStart}
+          renderEnd={winEnd}
+        />
       </div>
 
       {#if hasWorkingChanges}
@@ -234,6 +311,7 @@
           class:selected={appState.workingCopySelected}
           role="row"
           tabindex="0"
+          style={`height:${rowHeight}px`}
           onmousedown={selectWorkingCopy}
           onkeydown={(e) => { if (e.key === " " || e.key === "Enter") selectWorkingCopy(); }}
         >
@@ -248,7 +326,10 @@
         </div>
       {/if}
 
-      {#each commits as commit, i (commit.sha)}
+      <div class="spacer-v" style={`height:${winStart * rowHeight}px`}></div>
+
+      {#each commits.slice(winStart, winEnd) as commit, k (commit.sha)}
+        {@const i = winStart + k}
         <div
           class="row"
           id={`gc-row-${commit.sha}`}
@@ -277,6 +358,11 @@
           <div class="sha mono">{commit.sha.slice(0, 9)}</div>
         </div>
       {/each}
+
+      <div
+        class="spacer-v"
+        style={`height:${Math.max(0, commits.length - winEnd) * rowHeight}px`}
+      ></div>
 
       {#if appState.graphLoadingMore}
         <div class="load-hint">Loading more…</div>
@@ -348,6 +434,10 @@
     font-size: 12.5px;
     position: relative;
     z-index: 0;
+    /* The fixed-height window model (spacers + full-height gutter SVG) assumes
+       every row is EXACTLY rowHeight px. border-box folds the 1px border into the
+       declared height:30px so rows can't drift 1px/row out of lane alignment. */
+    box-sizing: border-box;
   }
   .row:hover {
     background: var(--row-hover);
@@ -364,6 +454,11 @@
   }
   .spacer {
     flex: 0 0 auto;
+  }
+  /* Virtualization height reservers for the off-window rows above/below. Block
+     divs (the .history is not a flex container) so their inline height is exact. */
+  .spacer-v {
+    pointer-events: none;
   }
   .subject {
     flex: 1 1 auto;
