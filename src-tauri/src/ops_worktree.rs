@@ -180,6 +180,36 @@ pub fn diff(repo: &Path, path: Option<&str>, staged: bool) -> Result<String, Str
     Ok(out)
 }
 
+/// Diff for an UNTRACKED file. An untracked file has no index entry, so a plain
+/// `git diff` shows nothing — compare it against /dev/null with `--no-index` so the
+/// new file's full contents render as additions. `--no-index` exits 1 whenever the
+/// inputs differ, so this CANNOT reuse `git_ops::run()` (which maps any non-zero status
+/// to an error): capture stdout and accept exit code 0 or 1; anything else (e.g. 128)
+/// is a real failure. Note exit 1 also covers an access error (e.g. the file vanished
+/// between `status` and here) — that yields empty stdout, which we treat as "no diff"
+/// (the now-stale row disappears on the next refresh). `--` keeps the path from being
+/// read as an option.
+pub fn diff_untracked(repo: &Path, path: &str) -> Result<String, String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo)
+        .args(["diff", "--no-index", "--no-color", "-U3", "--", "/dev/null"])
+        .arg(path);
+    let output = c
+        .output()
+        .map_err(|e| format!("Failed to spawn command: {}", e))?;
+    match output.status.code() {
+        Some(0) | Some(1) => Ok(String::from_utf8_lossy(&output.stdout).into_owned()),
+        other => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(if stderr.trim().is_empty() {
+                format!("git diff --no-index failed (exit {:?})", other)
+            } else {
+                stderr.into_owned()
+            })
+        }
+    }
+}
+
 /// A commit's diff (vs its first parent), for CommitDetail.
 pub fn commit_diff(repo: &Path, sha: &str, path: Option<&str>) -> Result<String, String> {
     let mut c = Command::new("git");
@@ -637,6 +667,20 @@ mod tests {
         let d = diff(&r.path, Some("a.txt"), false).unwrap();
         assert!(d.contains("+CHANGED"));
         assert!(d.contains("-2"));
+    }
+
+    #[test]
+    fn diff_untracked_shows_new_file_contents() {
+        let r = TempRepo::new();
+        r.commit_file("a.txt", "1\n", "init");
+        r.write("new.txt", "hello\nworld\n"); // untracked — no index entry
+        // Plain diff sees nothing for an untracked file…
+        assert!(diff(&r.path, Some("new.txt"), false).unwrap().is_empty());
+        // …but diff_untracked renders its full contents as additions (exit 1 → Ok).
+        let d = diff_untracked(&r.path, "new.txt").unwrap();
+        assert!(d.contains("+hello"), "untracked contents shown: {}", d);
+        assert!(d.contains("+world"), "untracked contents shown: {}", d);
+        assert!(d.contains("new.txt"), "file path present: {}", d);
     }
 
     #[test]

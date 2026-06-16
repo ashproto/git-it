@@ -28,6 +28,12 @@
     selectedFile !== null && stagedFiles.some((f) => f.path === selectedFile),
   );
 
+  // Untracked files have no index entry, so the regular diff is empty — they need
+  // the `git diff --no-index` path (and hunk/line staging doesn't apply to them).
+  const selectedIsUntracked = $derived(
+    selectedFile !== null && untrackedFiles.some((f) => f.path === selectedFile),
+  );
+
   // Raw patch for the selected file. Re-fetches whenever selectedFile changes OR
   // workingChanges is refreshed (after every op, including hunk ops). We key on a
   // monotonic revision counter (workingChangesRev) instead of the file count so that
@@ -35,7 +41,7 @@
   // hunks on the backend — also triggers a re-fetch and prevents stale hunk indices.
   const diffKey = $derived(
     selectedFile !== null
-      ? `${selectedFile}::${selectedIsStaged ? "staged" : "unstaged"}::${appState.workingChangesRev}`
+      ? `${selectedFile}::${selectedIsStaged ? "staged" : selectedIsUntracked ? "untracked" : "unstaged"}::${appState.workingChangesRev}`
       : "",
   );
 
@@ -50,7 +56,7 @@
     }
     diffLoading = true;
     api
-      .diff(appState.repo, selectedFile, selectedIsStaged)
+      .diff(appState.repo, selectedFile, selectedIsStaged, selectedIsUntracked)
       .then((p) => {
         // Guard stale results: only apply if the key hasn't changed.
         if (key === diffKey) {
@@ -239,13 +245,13 @@
           <DiffView
             patch={diffPatch}
             staged={selectedIsStaged}
-            onStageHunk={selectedIsStaged
+            onStageHunk={selectedIsStaged || selectedIsUntracked
               ? undefined
               : (i) => gitActions.stageHunk(selectedFile!, i)}
             onUnstageHunk={selectedIsStaged
               ? (i) => gitActions.unstageHunk(selectedFile!, i)
               : undefined}
-            onStageLines={selectedIsStaged
+            onStageLines={selectedIsStaged || selectedIsUntracked
               ? undefined
               : (hi, sel) => gitActions.stageLines(selectedFile!, hi, sel)}
             onUnstageLines={selectedIsStaged

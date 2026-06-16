@@ -118,8 +118,8 @@ export const api = {
   clean: (repo: string, paths: string[]) => invoke<void>("clean", { repo, paths }),
   commit: (repo: string, message: string, signoff = false) =>
     invoke<void>("commit", { repo, message, signoff }),
-  diff: (repo: string, path: string | null, staged: boolean) =>
-    invoke<string>("diff", { repo, path, staged }),
+  diff: (repo: string, path: string | null, staged: boolean, untracked = false) =>
+    invoke<string>("diff", { repo, path, staged, untracked }),
   commitDiff: (repo: string, sha: string, path: string | null) =>
     invoke<string>("commit_diff", { repo, sha, path }),
   stageHunk: (repo: string, path: string, hunkIndex: number) =>

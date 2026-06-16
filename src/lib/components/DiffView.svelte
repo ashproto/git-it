@@ -353,13 +353,24 @@
       {:else}
         <div class="diff-table-wrap">
           <table class="diff-table mono" class:split={appState.diffSplit}>
+            {#if appState.diffSplit}
+              <!-- Fixed column widths. Without this, the colspan hunk-header row is the
+                   width-defining first row under table-layout:fixed and the old/deletion
+                   side collapses to ~28px. The two 44px gutters + two auto side columns
+                   split the remaining width evenly (50/50). -->
+              <colgroup>
+                <col class="dt-gutter" />
+                <col class="dt-side" />
+                <col class="dt-gutter" />
+                <col class="dt-side" />
+              </colgroup>
+            {/if}
             <tbody>
               {#each file.hunks as hunk, hi (hi)}
                 <!-- Hunk header row -->
                 <tr class="hunk-header-row">
                   {#if appState.diffSplit}
-                    <td class="gutter" colspan="2"></td>
-                    <td class="hunk-header-cell" colspan="2">
+                    <td class="hunk-header-cell" colspan="4">
                       <span class="hunk-range">{hunk.header}</span>
                       {#if onStageHunk || onUnstageHunk}
                         {#if onStageHunk && !staged}
@@ -596,6 +607,15 @@
     border-collapse: collapse;
     width: 100%;
     table-layout: fixed;
+  }
+
+  /* Split-view column sizing (see the <colgroup> in the markup): the gutters are
+     fixed, the two text sides share the rest evenly so deletions aren't clipped. */
+  .diff-table > colgroup .dt-gutter {
+    width: 44px;
+  }
+  .diff-table > colgroup .dt-side {
+    width: auto;
   }
 
   /* ── Gutters ─────────────────────────────────────────────────────────────────── */

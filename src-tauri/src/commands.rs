@@ -301,8 +301,21 @@ pub fn commit(repo: String, message: String, signoff: bool) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn diff(repo: String, path: Option<String>, staged: bool) -> Result<String, String> {
-    ops_worktree::diff(&PathBuf::from(repo), path.as_deref(), staged)
+pub fn diff(
+    repo: String,
+    path: Option<String>,
+    staged: bool,
+    untracked: bool,
+) -> Result<String, String> {
+    let repo = PathBuf::from(repo);
+    if untracked {
+        match path.as_deref() {
+            Some(p) => ops_worktree::diff_untracked(&repo, p),
+            None => Ok(String::new()),
+        }
+    } else {
+        ops_worktree::diff(&repo, path.as_deref(), staged)
+    }
 }
 
 #[tauri::command]
