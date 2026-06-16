@@ -310,6 +310,7 @@
           lineStyle={appState.graphLineStyle}
           renderStart={winStart}
           renderEnd={winEnd}
+          colorOf={(idx) => appState.colorForIndex(idx)}
         />
       </div>
 

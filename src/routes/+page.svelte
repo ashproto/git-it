@@ -10,6 +10,7 @@
   import { settingsPanel } from "$lib/settingsPanel.svelte";
   import ManageRepoModal from "$lib/components/ManageRepoModal.svelte";
   import { manageRepo } from "$lib/manageRepo.svelte";
+  import BranchColorDialog from "$lib/components/BranchColorDialog.svelte";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import UndoBar from "$lib/components/UndoBar.svelte";
@@ -262,6 +263,7 @@
   <TimeEditDrawer />
   <SettingsPanel />
   <ManageRepoModal />
+  <BranchColorDialog />
   <StatusBar />
 </main>
 

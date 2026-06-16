@@ -4,6 +4,7 @@
   import { dialogs } from "../dialogs.svelte";
   import { gitActions } from "../gitActions";
   import { graphView } from "../graphView.svelte";
+  import { branchColorDialog } from "../branchColorDialog.svelte";
   import { buildRefTree } from "../refTree";
   import type { RefEntry } from "../types";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
@@ -111,6 +112,10 @@
         },
       });
     }
+
+    // Per-ref colour override (applies to any kind).
+    items.push({ separator: true });
+    items.push({ label: "Set branch colour…", action: () => branchColorDialog.openFor(r.name) });
 
     // Merge this ref into the current branch (contract e: ff/no-ff/squash are
     // distinct items, never combined). Skip when this IS the checked-out branch.

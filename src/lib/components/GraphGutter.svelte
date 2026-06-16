@@ -18,6 +18,7 @@
     lineStyle = "curved",
     renderStart = 0,
     renderEnd = undefined,
+    colorOf,
   }: {
     rows: RowLayout[];
     heads: boolean[];
@@ -27,7 +28,12 @@
     renderStart?: number;
     /** One past the last commit index to draw (exclusive); undefined ⇒ all rows. */
     renderEnd?: number;
+    /** Resolve a lane colour from its colorIndex (override-aware); defaults to the palette. */
+    colorOf?: (colorIndex: number) => string;
   } = $props();
+
+  // Lane-colour resolver: a manual override wins where present, else the palette.
+  const resolveColor = (idx: number) => (colorOf ? colorOf(idx) : laneColor(idx, null, {}));
 
   const g: GeomConfig = $derived({ laneWidth: LANE_WIDTH, rowHeight, offsetX: OFFSET_X });
   const maxLanes = $derived(rows.reduce((m, r) => Math.max(m, r.width), 1));
@@ -63,7 +69,7 @@
     {#each row.edges as edge}
       <path
         d={pathFor(edge, dotY(i))}
-        stroke={laneColor(edge.colorIndex, null, {})}
+        stroke={resolveColor(edge.colorIndex)}
         stroke-width="2"
         fill="none"
       />
@@ -87,7 +93,7 @@
         cy={dotY(i)}
         r="4.5"
         fill="var(--panel-bg)"
-        stroke={laneColor(row.colorIndex, null, {})}
+        stroke={resolveColor(row.colorIndex)}
         stroke-width="2"
       />
     {:else}
@@ -95,7 +101,7 @@
         cx={laneX(row.lane, g)}
         cy={dotY(i)}
         r="4.5"
-        fill={laneColor(row.colorIndex, null, {})}
+        fill={resolveColor(row.colorIndex)}
         stroke="var(--panel-bg)"
         stroke-width="1.5"
       />

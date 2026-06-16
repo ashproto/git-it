@@ -66,6 +66,9 @@ const RELDATES_STORE_KEY = "relativeDates";
 const PULLREBASE_KEY = "gitit.pullRebase.v1";
 const PULLREBASE_STORE_KEY = "pullRebase";
 
+const BRANCHCOLORS_KEY = "gitit.branchColors.v1";
+const BRANCHCOLORS_STORE_KEY = "branchColors";
+
 const OPENREPOS_KEY = "gitit.openRepos.v1";       const OPENREPOS_STORE_KEY = "openRepos";
 const RECENTREPOS_KEY = "gitit.recentRepos.v1";   const RECENTREPOS_STORE_KEY = "recentRepos";
 const REPOMODE_KEY = "gitit.repoSwitcherMode.v1"; const REPOMODE_STORE_KEY = "repoSwitcherMode";
@@ -149,6 +152,34 @@ function loadSyncPullRebase(): boolean {
     return raw === "true";
   } catch {
     return false;
+  }
+}
+
+// Per-branch colour overrides: repo path → ref name → "#RRGGBB". Coerced on every
+// load so a malformed/older payload can never inject a non-hex value into the UI.
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+type BranchColorMap = Record<string, Record<string, string>>;
+function coerceBranchColors(p: unknown): BranchColorMap {
+  const out: BranchColorMap = {};
+  if (!p || typeof p !== "object") return out;
+  for (const [repoPath, refs] of Object.entries(p as Record<string, unknown>)) {
+    if (!refs || typeof refs !== "object") continue;
+    const inner: Record<string, string> = {};
+    for (const [name, hex] of Object.entries(refs as Record<string, unknown>)) {
+      if (typeof hex === "string" && HEX_RE.test(hex)) inner[name] = hex;
+    }
+    if (Object.keys(inner).length) out[repoPath] = inner;
+  }
+  return out;
+}
+function loadSyncBranchColors(): BranchColorMap {
+  if (isTauri()) return {};
+  try {
+    if (typeof localStorage === "undefined") return {};
+    const raw = localStorage.getItem(BRANCHCOLORS_KEY);
+    return raw ? coerceBranchColors(JSON.parse(raw)) : {};
+  } catch {
+    return {};
   }
 }
 
@@ -272,6 +303,53 @@ function makeState() {
     }
     return { local, remote, tags, head };
   });
+
+  // ── Per-branch colour overrides (persisted, keyed by repo path → ref name → hex).
+  // Mirrors the dateFormat object-persistence pattern (sync localStorage seed +
+  // touched-guarded async Tauri-store hydrate + write-through persist).
+  let branchColors = $state<BranchColorMap>(loadSyncBranchColors());
+  let branchColorsTouched = false;
+  const bcHydrate = getStore();
+  if (bcHydrate) {
+    bcHydrate
+      .then((store) => store.get(BRANCHCOLORS_STORE_KEY))
+      .then((saved) => {
+        if (saved && !branchColorsTouched) branchColors = coerceBranchColors(saved);
+      })
+      .catch((e) => console.warn("[gte] could not load branch colors", e));
+  }
+  function persistBranchColors() {
+    const snapshot = JSON.parse(JSON.stringify(branchColors)); // plain copy, no $state proxy over IPC
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(BRANCHCOLORS_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist branch colors", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(BRANCHCOLORS_KEY, JSON.stringify(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist branch colors", e);
+    }
+  }
+  // colorIndex → override hex, for any lane whose tip ref (in the CURRENT repo) has
+  // an override — so an override recolours the lane LINE, not just the sidebar dot.
+  const overrideByIndex = $derived.by(() => {
+    const m = new Map<number, string>();
+    const cur = branchColors[repo];
+    if (!cur) return m;
+    for (const r of [...refsByKind.local, ...refsByKind.remote, ...refsByKind.tags]) {
+      const hex = cur[r.name];
+      if (!hex) continue;
+      const idx = colorBySha.get(r.sha);
+      if (idx !== undefined) m.set(idx, hex);
+    }
+    return m;
+  });
+
   let graphLineStyle = $state<"curved" | "angular">(loadSyncLineStyle());
   let graphLineStyleTouched = false;
 
@@ -713,12 +791,46 @@ function makeState() {
     get colorBySha() {
       return colorBySha;
     },
-    // The graph lane colour for a ref's tip commit — so a sidebar branch swatch
-    // matches that branch's colour in the graph. (Manual per-branch overrides are
-    // layered on in Phase 5b.)
-    colorForRef(_name: string, sha: string): string {
+    get branchColors() {
+      return branchColors;
+    },
+    // The colour for a ref's swatch: the ref's own per-repo override if set, else
+    // the swatch matches its lane colour — which already folds in an override on a
+    // CO-LOCATED ref (same tip ⇒ same colorIndex) via overrideByIndex, so a swatch
+    // never diverges from the lane it sits on. (If two co-located refs carry
+    // DIFFERENT overrides the lane shows one while each swatch shows its own — an
+    // unavoidable one-lane/two-colours case.)
+    colorForRef(name: string, sha: string): string {
+      const ov = branchColors[repo]?.[name];
+      if (ov) return ov;
       const idx = colorBySha.get(sha);
-      return idx !== undefined ? laneColor(idx, null, {}) : laneColor(0, null, {});
+      if (idx === undefined) return laneColor(0, null, {});
+      return overrideByIndex.get(idx) ?? laneColor(idx, null, {});
+    },
+    // The colour for a lane (by colorIndex): an override wins if a ref tip on that
+    // lane has one, else the palette colour. Used by the gutter so an override
+    // recolours the descending lane line, not just the sidebar dot.
+    colorForIndex(idx: number): string {
+      return overrideByIndex.get(idx) ?? laneColor(idx, null, {});
+    },
+    setBranchColor(name: string, hex: string) {
+      branchColorsTouched = true;
+      const next: BranchColorMap = { ...branchColors };
+      next[repo] = { ...(next[repo] ?? {}), [name]: hex };
+      branchColors = next;
+      persistBranchColors();
+    },
+    clearBranchColor(name: string) {
+      branchColorsTouched = true;
+      const cur = branchColors[repo];
+      if (!cur || !(name in cur)) return;
+      const inner = { ...cur };
+      delete inner[name];
+      const next: BranchColorMap = { ...branchColors };
+      if (Object.keys(inner).length) next[repo] = inner;
+      else delete next[repo];
+      branchColors = next;
+      persistBranchColors();
     },
     setCurrent(sha: string | null) {
       currentSha = sha;
