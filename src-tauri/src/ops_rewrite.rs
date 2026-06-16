@@ -69,6 +69,15 @@ pub fn amend(
     Ok(RewriteResult { undo, bundle })
 }
 
+/// Full commit message (%B) for a single commit. Read-only.
+pub fn commit_message(repo: &Path, sha: &str) -> Result<String, String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo)
+        .args(["log", "-1", "--format=%B", "--end-of-options", sha]);
+    let (out, _) = git_ops::run(&mut c)?;
+    Ok(out.trim_end_matches('\n').to_string())
+}
+
 /// Rebase the current branch onto `onto` (non-interactive).
 pub fn rebase(repo: &Path, onto: &str, auto_backup: bool) -> Result<RebaseOutcome, String> {
     let bundle = safety::maybe_backup(repo, auto_backup)?;
@@ -299,6 +308,21 @@ mod tests {
         amend(&r.path, Some("reworded"), false, false, false).unwrap();
         assert_eq!(r.subject("HEAD"), "reworded");
         assert_ne!(r.rev("HEAD"), before, "amend creates a new commit");
+    }
+
+    #[test]
+    fn commit_message_returns_full_subject_and_body() {
+        let r = TempRepo::new();
+        // Two -m flags → git joins them with a blank line into one %B message
+        // (subject on line 1, blank line, body on line 3).
+        fs::write(r.path.join("f"), "1").unwrap();
+        r.git(&["add", "."]);
+        r.git(&["commit", "-q", "-m", "the subject", "-m", "the body line"]);
+        let msg = commit_message(&r.path, "HEAD").unwrap();
+        assert_eq!(msg, "the subject\n\nthe body line",
+            "full message must include subject + blank line + body, not just the subject");
+        // Sanity: the subject helper only sees the first line.
+        assert_eq!(r.subject("HEAD"), "the subject");
     }
 
     #[test]

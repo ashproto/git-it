@@ -251,6 +251,11 @@ pub fn rebase_todo_preview(repo: String, base: String) -> Result<Vec<ReflogEntry
 }
 
 #[tauri::command]
+pub fn commit_message(repo: String, sha: String) -> Result<String, String> {
+    ops_rewrite::commit_message(&PathBuf::from(repo), &sha)
+}
+
+#[tauri::command]
 pub fn rebase_interactive(repo: String, base: String, steps: Vec<RebaseStep>, auto_backup: bool) -> Result<RebaseOutcome, String> {
     ops_rewrite::rebase_interactive(&PathBuf::from(repo), &base, &steps, auto_backup)
 }

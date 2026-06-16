@@ -104,6 +104,8 @@ export const api = {
     invoke<RebaseOutcome>("rebase", { repo, onto, autoBackup }),
   rebaseTodoPreview: (repo: string, base: string) =>
     invoke<ReflogEntry[]>("rebase_todo_preview", { repo, base }),
+  commitMessage: (repo: string, sha: string) =>
+    invoke<string>("commit_message", { repo, sha }),
   rebaseInteractive: (repo: string, base: string, steps: RebaseStep[], autoBackup: boolean) =>
     invoke<RebaseOutcome>("rebase_interactive", { repo, base, steps, autoBackup }),
   reflog: (repo: string, limit = 50) => invoke<ReflogEntry[]>("reflog", { repo, limit }),

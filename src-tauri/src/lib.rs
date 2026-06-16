@@ -87,6 +87,7 @@ pub fn run() {
             commands::undo_op,
             commands::rebase,
             commands::rebase_todo_preview,
+            commands::commit_message,
             commands::rebase_interactive,
             commands::reflog,
             commands::working_changes,

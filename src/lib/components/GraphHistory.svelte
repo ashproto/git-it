@@ -178,7 +178,7 @@
       },
       { separator: true },
       {
-        label: "Edit timestamps…",
+        label: "Edit commit(s)…",
         action: () => timeEditDrawer.openDrawer(),
       },
       { separator: true },
@@ -288,9 +288,9 @@
       type="button"
       class="edit-ts"
       disabled={appState.selected.size === 0}
-      title={appState.selected.size === 0 ? "Select one or more commits first" : "Edit timestamps for the selected commits"}
+      title={appState.selected.size === 0 ? "Select one or more commits first" : "Edit the selected commit(s)"}
       onclick={() => timeEditDrawer.openDrawer()}
-    >Edit timestamps…</button>
+    >Edit commit(s)…</button>
   {/snippet}
 
   <div class="wrap" bind:this={wrapEl} onscroll={onWrapScroll}>

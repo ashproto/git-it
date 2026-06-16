@@ -4,7 +4,7 @@
 import { appState } from "./store.svelte";
 import { api } from "./api";
 import { SAMPLE_GRAPH } from "./graph/sample";
-import type { OpOutcome, RemoteOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot } from "./types";
+import type { GraphCommit, OpOutcome, RemoteOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot } from "./types";
 import { dialogs } from "./dialogs.svelte";
 
 function isTauri(): boolean {
@@ -394,6 +394,52 @@ export const gitActions = {
       consequence,
       (backup) => api.rebaseInteractive(appState.repo, base, steps, backup),
     ),
+
+  // ── Single-commit message editing (C3) ────────────────────────────────────
+  // Read the FULL message (%B, subject + body) of one commit. Read-only; safe in
+  // browser preview (returns "" with no repo / outside Tauri).
+  getCommitMessage: (sha: string): Promise<string> => {
+    if (!isTauri() || !appState.repo) return Promise.resolve("");
+    return api.commitMessage(appState.repo, sha);
+  },
+
+  // Set a commit's message. HEAD → amend (no date reset); otherwise → reword via
+  // an interactive rebase of base..HEAD (pick every commit, reword the target).
+  // Both paths already route through the destructive machinery (auto-backup +
+  // confirm dialog + graph reload), so no confirm/reload is added here.
+  setCommitMessage: async (commit: GraphCommit, message: string): Promise<void> => {
+    if (commit.refs.some((r) => r.is_head)) {
+      // HEAD: amend in place. Do NOT reset author/committer dates.
+      await gitActions.amend(message, false, false);
+      return;
+    }
+    // Non-HEAD reword: needs a linear base..HEAD replay, so reject merges/root.
+    if (commit.parents.length === 0) {
+      appState.status = "Can't reword the root commit here.";
+      return;
+    }
+    if (commit.parents.length > 1) {
+      appState.status = "Can't reword a merge commit here.";
+      return;
+    }
+    const base = commit.parents[0];
+    const preview = await api.rebaseTodoPreview(appState.repo, base);
+    if (!preview.some((e) => e.sha === commit.sha)) {
+      appState.status = "Can't reword that commit — it isn't in the current branch's history.";
+      return;
+    }
+    const steps: RebaseStep[] = preview.map((e) => ({
+      action: e.sha === commit.sha ? "reword" : "pick",
+      sha: e.sha,
+      message: e.sha === commit.sha ? message : null,
+    }));
+    await gitActions.rebaseInteractive(
+      base,
+      steps,
+      `Reword ${commit.sha.slice(0, 9)} — rewrites it and the ${preview.length - 1} commit(s) after it; hashes change.`,
+    );
+  },
+
   // ── Working-copy actions (Phase 5) ────────────────────────────────────────
   stage: (paths: string[]) =>
     runWorktree(`Stage ${paths.length} file(s)`, () => api.stage(appState.repo, paths)),
