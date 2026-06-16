@@ -78,6 +78,25 @@ pub fn commit_message(repo: &Path, sha: &str) -> Result<String, String> {
     Ok(out.trim_end_matches('\n').to_string())
 }
 
+/// Number of merge commits in `base..HEAD`. A reword replays that range with
+/// `pick`, and git refuses a non-interactive `pick <merge-commit>`, so a reword
+/// whose replay range crosses a merge must be rejected up-front (otherwise the
+/// rebase fails and strands the repo mid-operation).
+pub fn count_merges_in_range(repo: &Path, base: &str) -> Result<usize, String> {
+    let mut c = Command::new("git");
+    c.current_dir(repo).args([
+        "rev-list",
+        "--merges",
+        "--count",
+        "--end-of-options",
+        &format!("{}..HEAD", base),
+    ]);
+    let (out, _) = git_ops::run(&mut c)?;
+    out.trim()
+        .parse::<usize>()
+        .map_err(|e| format!("could not parse merge count: {}", e))
+}
+
 /// Rebase the current branch onto `onto` (non-interactive).
 pub fn rebase(repo: &Path, onto: &str, auto_backup: bool) -> Result<RebaseOutcome, String> {
     let bundle = safety::maybe_backup(repo, auto_backup)?;
@@ -323,6 +342,24 @@ mod tests {
             "full message must include subject + blank line + body, not just the subject");
         // Sanity: the subject helper only sees the first line.
         assert_eq!(r.subject("HEAD"), "the subject");
+    }
+
+    #[test]
+    fn count_merges_in_range_detects_a_merge() {
+        let r = TempRepo::new();
+        r.commit("f", "1", "A");
+        let base = r.rev("HEAD");
+        // Side branch B, then a --no-ff merge into main so base..HEAD has a merge.
+        r.git(&["checkout", "-q", "-b", "side"]);
+        r.commit("g", "1", "B");
+        r.git(&["checkout", "-q", "main"]);
+        r.commit("f", "2", "C");
+        r.git(&["merge", "-q", "--no-ff", "-m", "Merge side", "side"]);
+        assert_eq!(count_merges_in_range(&r.path, &base).unwrap(), 1, "merge in base..HEAD");
+        // A linear range from the merge tip onward has zero merges.
+        let tip = r.rev("HEAD");
+        r.commit("f", "3", "D");
+        assert_eq!(count_merges_in_range(&r.path, &tip).unwrap(), 0, "linear range");
     }
 
     #[test]

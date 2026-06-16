@@ -256,6 +256,11 @@ pub fn commit_message(repo: String, sha: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn count_merges_in_range(repo: String, base: String) -> Result<usize, String> {
+    ops_rewrite::count_merges_in_range(&PathBuf::from(repo), &base)
+}
+
+#[tauri::command]
 pub fn rebase_interactive(repo: String, base: String, steps: Vec<RebaseStep>, auto_backup: bool) -> Result<RebaseOutcome, String> {
     ops_rewrite::rebase_interactive(&PathBuf::from(repo), &base, &steps, auto_backup)
 }

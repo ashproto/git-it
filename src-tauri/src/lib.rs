@@ -88,6 +88,7 @@ pub fn run() {
             commands::rebase,
             commands::rebase_todo_preview,
             commands::commit_message,
+            commands::count_merges_in_range,
             commands::rebase_interactive,
             commands::reflog,
             commands::working_changes,

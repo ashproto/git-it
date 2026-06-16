@@ -28,6 +28,9 @@
   const isMerge = $derived(!!only && only.parents.length > 1);
   const isRoot = $derived(!!only && only.parents.length === 0);
   const rewordable = $derived(!!only && (isHead || (!isMerge && !isRoot)));
+  // Amending HEAD folds any staged changes into the commit — warn so a user who
+  // came here to "edit the message" isn't surprised.
+  const headHasStaged = $derived(isHead && (appState.repoStatus?.staged ?? 0) > 0);
 
   let message = $state("");
   let originalMessage = $state("");
@@ -156,6 +159,11 @@
           {#if isMerge || isRoot}
             <p class="section-hint muted">
               Rewording a merge or root commit isn't supported here.
+            </p>
+          {:else if headHasStaged}
+            <p class="section-hint warn">
+              You have staged changes — updating this message also commits them
+              into HEAD.
             </p>
           {/if}
           <div class="message-actions">
@@ -314,6 +322,9 @@
   }
   .section-hint.muted {
     font-style: italic;
+  }
+  .section-hint.warn {
+    color: var(--err);
   }
   .message-input {
     width: 100%;

@@ -423,6 +423,13 @@ export const gitActions = {
       return;
     }
     const base = commit.parents[0];
+    // A reword replays base..HEAD with `pick`, and git refuses `pick <merge>`,
+    // so refuse up-front if a merge sits anywhere in that range (otherwise the
+    // rebase fails and strands the repo mid-operation).
+    if ((await api.countMergesInRange(appState.repo, base)) > 0) {
+      appState.status = "Can't reword across a merge commit yet.";
+      return;
+    }
     const preview = await api.rebaseTodoPreview(appState.repo, base);
     if (!preview.some((e) => e.sha === commit.sha)) {
       appState.status = "Can't reword that commit — it isn't in the current branch's history.";

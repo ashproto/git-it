@@ -106,6 +106,8 @@ export const api = {
     invoke<ReflogEntry[]>("rebase_todo_preview", { repo, base }),
   commitMessage: (repo: string, sha: string) =>
     invoke<string>("commit_message", { repo, sha }),
+  countMergesInRange: (repo: string, base: string) =>
+    invoke<number>("count_merges_in_range", { repo, base }),
   rebaseInteractive: (repo: string, base: string, steps: RebaseStep[], autoBackup: boolean) =>
     invoke<RebaseOutcome>("rebase_interactive", { repo, base, steps, autoBackup }),
   reflog: (repo: string, limit = 50) => invoke<ReflogEntry[]>("reflog", { repo, limit }),
