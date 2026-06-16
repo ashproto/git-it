@@ -210,10 +210,15 @@
           </div>
         {:else}
           <div class="main-col">
-            <UndoBar />
-            <GraphHistory />
+            <!-- Timeline stays MOUNTED (just hidden) in Local Changes view so the
+                 graph's scroll-to-commit keeps working when a sidebar ref is clicked
+                 from the changes screen. display:contents → no layout box when shown. -->
+            <div class="timeline-stack" class:hidden={appState.activeView === "changes"}>
+              <UndoBar />
+              <GraphHistory />
+            </div>
             <ConflictView />
-            {#if appState.workingCopySelected}
+            {#if appState.activeView === "changes"}
               <WorkingCopyView />
             {:else}
               <CommitDetail />
@@ -343,6 +348,15 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+  /* Timeline group: renders inline (display:contents → no extra box, identical
+     layout) when the commit timeline is active, and fully unrenders in Local
+     Changes view — while keeping GraphHistory mounted so scroll-to-commit works. */
+  .timeline-stack {
+    display: contents;
+  }
+  .timeline-stack.hidden {
+    display: none;
   }
   /* In glass mode the very top of the window must be a draggable element so
      the user can grab the strip around the traffic-light buttons. We move the

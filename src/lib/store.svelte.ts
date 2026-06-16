@@ -343,11 +343,13 @@ function makeState() {
   // workingChangesRev: monotonic counter bumped on every refresh so diff effects
   //   re-run after hunk ops (which don't change the file COUNT but do re-index hunks).
   // selectedFile: which file is being diffed in the working-copy panel.
-  // workingCopySelected: true when the synthetic "Uncommitted changes" row is focused.
+  // activeView: which main screen is showing — "timeline" (graph + commit detail) or
+  // "changes" (the Local Changes / working-copy screen). Replaces the old
+  // workingCopySelected boolean (kept as a derived getter for existing call sites).
   let workingChanges = $state<WorkingFile[]>([]);
   let workingChangesRev = $state(0);
   let selectedFile = $state<string | null>(null);
-  let workingCopySelected = $state<boolean>(false);
+  let activeView = $state<"timeline" | "changes">("timeline");
   // Transient (non-persisted) suggested commit message, set by squash-merge to
   // prefill the CommitComposer before the user edits/commits.
   let suggestedCommitMessage = $state("");
@@ -588,7 +590,7 @@ function makeState() {
         workingChanges = [];
         workingChangesRev = 0;
         selectedFile = null;
-        workingCopySelected = false;
+        activeView = "timeline";
         suggestedCommitMessage = "";
         // Clear remote state — refs/remotes/progress belong to the previous repo.
         refsDetailed = [];
@@ -702,8 +704,9 @@ function makeState() {
     },
     setCurrent(sha: string | null) {
       currentSha = sha;
-      // Focusing a real commit exits working-copy mode.
-      if (sha !== null) workingCopySelected = false;
+      // Focusing a real commit returns to (or stays on) the timeline — so a sidebar
+      // ref/commit click while in Local Changes navigates back to the graph.
+      if (sha !== null) activeView = "timeline";
     },
     get graphLineStyle() {
       return graphLineStyle;
@@ -751,13 +754,28 @@ function makeState() {
       selectedFile = v;
     },
     get workingCopySelected() {
-      return workingCopySelected;
+      // Back-compat shim: working-copy "row focus" now maps onto activeView.
+      return activeView === "changes";
     },
     setWorkingCopySelected(v: boolean) {
-      workingCopySelected = v;
-      // When entering working-copy mode, deselect any real commit so the panels
-      // don't show stale commit detail alongside the working-copy view.
-      if (v) currentSha = null;
+      activeView = v ? "changes" : "timeline";
+      // Entering Local Changes: clear the focused commit AND the multi-select set so
+      // the timeline's selection highlight doesn't linger behind the changes view
+      // (the "two rows look selected" bug) and the detail panel shows no stale commit.
+      if (v) {
+        currentSha = null;
+        selected = new Set();
+      }
+    },
+    get activeView() {
+      return activeView;
+    },
+    setActiveView(v: "timeline" | "changes") {
+      activeView = v;
+      if (v === "changes") {
+        currentSha = null;
+        selected = new Set();
+      }
     },
     // ── Transient suggested commit message (squash-merge prefill) ─────────────
     get suggestedCommitMessage() {

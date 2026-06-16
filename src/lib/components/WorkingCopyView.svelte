@@ -97,9 +97,9 @@
 
 <div class="wc-view panel">
   {#if !isTauri()}
-    <p class="desktop-only">Working copy is only available in the desktop app.</p>
+    <p class="desktop-only">Local changes are only available in the desktop app.</p>
   {:else if appState.workingChanges.length === 0}
-    <p class="empty">Working copy is clean — no changes.</p>
+    <p class="empty">No local changes — your working copy is clean.</p>
   {:else}
     <div class="master-detail">
       <div class="files">

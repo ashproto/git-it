@@ -128,16 +128,29 @@
 </script>
 
 <aside class="sidebar">
-  <button
-    class="wc-entry"
-    class:active={appState.workingCopySelected}
-    onclick={() => appState.setWorkingCopySelected(true)}
-    title="Working copy — uncommitted changes"
-  >
-    <span class="wc-dot" aria-hidden="true"></span>
-    <span class="wc-label">Working Copy</span>
-    {#if wcCount > 0}<span class="wc-count">{wcCount}</span>{/if}
-  </button>
+  <nav class="view-nav" aria-label="Main view">
+    <button
+      class="wc-entry"
+      class:active={appState.activeView === "changes"}
+      aria-current={appState.activeView === "changes" ? "page" : undefined}
+      onclick={() => appState.setActiveView("changes")}
+      title="Local changes — uncommitted work"
+    >
+      <span class="wc-dot" aria-hidden="true"></span>
+      <span class="wc-label">Local Changes</span>
+      {#if wcCount > 0}<span class="wc-count">{wcCount}</span>{/if}
+    </button>
+    <button
+      class="wc-entry"
+      class:active={appState.activeView === "timeline"}
+      aria-current={appState.activeView === "timeline" ? "page" : undefined}
+      onclick={() => appState.setActiveView("timeline")}
+      title="Commit timeline — the graph of commits"
+    >
+      <span class="tl-dot" aria-hidden="true"></span>
+      <span class="wc-label">Commit Timeline</span>
+    </button>
+  </nav>
 
   {#if refs.head.length}
     <button class="ref detached" onclick={() => jumpTo(refs.head[0].sha)} title="Detached HEAD">
@@ -191,7 +204,7 @@
     gap: 2px;
     font-size: 13px;
   }
-  /* Pinned "Working Copy (N)" entry — opens the dedicated changes screen. */
+  /* Pinned view switcher — Local Changes / Commit Timeline entries. */
   .wc-entry {
     display: flex;
     align-items: center;
@@ -232,6 +245,22 @@
     padding: 0 7px;
     min-width: 18px;
     text-align: center;
+  }
+  /* Two-item view switcher: Local Changes / Commit Timeline. */
+  .view-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 4px;
+  }
+  /* Hollow node glyph for Commit Timeline — distinct from the filled accent dot. */
+  .tl-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--text-muted);
+    box-sizing: border-box;
+    flex-shrink: 0;
   }
   section {
     display: flex;
