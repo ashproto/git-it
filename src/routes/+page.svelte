@@ -83,14 +83,16 @@
 <main>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header class="app-header" onmousedown={onWindowDragMouseDown}>
-    <h1>Git It</h1>
-    {#if currentBranch}
-      <span class="branch-chip" title="Current branch">
-        {currentBranch}{#if aheadBehind}&nbsp;<span class="ahead-behind" aria-label="{aheadBehind.ahead} ahead, {aheadBehind.behind} behind">↑{aheadBehind.ahead} ↓{aheadBehind.behind}</span>{/if}
-      </span>
-    {:else if detachedHead}
-      <span class="branch-chip detached" title="Detached HEAD">detached HEAD</span>
-    {/if}
+    <div class="header-left">
+      <h1>Git It</h1>
+      {#if currentBranch}
+        <span class="branch-chip" title="Current branch">
+          {currentBranch}{#if aheadBehind}&nbsp;<span class="ahead-behind" aria-label="{aheadBehind.ahead} ahead, {aheadBehind.behind} behind">↑{aheadBehind.ahead} ↓{aheadBehind.behind}</span>{/if}
+        </span>
+      {:else if detachedHead}
+        <span class="branch-chip detached" title="Detached HEAD">detached HEAD</span>
+      {/if}
+    </div>
     <div class="remote-btns" data-no-drag>
       <button
         class="fetch-btn"
@@ -332,9 +334,20 @@
     -webkit-backdrop-filter: blur(20px) saturate(140%);
   }
 
+  /* Left zone (title + branch chip) absorbs all the variable width, so the
+     Fetch/Pull/Push group and the gear stay anchored on the right and never shift
+     when the branch name changes (was: two competing margin-left:auto). */
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
   .app-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 12px;
     /* Native macOS titlebars are non-selectable so click-drag doesn't start
        a text selection that would preempt the window drag. */
@@ -356,7 +369,6 @@
   }
 
   .branch-chip {
-    margin-left: 4px;
     align-self: center;
     font-size: 12px;
     color: var(--accent);
@@ -364,17 +376,20 @@
     border-radius: 999px;
     padding: 1px 10px;
     white-space: nowrap;
+    /* Truncate a very long branch name instead of pushing the toolbar buttons. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .branch-chip.detached {
     color: var(--err);
     border-color: var(--err);
   }
   .remote-btns {
-    margin-left: auto;
-    align-self: center;
     display: flex;
     align-items: center;
     gap: 4px;
+    flex-shrink: 0;
   }
 
   .fetch-btn {
@@ -419,9 +434,8 @@
   /* Gear button — opens the Settings panel */
   .gear {
     position: relative;
-    margin-left: auto; /* push to the right edge of the header */
-    align-self: center;
     display: inline-flex;
+    flex-shrink: 0;
   }
   .gear-btn {
     display: inline-flex;
@@ -452,11 +466,10 @@
     overflow-y: auto;
     min-height: 0;
   }
-  /* Inner wrapper centers content and restores the former main padding. */
+  /* Inner wrapper restores the former main padding and fills the full window
+     width (no max-width cap) so wide/fullscreen windows use all the space. */
   .scroll-inner {
     padding: 16px 18px;
-    max-width: 1400px;
-    margin: 0 auto;
     width: 100%;
     box-sizing: border-box;
   }

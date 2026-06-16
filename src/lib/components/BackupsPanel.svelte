@@ -110,7 +110,9 @@
 </script>
 
 <CollapsiblePanel title="Backups" collapsed>
-  {#snippet headerActions()}
+  {#if !isTauri()}
+    <p class="note">Desktop app only — backups are not available in the browser preview.</p>
+  {:else}
     <div class="mode-tabs">
       <button
         type="button"
@@ -129,11 +131,7 @@
         }}>Safety refs</button
       >
     </div>
-  {/snippet}
-
-  {#if !isTauri()}
-    <p class="note">Desktop app only — backups are not available in the browser preview.</p>
-  {:else if tab === "bundles"}
+    {#if tab === "bundles"}
     <div class="row">
       <button type="button" class="primary" onclick={createBundleNow}>Create bundle now</button>
       <button type="button" onclick={refreshBundles}>Refresh</button>
@@ -178,6 +176,7 @@
         <li class="empty">No safety refs from past rewrites.</li>
       {/each}
     </ul>
+    {/if}
   {/if}
 </CollapsiblePanel>
 
@@ -194,6 +193,8 @@
     background: var(--input-bg);
     border-radius: 6px;
     padding: 2px;
+    width: fit-content;
+    margin-bottom: 8px;
   }
   .mode-tabs button {
     padding: 4px 10px;

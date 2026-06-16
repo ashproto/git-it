@@ -18,7 +18,7 @@
   }
 </script>
 
-<CollapsiblePanel title="Output">
+<CollapsiblePanel title="Output" collapsed>
   {#snippet headerActions()}
     <span class="status">{appState.status}</span>
     <button type="button" onclick={clearLog}>Clear</button>
@@ -55,7 +55,7 @@
     background: var(--btn-hover);
   }
   .log {
-    height: 160px;
+    height: 120px;
     overflow: auto;
     padding: 8px 10px;
     border-radius: 6px;

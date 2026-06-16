@@ -111,16 +111,23 @@
   <div class="recent-wrap" bind:this={dropdownRoot}>
     <button
       class="recent-btn"
-      title="Recent repositories"
+      title="Open or recent repositories"
       aria-expanded={dropdownOpen}
       onclick={toggleDropdown}
-      aria-label="Recent repositories"
+      aria-label="Open or recent repositories"
     >▾</button>
 
     {#if dropdownOpen}
-      <div class="dropdown" role="menu" aria-label="Recent repositories">
+      <div class="dropdown" role="menu" aria-label="Open or recent repositories">
+        <button
+          class="drop-item open-item"
+          role="menuitem"
+          onclick={() => { closeDropdown(); openRepoFlow(); }}
+        >Open repository…</button>
+        <div class="drop-sep" role="separator"></div>
+        <p class="drop-head">Recent</p>
         {#if recentNotOpen.length === 0}
-          <p class="empty">No recent repos</p>
+          <p class="empty">No recent repositories</p>
         {:else}
           {#each recentNotOpen as path (path)}
             <button
@@ -172,9 +179,11 @@
     color: var(--text);
     background: var(--row-hover);
   }
+  /* No font-weight change on activate: the accent underline + brighter color mark
+     the active tab. Bolding would widen the label and shift the whole tab strip
+     every time you switch tabs. */
   .tab.active {
     color: var(--text);
-    font-weight: 600;
     border-bottom-color: var(--accent);
   }
 
@@ -300,5 +309,21 @@
     font-size: 12px;
     color: var(--text-muted);
     font-style: italic;
+  }
+
+  .open-item {
+    font-weight: 500;
+  }
+  .drop-sep {
+    height: 1px;
+    background: var(--border-subtle);
+    margin: 4px 0;
+  }
+  .drop-head {
+    margin: 2px 10px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
   }
 </style>
