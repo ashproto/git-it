@@ -35,15 +35,29 @@
     amend ? message.trim().length > 0 : message.trim().length > 0 && stagedCount > 0,
   );
 
+  // Monotonic token so a slow message-load can't clobber a later toggle (e.g. the
+  // user toggles ON then OFF — or ON twice — before HEAD's message resolves).
+  let amendToken = 0;
   // Toggle handler (onchange, not $effect, to avoid reactive loops). ON: stash the
   // current draft and load HEAD's message for editing. OFF: restore the draft.
   async function onAmendToggle(e: Event) {
     const on = (e.currentTarget as HTMLInputElement).checked;
+    const token = ++amendToken;
     amend = on;
     if (on) {
       draft = message;
       const head = headCommit;
-      message = head ? await gitActions.getCommitMessage(head.sha) : "";
+      try {
+        const loaded = head ? await gitActions.getCommitMessage(head.sha) : "";
+        if (token === amendToken && amend) message = loaded;
+      } catch {
+        // Couldn't read HEAD's message — back out of amend cleanly.
+        if (token === amendToken) {
+          amend = false;
+          message = draft;
+          draft = "";
+        }
+      }
     } else {
       message = draft;
       draft = "";

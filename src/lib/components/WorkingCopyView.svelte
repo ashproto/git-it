@@ -119,26 +119,39 @@
   // Mirrors GraphHistory.onRowContext: preventDefault, select the row (so the diff
   // updates), then open the shared contextMenu with file-state-appropriate actions.
   // discard/clean already show their own confirm — no extra confirm is added here.
-  function onRowContext(e: MouseEvent, f: WorkingFile) {
+  function onRowContext(
+    e: MouseEvent,
+    f: WorkingFile,
+    section: "staged" | "unstaged" | "untracked",
+  ) {
     e.preventDefault();
     // Select the row so the diff pane follows the right-click. selectFile toggles
     // off when re-clicking the selected row, so only set it if not already selected.
     if (selectedFile !== f.path) appState.setSelectedFile(f.path);
-    if (f.staged) {
+    // Branch on the SECTION the row lives in — NOT on f.staged. A partially-staged
+    // file (staged AND further-unstaged) appears in both the Staged and Unstaged
+    // lists, so the menu must match where it was clicked and offer that section's
+    // direction (else the Unstaged row would wrongly show only "Unstage").
+    if (section === "staged") {
       contextMenu.openAt(e.clientX, e.clientY, [
         { label: "Unstage", action: () => gitActions.unstage([f.path]) },
       ]);
-    } else if (f.untracked) {
+    } else if (section === "untracked") {
       contextMenu.openAt(e.clientX, e.clientY, [
         { label: "Stage", action: () => gitActions.stage([f.path]) },
         { separator: true },
         { label: "Remove", danger: true, action: () => gitActions.clean([f.path]) },
       ]);
     } else {
+      // Unstaged section. In unified mode it may hold an untracked file (→ Remove);
+      // otherwise it's a tracked file with unstaged edits (→ Discard).
+      const removeItem = f.untracked
+        ? { label: "Remove", danger: true, action: () => gitActions.clean([f.path]) }
+        : { label: "Discard changes", danger: true, action: () => gitActions.discard([f.path]) };
       contextMenu.openAt(e.clientX, e.clientY, [
         { label: "Stage", action: () => gitActions.stage([f.path]) },
         { separator: true },
-        { label: "Discard changes", danger: true, action: () => gitActions.discard([f.path]) },
+        removeItem,
       ]);
     }
   }
@@ -197,7 +210,7 @@
                 role="row"
                 tabindex="0"
                 onmousedown={() => selectFile(f.path)}
-                oncontextmenu={(e) => onRowContext(e, f)}
+                oncontextmenu={(e) => onRowContext(e, f, "staged")}
                 onkeydown={(e) => {
                   if (e.key === "Enter" || e.key === " ") selectFile(f.path);
                 }}
@@ -236,7 +249,7 @@
                 role="row"
                 tabindex="0"
                 onmousedown={() => selectFile(f.path)}
-                oncontextmenu={(e) => onRowContext(e, f)}
+                oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
                 onkeydown={(e) => {
                   if (e.key === "Enter" || e.key === " ") selectFile(f.path);
                 }}
@@ -272,7 +285,7 @@
                 role="row"
                 tabindex="0"
                 onmousedown={() => selectFile(f.path)}
-                oncontextmenu={(e) => onRowContext(e, f)}
+                oncontextmenu={(e) => onRowContext(e, f, "untracked")}
                 onkeydown={(e) => {
                   if (e.key === "Enter" || e.key === " ") selectFile(f.path);
                 }}

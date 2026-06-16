@@ -1009,6 +1009,10 @@ function makeState() {
   let refsDetailed = $state<Ref[]>([]);
   let remotesState = $state<RemoteInfo[]>([]);
   let remoteOpActive = $state<boolean>(false);
+  // True from the moment a repo switch begins until that repo's reloadGraph finishes.
+  // Used to block remote actions (push/pull/fetch) so they can't act on the previous
+  // repo's kept-stale remote/branch during the load window.
+  let repoLoading = $state<boolean>(false);
   let remoteLog = $state<string[]>([]);
 
   // Derived: upstream/ahead/behind for the currently checked-out branch.
@@ -1034,6 +1038,9 @@ function makeState() {
       // repo, and forks can share SHAs — restoring here could hard-reset the wrong
       // tree) and any in-progress-op status carried from the previous repo.
       if (v !== repo) {
+        // Entering a real repo begins the loading window (cleared when that repo's
+        // reloadGraph finishes); closing (v="") ends it immediately.
+        repoLoading = v !== "";
         // Transient / selection state belongs to the previous repo — always reset.
         lastUndo = null;
         selectedFile = null;
@@ -1442,6 +1449,12 @@ function makeState() {
     // ── Remote operation progress (Phase 6) ───────────────────────────────────
     get remoteOpActive() {
       return remoteOpActive;
+    },
+    get repoLoading() {
+      return repoLoading;
+    },
+    setRepoLoading(v: boolean) {
+      repoLoading = v;
     },
     get remoteLog() {
       return remoteLog;

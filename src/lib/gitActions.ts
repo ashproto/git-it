@@ -58,32 +58,39 @@ export async function reloadGraph(): Promise<void> {
   // with a stale repo's (the flicker fix keeps the old data visible until here).
   const target = appState.repo;
   if (!target) return;
-  let gc: GraphCommit[];
   try {
-    gc = await api.loadGraph(target, PAGE, 0);
-  } catch (e) {
-    // Load failed (repo moved / deleted / corrupt). Because the flicker fix keeps
-    // the PREVIOUS repo's data on screen until this point, we must clear it on
-    // failure for the still-current repo — otherwise one repo's history would show
-    // under another's name. Bail silently if a newer switch already superseded us.
-    if (appState.repo === target) {
-      appState.setGraphCommits([]);
-      appState.setGraphHasMore(false);
-      appState.setRepoStatus(null);
-      appState.setRefsDetailed([]);
-      appState.setWorkingChanges([]);
-      appState.status = `Could not open ${target}: ${e}`;
+    let gc: GraphCommit[];
+    try {
+      gc = await api.loadGraph(target, PAGE, 0);
+    } catch (e) {
+      // Load failed (repo moved / deleted / corrupt). Because the flicker fix keeps
+      // the PREVIOUS repo's data on screen until this point, we must clear it on
+      // failure for the still-current repo — otherwise one repo's history would show
+      // under another's name. Bail silently if a newer switch already superseded us.
+      if (appState.repo === target) {
+        appState.setGraphCommits([]);
+        appState.setGraphHasMore(false);
+        appState.setRepoStatus(null);
+        appState.setRefsDetailed([]);
+        appState.setWorkingChanges([]);
+        appState.status = `Could not open ${target}: ${e}`;
+      }
+      return;
     }
-    return;
+    if (appState.repo !== target) return;
+    appState.setGraphCommits(gc);
+    appState.setGraphHasMore(gc.length === PAGE);
+    await refreshStatus();
+    if (appState.repo !== target) return;
+    await refreshWorkingChanges();
+    if (appState.repo !== target) return;
+    await refreshRefs();
+  } finally {
+    // Clear the switch-in-progress flag (set by `set repo`) so remote actions
+    // re-enable — but only if we're still the current repo, so a superseding
+    // switch's own flag isn't cleared out from under it.
+    if (appState.repo === target) appState.setRepoLoading(false);
   }
-  if (appState.repo !== target) return;
-  appState.setGraphCommits(gc);
-  appState.setGraphHasMore(gc.length === PAGE);
-  await refreshStatus();
-  if (appState.repo !== target) return;
-  await refreshWorkingChanges();
-  if (appState.repo !== target) return;
-  await refreshRefs();
 }
 
 export async function loadMoreGraph(): Promise<void> {
@@ -375,7 +382,13 @@ export const gitActions = {
     run(`Create tag ${name}`, () => api.createTag(appState.repo, name, target, message)),
   deleteTag: (name: string) =>
     run(`Delete tag ${name}`, () => api.deleteTag(appState.repo, name)),
-  fetch: () => run("Fetch", () => api.fetch(appState.repo)),
+  fetch: () => {
+    if (appState.repoLoading) {
+      appState.status = "Repository is still loading — try again in a moment.";
+      return Promise.resolve(false);
+    }
+    return run("Fetch", () => api.fetch(appState.repo));
+  },
   merge: (reference: string, opts?: { noFf?: boolean; squash?: boolean }) =>
     runOp(`Merge ${reference}`, () =>
       api.merge(appState.repo, reference, opts?.noFf ?? false, opts?.squash ?? false),
@@ -491,10 +504,45 @@ export const gitActions = {
   // `amend` action above it does NOT route through runDestructive's blocking confirm
   // dialog — Fork amends without a modal; the configurable auto-backup is the safety
   // net. resetAuthorDate/resetCommitterDate=false preserve the original author.
-  amendCommit: (message: string) =>
-    runWorktree("Amend commit", () =>
-      api.amend(appState.repo, message, false, false, appState.autoBackupDestructive),
-    ),
+  amendCommit: async (message: string): Promise<boolean> => {
+    if (!isTauri()) {
+      appState.status = "That action needs the desktop app (not the browser preview).";
+      return false;
+    }
+    if (!appState.repo) {
+      appState.status = "Open a repository first.";
+      return false;
+    }
+    try {
+      appState.status = "Amend commit…";
+      const res = await api.amend(
+        appState.repo,
+        message,
+        false,
+        false,
+        appState.autoBackupDestructive,
+      );
+      // Capture the RewriteResult so the one-click Undo bar + backup log appear
+      // (parity with the destructive `amend`; runWorktree would have dropped them).
+      appState.setLastUndo(res.undo);
+      if (res.bundle) appState.appendLog(`[backup] ${res.bundle}`);
+      try {
+        await refreshWorkingChanges();
+      } catch (e) {
+        console.warn("[gte] working changes refresh after amend failed", e);
+      }
+      try {
+        await reloadGraph();
+      } catch (e) {
+        console.warn("[gte] graph refresh after amend failed", e);
+      }
+      appState.status = "Amend commit — done.";
+      return true;
+    } catch (e) {
+      appState.status = `Amend commit failed: ${firstLine(e)}`;
+      return false;
+    }
+  },
   stashPush: (message: string | null) =>
     runWorktree("Stash changes", () => api.stashPush(appState.repo, message)),
   stashApply: (index: number) =>
@@ -594,6 +642,10 @@ export const gitActions = {
 
   // ── Remote actions (Phase 6) ───────────────────────────────────────────────
   pull: () => {
+    if (appState.repoLoading) {
+      appState.status = "Repository is still loading — try again in a moment.";
+      return Promise.resolve(false);
+    }
     const label = appState.pullRebase ? "Pull (rebase)" : "Pull";
     return runRemote(label, (onLine, creds) =>
       api.pull(appState.repo, appState.pullRebase, onLine, creds),
@@ -601,6 +653,12 @@ export const gitActions = {
   },
 
   push: async (forceWithLease = false): Promise<boolean> => {
+    // Don't act on a stale remote/branch during the brief repo-switch load window
+    // (remotesState/refsDetailed are kept from the previous repo until reload).
+    if (appState.repoLoading) {
+      appState.status = "Repository is still loading — try again in a moment.";
+      return false;
+    }
     if (forceWithLease) {
       const ok = await dialogs.confirm({
         title: "Force push",
