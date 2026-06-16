@@ -7,11 +7,14 @@
     kind,
     onJump,
     onContext,
+    colorOf,
   }: {
     nodes: RefTreeNode[];
     kind: "local" | "remote" | "tag";
     onJump: (sha: string) => void;
     onContext: (e: MouseEvent, ref: RefEntry, kind: "local" | "remote" | "tag") => void;
+    // Resolves a ref's swatch colour — its graph lane colour (or manual override).
+    colorOf: (ref: RefEntry) => string;
   } = $props();
 
   // Collapsed folder paths (in-memory; folders default expanded).
@@ -53,7 +56,7 @@
         oncontextmenu={(e) => onContext(e, node.ref, kind)}
         title={node.ref.name}
       >
-        <span class="dot {kind}" aria-hidden="true"></span>
+        <span class="dot" style={`background:${colorOf(node.ref)}`} aria-hidden="true"></span>
         <span class="rn">{node.name}</span>
       </button>
     {/if}
@@ -119,14 +122,6 @@
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
-  }
-  .dot.local {
-    background: #378add;
-  }
-  .dot.remote {
-    background: #888780;
-  }
-  .dot.tag {
-    background: #ba7517;
+    /* Colour is set inline to the ref's graph lane colour (or manual override). */
   }
 </style>

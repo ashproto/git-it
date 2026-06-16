@@ -3,7 +3,7 @@
 import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
-import { computeLanes } from "./graph";
+import { computeLanes, laneColor } from "./graph";
 
 // Preferences persist via the Tauri Store plugin (a JSON file written by Rust) so
 // they survive a force-quit/crash — macOS WKWebView flushes localStorage only
@@ -241,6 +241,14 @@ function makeState() {
   const rows = $derived(
     computeLanes(graphCommits.map((c) => ({ sha: c.sha, parents: c.parents }))),
   );
+  // sha → lane colorIndex (rows is index-aligned with graphCommits), so the sidebar
+  // can paint a branch's swatch with the same colour as its graph lane.
+  const colorBySha = $derived.by(() => {
+    const m = new Map<string, number>();
+    const n = Math.min(graphCommits.length, rows.length);
+    for (let i = 0; i < n; i++) m.set(graphCommits[i].sha, rows[i].colorIndex);
+    return m;
+  });
   // The commit shown in the bottom detail panel (the most recently focused row).
   let currentSha = $state<string | null>(null);
   const selectedCommit = $derived(
@@ -701,6 +709,16 @@ function makeState() {
     },
     get refsByKind() {
       return refsByKind;
+    },
+    get colorBySha() {
+      return colorBySha;
+    },
+    // The graph lane colour for a ref's tip commit — so a sidebar branch swatch
+    // matches that branch's colour in the graph. (Manual per-branch overrides are
+    // layered on in Phase 5b.)
+    colorForRef(_name: string, sha: string): string {
+      const idx = colorBySha.get(sha);
+      return idx !== undefined ? laneColor(idx, null, {}) : laneColor(0, null, {});
     },
     setCurrent(sha: string | null) {
       currentSha = sha;

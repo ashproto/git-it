@@ -160,19 +160,19 @@
   {/if}
   <CollapsiblePanel title="Local">
     {#snippet headerActions()}<span class="ref-count">{refs.local.length}</span>{/snippet}
-    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} />
+    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} />
     {#if refs.local.length === 0}<p class="none">No local branches</p>{/if}
   </CollapsiblePanel>
 
   <CollapsiblePanel title="Remotes">
     {#snippet headerActions()}<span class="ref-count">{refs.remote.length}</span>{/snippet}
-    <RefTree nodes={remoteTree} kind="remote" onJump={jumpTo} onContext={onRefContext} />
+    <RefTree nodes={remoteTree} kind="remote" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} />
     {#if refs.remote.length === 0}<p class="none">No remotes</p>{/if}
   </CollapsiblePanel>
 
   <CollapsiblePanel title="Tags">
     {#snippet headerActions()}<span class="ref-count">{refs.tags.length}</span>{/snippet}
-    <RefTree nodes={tagTree} kind="tag" onJump={jumpTo} onContext={onRefContext} />
+    <RefTree nodes={tagTree} kind="tag" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} />
     {#if refs.tags.length === 0}<p class="none">No tags</p>{/if}
   </CollapsiblePanel>
 
