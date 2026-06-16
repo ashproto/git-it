@@ -556,6 +556,7 @@ function makeState() {
         workingChangesRev = 0;
         selectedFile = null;
         workingCopySelected = false;
+        suggestedCommitMessage = "";
         // Clear remote state — refs/remotes/progress belong to the previous repo.
         refsDetailed = [];
         remotesState = [];

@@ -496,7 +496,7 @@ export const gitActions = {
         ? `Squash merge of ${reference} has conflicts — resolve the files below, then commit.`
         : `Squashed ${reference} — review the staged changes and commit.`;
     } catch (e) {
-      appState.status = `Squash merge failed: ${e}`;
+      appState.status = `Squash merge failed: ${firstLine(e)}`;
     }
   },
 
