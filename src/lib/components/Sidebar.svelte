@@ -4,10 +4,16 @@
   import { dialogs } from "../dialogs.svelte";
   import { gitActions } from "../gitActions";
   import { graphView } from "../graphView.svelte";
+  import { buildRefTree } from "../refTree";
   import type { RefEntry } from "../types";
   import RecoveryPanels from "./RecoveryPanels.svelte";
+  import RefTree from "./RefTree.svelte";
 
   const refs = $derived(appState.refsByKind);
+  // Folderize slashed ref names (feature/x → feature ▸ x), Fork/SourceTree-style.
+  const localTree = $derived(buildRefTree(refs.local));
+  const remoteTree = $derived(buildRefTree(refs.remote));
+  const tagTree = $derived(buildRefTree(refs.tags));
 
   let openLocal = $state(true);
   let openRemote = $state(true);
@@ -121,18 +127,7 @@
       <span class="n">{refs.local.length}</span>
     </button>
     {#if openLocal}
-      {#each refs.local as r (`${r.name}@${r.sha}`)}
-        <button
-          class="ref"
-          class:head={r.isHead}
-          onclick={() => jumpTo(r.sha)}
-          oncontextmenu={(e) => onRefContext(e, r, "local")}
-          title={r.name}
-        >
-          <span class="dot local" aria-hidden="true"></span>
-          <span class="rn">{r.name}</span>
-        </button>
-      {/each}
+      <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} />
       {#if refs.local.length === 0}<p class="none">No local branches</p>{/if}
     {/if}
   </section>
@@ -144,17 +139,7 @@
       <span class="n">{refs.remote.length}</span>
     </button>
     {#if openRemote}
-      {#each refs.remote as r (`${r.name}@${r.sha}`)}
-        <button
-          class="ref muted"
-          onclick={() => jumpTo(r.sha)}
-          oncontextmenu={(e) => onRefContext(e, r, "remote")}
-          title={r.name}
-        >
-          <span class="dot remote" aria-hidden="true"></span>
-          <span class="rn">{r.name}</span>
-        </button>
-      {/each}
+      <RefTree nodes={remoteTree} kind="remote" onJump={jumpTo} onContext={onRefContext} />
       {#if refs.remote.length === 0}<p class="none">No remotes</p>{/if}
     {/if}
   </section>
@@ -166,17 +151,7 @@
       <span class="n">{refs.tags.length}</span>
     </button>
     {#if openTags}
-      {#each refs.tags as r (`${r.name}@${r.sha}`)}
-        <button
-          class="ref"
-          onclick={() => jumpTo(r.sha)}
-          oncontextmenu={(e) => onRefContext(e, r, "tag")}
-          title={r.name}
-        >
-          <span class="dot tag" aria-hidden="true"></span>
-          <span class="rn">{r.name}</span>
-        </button>
-      {/each}
+      <RefTree nodes={tagTree} kind="tag" onJump={jumpTo} onContext={onRefContext} />
       {#if refs.tags.length === 0}<p class="none">No tags</p>{/if}
     {/if}
   </section>
@@ -247,13 +222,6 @@
   .ref:hover {
     background: var(--row-hover);
   }
-  .ref.head .rn {
-    color: var(--accent);
-    font-weight: 600;
-  }
-  .ref.muted .rn {
-    color: var(--text-muted);
-  }
   .rn {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -264,15 +232,6 @@
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
-  }
-  .dot.local {
-    background: #378add;
-  }
-  .dot.remote {
-    background: #888780;
-  }
-  .dot.tag {
-    background: #ba7517;
   }
   .dot.head {
     background: var(--err);
