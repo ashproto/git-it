@@ -80,6 +80,24 @@ describe("computeLanes — criss-cross merges (documented behavior)", () => {
   });
 });
 
+describe("computeLanes — reused-fork lane keeps its through-line (connectivity)", () => {
+  // A and B both have parent C. B is a merge whose SECOND parent is C, so when B is
+  // processed, C's lane (already reserved by A above) is reused as the fork target.
+  // That lane must STILL draw its pass-through at B's row — otherwise A's line down
+  // to C visibly stops at the merge row ("a line ends out of nowhere"). Regression
+  // test for that exact bug.
+  it("draws both the branch edge and the lane's pass-through at the merge row", () => {
+    const rows = computeLanes([c("A", ["C"]), c("B", ["D", "C"]), c("D", ["C"]), c("C", [])]);
+    const B = rows[1];
+    expect(B.isMerge).toBe(true);
+    // the fork branch from B's lane (1) into C's reused lane (0):
+    expect(B.edges).toContainEqual({ fromLane: 1, toLane: 0, colorIndex: 0, kind: "branch" });
+    // AND C's lane must continue straight through B's row (the bug dropped this):
+    expect(B.edges).toContainEqual({ fromLane: 0, toLane: 0, colorIndex: 0, kind: "straight" });
+    assertWidthInvariants(rows);
+  });
+});
+
 describe("computeLanes — width invariants on the core fixtures", () => {
   it("holds for linear, branch, merge, and octopus", () => {
     assertWidthInvariants(computeLanes([c("A", ["B"]), c("B", ["C"]), c("C", [])]));

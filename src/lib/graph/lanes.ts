@@ -97,22 +97,36 @@ export function computeLanes(commits: LaneCommit[]): RowLayout[] {
     const next = recs[r + 1];
     // A Set so a merge listing the same parent twice still yields one branch edge.
     const forkSet = new Set(rec.forks);
+    const prev = recs[r - 1];
     const edges: Edge[] = [];
 
     for (let k = 0; k < rec.descend.length; k++) {
       const slot = rec.descend[k];
       if (slot.sha === null) continue;
-      if (forkSet.has(k)) {
+      const isFork = forkSet.has(k);
+      // A merge forks out into lane k: a diagonal from this commit's dot to lane k.
+      if (isFork) {
         edges.push({ fromLane: rec.lane, toLane: k, colorIndex: slot.color, kind: "branch" });
-      } else if (next && slot.sha === next.sha) {
-        edges.push({
-          fromLane: k,
-          toLane: next.lane,
-          colorIndex: slot.color,
-          kind: k === next.lane ? "straight" : "merge",
-        });
-      } else {
-        edges.push({ fromLane: k, toLane: k, colorIndex: slot.color, kind: "straight" });
+      }
+      // Lane k's own descending line continues through this row. Draw it for every
+      // occupied lane EXCEPT a fork lane with no line from above (a freshly-opened
+      // fork — the branch edge is its only segment here). A fork lane that already
+      // carried this same parent in the row above (an earlier child reserved it)
+      // keeps its pass-through; without it that incoming line would stop at the
+      // merge row. The `?.` guards a previous row that was narrower than this one
+      // (the lane array grows over time, so lane k may not have existed at r-1).
+      const hasLineFromAbove = !!prev && prev.descend[k]?.sha === slot.sha;
+      if (!isFork || hasLineFromAbove) {
+        if (next && slot.sha === next.sha) {
+          edges.push({
+            fromLane: k,
+            toLane: next.lane,
+            colorIndex: slot.color,
+            kind: k === next.lane ? "straight" : "merge",
+          });
+        } else {
+          edges.push({ fromLane: k, toLane: k, colorIndex: slot.color, kind: "straight" });
+        }
       }
     }
 
