@@ -66,4 +66,13 @@ describe("formatCommitDate — existing absolute format unchanged", () => {
       `2026-06-15 2:30:05 PM ${formatTzOffset(d)}`,
     );
   });
+
+  it("pins the weekday + month-name absolute format", () => {
+    // Independently rebuild the expected string from the same fixed abbreviations
+    // the formatter uses, to lock the combined absolute layout against regressions.
+    const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const exp = `${WD[d.getDay()]} ${MO[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} 14:30:05 ${formatTzOffset(d)}`;
+    expect(formatCommitDate(d, { hour12: false, weekday: true, monthName: true })).toBe(exp);
+  });
 });
