@@ -18,6 +18,14 @@
   );
   const untrackedFiles = $derived(appState.workingChanges.filter((f) => f.untracked));
 
+  // W1: when "Merge Untracked into Unstaged" is on, the Unstaged section also lists
+  // the untracked files (and the separate Untracked section is not rendered). Each
+  // row still branches on f.untracked for its glyph + danger action, so per-file
+  // correctness is preserved regardless of which section it appears in.
+  const unstagedDisplay = $derived(
+    appState.unifyUnstaged ? [...unstagedFiles, ...untrackedFiles] : unstagedFiles,
+  );
+
   // ── Selected file + diff ─────────────────────────────────────────────────────
 
   const selectedFile = $derived(appState.selectedFile);
@@ -34,6 +42,12 @@
     selectedFile !== null && untrackedFiles.some((f) => f.path === selectedFile),
   );
 
+  // Hunk/line staging is reconstructed on the backend from a -U3 diff, so the
+  // displayed hunk indices + line ordinals only line up with it at the default
+  // context. At any other context (or whole-file view) the indices would diverge
+  // and stage the WRONG content — so gate the partial-staging affordances to -U3.
+  const partialStagingOk = $derived(appState.diffContext === 3 && !appState.diffWholeFile);
+
   // Raw patch for the selected file. Re-fetches whenever selectedFile changes OR
   // workingChanges is refreshed (after every op, including hunk ops). We key on a
   // monotonic revision counter (workingChangesRev) instead of the file count so that
@@ -41,7 +55,7 @@
   // hunks on the backend — also triggers a re-fetch and prevents stale hunk indices.
   const diffKey = $derived(
     selectedFile !== null
-      ? `${selectedFile}::${selectedIsStaged ? "staged" : selectedIsUntracked ? "untracked" : "unstaged"}::${appState.workingChangesRev}`
+      ? `${selectedFile}::${selectedIsStaged ? "staged" : selectedIsUntracked ? "untracked" : "unstaged"}::${appState.workingChangesRev}::${appState.effectiveDiffContext}`
       : "",
   );
 
@@ -56,7 +70,7 @@
     }
     diffLoading = true;
     api
-      .diff(appState.repo, selectedFile, selectedIsStaged, selectedIsUntracked)
+      .diff(appState.repo, selectedFile, selectedIsStaged, selectedIsUntracked, appState.effectiveDiffContext)
       .then((p) => {
         // Guard stale results: only apply if the key hasn't changed.
         if (key === diffKey) {
@@ -143,17 +157,19 @@
       {/if}
 
       <!-- ── Unstaged ─────────────────────────────────────────────────────────── -->
-      {#if unstagedFiles.length > 0}
+      <!-- When unifyUnstaged is on, unstagedDisplay also includes untracked files; each
+           row branches on f.untracked for its glyph + danger action (Remove vs Discard). -->
+      {#if unstagedDisplay.length > 0}
         <section class="file-section">
           <header class="section-header">
-            <span class="section-title">Unstaged ({unstagedFiles.length})</span>
+            <span class="section-title">Unstaged ({unstagedDisplay.length})</span>
             <button
               class="hdr-btn"
-              onclick={() => gitActions.stage(unstagedFiles.map((f) => f.path))}
+              onclick={() => gitActions.stage(unstagedDisplay.map((f) => f.path))}
             >Stage all</button>
           </header>
           <ul class="file-list">
-            {#each unstagedFiles as f (f.path)}
+            {#each unstagedDisplay as f (f.path)}
               <li
                 class="file-row"
                 class:selected={selectedFile === f.path}
@@ -164,7 +180,9 @@
                   if (e.key === "Enter" || e.key === " ") selectFile(f.path);
                 }}
               >
-                <span class="glyph unstaged">{glyph(f)}</span>
+                <span class="glyph" class:unstaged={!f.untracked} class:untracked={f.untracked}
+                  >{glyph(f)}</span
+                >
                 <span class="path mono" title={f.path}>{f.path}</span>
                 <span class="row-actions">
                   <button
@@ -174,13 +192,23 @@
                       gitActions.stage([f.path]);
                     }}>Stage</button
                   >
-                  <button
-                    class="row-btn danger"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      gitActions.discard([f.path]);
-                    }}>Discard</button
-                  >
+                  {#if f.untracked}
+                    <button
+                      class="row-btn danger"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        gitActions.clean([f.path]);
+                      }}>Remove</button
+                    >
+                  {:else}
+                    <button
+                      class="row-btn danger"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        gitActions.discard([f.path]);
+                      }}>Discard</button
+                    >
+                  {/if}
                 </span>
               </li>
             {/each}
@@ -189,7 +217,7 @@
       {/if}
 
       <!-- ── Untracked ─────────────────────────────────────────────────────────── -->
-      {#if untrackedFiles.length > 0}
+      {#if !appState.unifyUnstaged && untrackedFiles.length > 0}
         <section class="file-section">
           <header class="section-header">
             <span class="section-title">Untracked ({untrackedFiles.length})</span>
@@ -242,19 +270,22 @@
         {:else if diffLoading}
           <p class="diff-loading">Loading diff…</p>
         {:else}
+          {#if !partialStagingOk && !selectedIsUntracked}
+            <p class="diff-note">Hunk &amp; line staging is available at the default context — set Context to 3 and turn off “Whole file”.</p>
+          {/if}
           <DiffView
             patch={diffPatch}
             staged={selectedIsStaged}
-            onStageHunk={selectedIsStaged || selectedIsUntracked
+            onStageHunk={!partialStagingOk || selectedIsStaged || selectedIsUntracked
               ? undefined
               : (i) => gitActions.stageHunk(selectedFile!, i)}
-            onUnstageHunk={selectedIsStaged
+            onUnstageHunk={partialStagingOk && selectedIsStaged
               ? (i) => gitActions.unstageHunk(selectedFile!, i)
               : undefined}
-            onStageLines={selectedIsStaged || selectedIsUntracked
+            onStageLines={!partialStagingOk || selectedIsStaged || selectedIsUntracked
               ? undefined
               : (hi, sel) => gitActions.stageLines(selectedFile!, hi, sel)}
-            onUnstageLines={selectedIsStaged
+            onUnstageLines={partialStagingOk && selectedIsStaged
               ? (hi, sel) => gitActions.unstageLines(selectedFile!, hi, sel)
               : undefined}
           />
@@ -443,6 +474,14 @@
     font-size: 12px;
     color: var(--text-muted);
     font-style: italic;
+  }
+  .diff-note {
+    margin: 0;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .mono {

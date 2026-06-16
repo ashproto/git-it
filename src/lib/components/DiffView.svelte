@@ -40,6 +40,21 @@
 
   const parsed = $derived(parseDiff(patch));
 
+  // Total additions / deletions across all parsed files (for the toolbar summary).
+  const totals = $derived.by(() => {
+    let add = 0;
+    let del = 0;
+    for (const file of parsed.files) {
+      for (const hunk of file.hunks) {
+        for (const line of hunk.lines) {
+          if (line.kind === "add") add++;
+          else if (line.kind === "del") del++;
+        }
+      }
+    }
+    return { add, del };
+  });
+
   // ─── Highlighted token cache ──────────────────────────────────────────────────
   // Key: `${fileIndex}:${hunkIndex}:${theme}` → { beforeTokens, afterTokens } per line
   // null means not yet resolved; we render plain text until it arrives.
@@ -310,7 +325,7 @@
 <!-- ─── Component markup ──────────────────────────────────────────────────────── -->
 
 <div class="diff-view">
-  <!-- Header: split/unified toggle -->
+  <!-- Header: split/unified toggle + totals + context controls -->
   <div class="diff-toolbar">
     <span class="diff-mode-label">View:</span>
     <button
@@ -323,6 +338,34 @@
       class:active={appState.diffSplit}
       onclick={() => appState.setDiffSplit(true)}
     >Split</button>
+
+    <span class="toolbar-totals">
+      <span class="tot-add">+{totals.add}</span>
+      <span class="tot-del">−{totals.del}</span>
+    </span>
+
+    <span class="toolbar-spacer"></span>
+
+    <span class="diff-mode-label">Context:</span>
+    <button
+      class="mode-btn"
+      aria-label="Fewer context lines"
+      disabled={appState.diffWholeFile}
+      onclick={() => appState.setDiffContext(Math.max(0, appState.diffContext - 3))}
+    >−</button>
+    <span class="context-val">{appState.diffContext}</span>
+    <button
+      class="mode-btn"
+      aria-label="More context lines"
+      disabled={appState.diffWholeFile}
+      onclick={() => appState.setDiffContext(appState.diffContext + 3)}
+    >+</button>
+
+    <button
+      class="mode-btn"
+      class:active={appState.diffWholeFile}
+      onclick={() => appState.setDiffWholeFile(!appState.diffWholeFile)}
+    >Whole file</button>
   </div>
 
   {#if !patch || !patch.trim()}
@@ -554,6 +597,39 @@
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
+  }
+  .mode-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .mode-btn:disabled:hover {
+    background: var(--btn-bg);
+  }
+
+  .toolbar-spacer {
+    flex: 1 1 auto;
+  }
+
+  .toolbar-totals {
+    display: inline-flex;
+    gap: 6px;
+    margin-left: 8px;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .tot-add {
+    color: var(--diff-add-fg, #2da44e);
+  }
+  .tot-del {
+    color: var(--diff-del-fg, #cf222e);
+  }
+
+  .context-val {
+    min-width: 1.4ch;
+    text-align: center;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text);
   }
 
   /* ── File header ────────────────────────────────────────────────────────────── */

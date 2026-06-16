@@ -166,9 +166,13 @@ pub fn commit(repo: &Path, message: &str, signoff: bool) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 /// Unified diff text. `staged` → index vs HEAD; else worktree vs index. `path` scopes it.
-pub fn diff(repo: &Path, path: Option<&str>, staged: bool) -> Result<String, String> {
+/// `context` is the number of unchanged context lines around changes (`-U{context}`).
+pub fn diff(repo: &Path, path: Option<&str>, staged: bool, context: u32) -> Result<String, String> {
     let mut c = Command::new("git");
-    c.current_dir(repo).arg("diff").arg("--no-color").arg("-U3");
+    c.current_dir(repo)
+        .arg("diff")
+        .arg("--no-color")
+        .arg(format!("-U{}", context));
     if staged {
         c.arg("--cached");
     }
@@ -189,10 +193,12 @@ pub fn diff(repo: &Path, path: Option<&str>, staged: bool) -> Result<String, Str
 /// between `status` and here) — that yields empty stdout, which we treat as "no diff"
 /// (the now-stale row disappears on the next refresh). `--` keeps the path from being
 /// read as an option.
-pub fn diff_untracked(repo: &Path, path: &str) -> Result<String, String> {
+pub fn diff_untracked(repo: &Path, path: &str, context: u32) -> Result<String, String> {
     let mut c = Command::new("git");
     c.current_dir(repo)
-        .args(["diff", "--no-index", "--no-color", "-U3", "--", "/dev/null"])
+        .args(["diff", "--no-index", "--no-color"])
+        .arg(format!("-U{}", context))
+        .args(["--", "/dev/null"])
         .arg(path);
     let output = c
         .output()
@@ -211,16 +217,12 @@ pub fn diff_untracked(repo: &Path, path: &str) -> Result<String, String> {
 }
 
 /// A commit's diff (vs its first parent), for CommitDetail.
-pub fn commit_diff(repo: &Path, sha: &str, path: Option<&str>) -> Result<String, String> {
+pub fn commit_diff(repo: &Path, sha: &str, path: Option<&str>, context: u32) -> Result<String, String> {
     let mut c = Command::new("git");
-    c.current_dir(repo).args([
-        "show",
-        "--no-color",
-        "-U3",
-        "--first-parent",
-        "--format=",
-        "--end-of-options",
-    ]);
+    c.current_dir(repo)
+        .args(["show", "--no-color"])
+        .arg(format!("-U{}", context))
+        .args(["--first-parent", "--format=", "--end-of-options"]);
     c.arg(sha).arg("--");
     if let Some(p) = path {
         c.arg(p);
@@ -283,7 +285,8 @@ fn git_apply(repo: &Path, patch: &str, reverse: bool) -> Result<(), String> {
 /// Hunk indices refer to the CURRENT live diff; after a successful stage/unstage the remaining
 /// diff re-indexes, so callers must re-fetch the diff before issuing another hunk op.
 pub fn stage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), String> {
-    let d = diff(repo, Some(path), false)?;
+    // Hunk patches are reconstructed from a -U3 diff; keep context fixed at 3 here.
+    let d = diff(repo, Some(path), false, 3)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     git_apply(repo, &format!("{}{}", header, h), false)
@@ -293,7 +296,8 @@ pub fn stage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), Stri
 /// Hunk indices refer to the CURRENT live diff; after a successful stage/unstage the remaining
 /// diff re-indexes, so callers must re-fetch the diff before issuing another hunk op.
 pub fn unstage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), String> {
-    let d = diff(repo, Some(path), true)?;
+    // Hunk patches are reconstructed from a -U3 diff; keep context fixed at 3 here.
+    let d = diff(repo, Some(path), true, 3)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     git_apply(repo, &format!("{}{}", header, h), true)
@@ -435,7 +439,8 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
 
 /// Stage selected lines (change-line ordinals) of one hunk of `path`'s UNSTAGED diff.
 pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize]) -> Result<(), String> {
-    let d = diff(repo, Some(path), false)?;
+    // Line patches are reconstructed from a -U3 diff; keep context fixed at 3 here.
+    let d = diff(repo, Some(path), false, 3)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
@@ -445,7 +450,8 @@ pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize
 
 /// Unstage selected lines (change-line ordinals) of one hunk of `path`'s STAGED diff.
 pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize]) -> Result<(), String> {
-    let d = diff(repo, Some(path), true)?;
+    // Line patches are reconstructed from a -U3 diff; keep context fixed at 3 here.
+    let d = diff(repo, Some(path), true, 3)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
@@ -664,7 +670,7 @@ mod tests {
         let r = TempRepo::new();
         r.commit_file("a.txt", "1\n2\n3\n", "init");
         r.write("a.txt", "1\nCHANGED\n3\n");
-        let d = diff(&r.path, Some("a.txt"), false).unwrap();
+        let d = diff(&r.path, Some("a.txt"), false, 3).unwrap();
         assert!(d.contains("+CHANGED"));
         assert!(d.contains("-2"));
     }
@@ -675,9 +681,9 @@ mod tests {
         r.commit_file("a.txt", "1\n", "init");
         r.write("new.txt", "hello\nworld\n"); // untracked — no index entry
         // Plain diff sees nothing for an untracked file…
-        assert!(diff(&r.path, Some("new.txt"), false).unwrap().is_empty());
+        assert!(diff(&r.path, Some("new.txt"), false, 3).unwrap().is_empty());
         // …but diff_untracked renders its full contents as additions (exit 1 → Ok).
-        let d = diff_untracked(&r.path, "new.txt").unwrap();
+        let d = diff_untracked(&r.path, "new.txt", 3).unwrap();
         assert!(d.contains("+hello"), "untracked contents shown: {}", d);
         assert!(d.contains("+world"), "untracked contents shown: {}", d);
         assert!(d.contains("new.txt"), "file path present: {}", d);
@@ -689,11 +695,11 @@ mod tests {
         // two well-separated change regions → two hunks
         r.commit_file("a.txt", "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n", "init");
         r.write("a.txt", "A\nb\nc\nd\ne\nf\ng\nh\ni\nJ\n"); // change line 1 and line 10
-        let d = diff(&r.path, Some("a.txt"), false).unwrap();
+        let d = diff(&r.path, Some("a.txt"), false, 3).unwrap();
         let (_h, hunks) = split_hunks(&d);
         assert_eq!(hunks.len(), 2, "two separated edits = two hunks");
         stage_hunk(&r.path, "a.txt", 0).unwrap();
-        let staged = diff(&r.path, Some("a.txt"), true).unwrap();
+        let staged = diff(&r.path, Some("a.txt"), true, 3).unwrap();
         assert!(staged.contains("+A"));
         assert!(!staged.contains("+J"), "only hunk 0 should be staged");
     }
@@ -799,18 +805,18 @@ mod tests {
         // overwrite with base + 3 new lines (all in one hunk since they're adjacent)
         r.write("f.txt", "base\nline1\nline2\nline3\n");
         // get the live diff and confirm 1 hunk with 3 change lines (ordinals 0,1,2)
-        let d = diff(&r.path, Some("f.txt"), false).unwrap();
+        let d = diff(&r.path, Some("f.txt"), false, 3).unwrap();
         let (_h, hunks) = split_hunks(&d);
         assert_eq!(hunks.len(), 1, "expect 1 hunk");
         // stage only ordinal 1 (line2)
         stage_lines(&r.path, "f.txt", 0, &[1]).unwrap();
         // staged diff should contain only +line2
-        let staged = diff(&r.path, Some("f.txt"), true).unwrap();
+        let staged = diff(&r.path, Some("f.txt"), true, 3).unwrap();
         assert!(staged.contains("+line2"), "line2 should be staged");
         assert!(!staged.contains("+line1"), "line1 should not be staged");
         assert!(!staged.contains("+line3"), "line3 should not be staged");
         // unstaged diff should still show line1 and line3
-        let unstaged = diff(&r.path, Some("f.txt"), false).unwrap();
+        let unstaged = diff(&r.path, Some("f.txt"), false, 3).unwrap();
         assert!(unstaged.contains("+line1"), "line1 still unstaged");
         assert!(unstaged.contains("+line3"), "line3 still unstaged");
     }
@@ -888,7 +894,7 @@ mod tests {
         // Stage both lines first (full stage)
         stage(&r.path, &["g.txt".into()]).unwrap();
         // Verify staged
-        let staged = diff(&r.path, Some("g.txt"), true).unwrap();
+        let staged = diff(&r.path, Some("g.txt"), true, 3).unwrap();
         assert!(staged.contains("+lineA"), "setup: lineA staged");
         assert!(staged.contains("+lineB"), "setup: lineB staged");
         r
@@ -902,11 +908,11 @@ mod tests {
         // unstage_lines partial-unstages ordinal 1 (lineB) from the staged diff.
         unstage_lines(&r.path, "g.txt", 0, &[1]).unwrap();
 
-        let staged = diff(&r.path, Some("g.txt"), true).unwrap();
+        let staged = diff(&r.path, Some("g.txt"), true, 3).unwrap();
         assert!(staged.contains("+lineA"), "lineA should remain staged");
         assert!(!staged.contains("+lineB"), "lineB should be unstaged now");
 
-        let unstaged = diff(&r.path, Some("g.txt"), false).unwrap();
+        let unstaged = diff(&r.path, Some("g.txt"), false, 3).unwrap();
         assert!(unstaged.contains("+lineB"), "lineB should appear in unstaged diff");
         assert!(!unstaged.contains("+lineA"), "lineA should not appear in unstaged diff");
     }
@@ -917,11 +923,11 @@ mod tests {
         let r = repo_with_two_staged_additions();
         unstage_lines(&r.path, "g.txt", 0, &[0]).unwrap();
 
-        let staged = diff(&r.path, Some("g.txt"), true).unwrap();
+        let staged = diff(&r.path, Some("g.txt"), true, 3).unwrap();
         assert!(!staged.contains("+lineA"), "lineA should be unstaged now");
         assert!(staged.contains("+lineB"), "lineB should remain staged");
 
-        let unstaged = diff(&r.path, Some("g.txt"), false).unwrap();
+        let unstaged = diff(&r.path, Some("g.txt"), false, 3).unwrap();
         assert!(unstaged.contains("+lineA"), "lineA should appear in unstaged diff");
         assert!(!unstaged.contains("+lineB"), "lineB should not appear in unstaged diff");
     }
@@ -936,14 +942,14 @@ mod tests {
         r.write("h.txt", "");
         stage(&r.path, &["h.txt".into()]).unwrap();
         // Both deletions are staged
-        let staged = diff(&r.path, Some("h.txt"), true).unwrap();
+        let staged = diff(&r.path, Some("h.txt"), true, 3).unwrap();
         assert!(staged.contains("-lineX"), "setup: lineX deletion staged");
         assert!(staged.contains("-lineY"), "setup: lineY deletion staged");
 
         // Unstage only the deletion of lineX (ordinal 0)
         unstage_lines(&r.path, "h.txt", 0, &[0]).unwrap();
 
-        let staged_after = diff(&r.path, Some("h.txt"), true).unwrap();
+        let staged_after = diff(&r.path, Some("h.txt"), true, 3).unwrap();
         assert!(!staged_after.contains("-lineX"), "lineX deletion should be unstaged");
         assert!(staged_after.contains("-lineY"), "lineY deletion should remain staged");
     }
@@ -957,15 +963,15 @@ mod tests {
 
         // Stage ordinal 0 (the single addition)
         stage_lines(&r.path, "rt.txt", 0, &[0]).unwrap();
-        let staged = diff(&r.path, Some("rt.txt"), true).unwrap();
+        let staged = diff(&r.path, Some("rt.txt"), true, 3).unwrap();
         assert!(staged.contains("+roundtrip"), "after stage_lines: roundtrip should be staged");
 
         // Now unstage ordinal 0 → should return to fully unstaged
         unstage_lines(&r.path, "rt.txt", 0, &[0]).unwrap();
-        let staged_after = diff(&r.path, Some("rt.txt"), true).unwrap();
+        let staged_after = diff(&r.path, Some("rt.txt"), true, 3).unwrap();
         assert!(!staged_after.contains("+roundtrip"), "after unstage_lines: nothing staged");
 
-        let unstaged = diff(&r.path, Some("rt.txt"), false).unwrap();
+        let unstaged = diff(&r.path, Some("rt.txt"), false, 3).unwrap();
         assert!(unstaged.contains("+roundtrip"), "roundtrip line back in unstaged diff");
     }
 }

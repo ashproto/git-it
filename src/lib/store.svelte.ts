@@ -60,6 +60,21 @@ const AUTOBACKUP_STORE_KEY = "safetyAutoBackup";
 const DIFFSPLIT_KEY = "gitit.diffSplit.v1";
 const DIFFSPLIT_STORE_KEY = "diffSplit";
 
+const DIFFCONTEXT_KEY = "gitit.diffContext.v1";
+const DIFFCONTEXT_STORE_KEY = "diffContext";
+
+const DIFFWHOLEFILE_KEY = "gitit.diffWholeFile.v1";
+const DIFFWHOLEFILE_STORE_KEY = "diffWholeFile";
+
+const UNIFYUNSTAGED_KEY = "gitit.unifyUnstaged.v1";
+const UNIFYUNSTAGED_STORE_KEY = "unifyUnstaged";
+
+// A deliberately large -U value renders the whole file (all lines as context).
+const WHOLE_FILE_CONTEXT = 100000;
+
+// Default context-line count when not whole-file mode.
+const DIFFCONTEXT_DEFAULT = 3;
+
 const RELDATES_KEY = "gitit.relativeDates.v1";
 const RELDATES_STORE_KEY = "relativeDates";
 
@@ -130,6 +145,43 @@ function loadSyncDiffSplit(): boolean {
   try {
     if (typeof localStorage === "undefined") return false;
     const raw = localStorage.getItem(DIFFSPLIT_KEY);
+    return raw === "true";
+  } catch {
+    return false;
+  }
+}
+
+// Context-line count for diffs (default 3, clamped >= 0). Mirrors loadSyncDiffSplit
+// but for an integer payload.
+function loadSyncDiffContext(): number {
+  if (isTauri()) return DIFFCONTEXT_DEFAULT;
+  try {
+    if (typeof localStorage === "undefined") return DIFFCONTEXT_DEFAULT;
+    const raw = localStorage.getItem(DIFFCONTEXT_KEY);
+    if (raw === null) return DIFFCONTEXT_DEFAULT;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(0, n) : DIFFCONTEXT_DEFAULT;
+  } catch {
+    return DIFFCONTEXT_DEFAULT;
+  }
+}
+
+function loadSyncDiffWholeFile(): boolean {
+  if (isTauri()) return false;
+  try {
+    if (typeof localStorage === "undefined") return false;
+    const raw = localStorage.getItem(DIFFWHOLEFILE_KEY);
+    return raw === "true";
+  } catch {
+    return false;
+  }
+}
+
+function loadSyncUnifyUnstaged(): boolean {
+  if (isTauri()) return false;
+  try {
+    if (typeof localStorage === "undefined") return false;
+    const raw = localStorage.getItem(UNIFYUNSTAGED_KEY);
     return raw === "true";
   } catch {
     return false;
@@ -485,6 +537,112 @@ function makeState() {
       if (typeof localStorage !== "undefined") localStorage.setItem(DIFFSPLIT_KEY, String(snapshot));
     } catch (e) {
       console.warn("[gte] could not persist diffSplit setting", e);
+    }
+  }
+
+  // ── diffContext persisted setting (W2) ─────────────────────────────────────
+  // Number of context lines around diff changes (default 3, clamped >= 0).
+  // Mirrors the diffSplit pattern, but for an integer payload.
+  let diffContext = $state<number>(loadSyncDiffContext());
+  let diffContextTouched = false;
+
+  const dcHydrate = getStore();
+  if (dcHydrate) {
+    dcHydrate
+      .then((store) => store.get<number>(DIFFCONTEXT_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !diffContextTouched) {
+          const n = Math.trunc(Number(saved));
+          if (Number.isFinite(n)) diffContext = Math.max(0, n);
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load diffContext setting", e));
+  }
+
+  function persistDiffContext() {
+    const snapshot = diffContext;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(DIFFCONTEXT_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist diffContext setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(DIFFCONTEXT_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist diffContext setting", e);
+    }
+  }
+
+  // ── diffWholeFile persisted setting (W2) ───────────────────────────────────
+  // When true, diffs show the whole file (a large -U value). Defaults to false.
+  // Mirrors the diffSplit pattern exactly.
+  let diffWholeFile = $state<boolean>(loadSyncDiffWholeFile());
+  let diffWholeFileTouched = false;
+
+  const dwfHydrate = getStore();
+  if (dwfHydrate) {
+    dwfHydrate
+      .then((store) => store.get<boolean>(DIFFWHOLEFILE_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !diffWholeFileTouched) {
+          diffWholeFile = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load diffWholeFile setting", e));
+  }
+
+  function persistDiffWholeFile() {
+    const snapshot = diffWholeFile;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(DIFFWHOLEFILE_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist diffWholeFile setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(DIFFWHOLEFILE_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist diffWholeFile setting", e);
+    }
+  }
+
+  // ── unifyUnstaged persisted setting (W1) ───────────────────────────────────
+  // When true, the Working Copy "Untracked" section merges into "Unstaged".
+  // Defaults to false. Mirrors the diffSplit pattern exactly.
+  let unifyUnstaged = $state<boolean>(loadSyncUnifyUnstaged());
+  let unifyUnstagedTouched = false;
+
+  const uuHydrate = getStore();
+  if (uuHydrate) {
+    uuHydrate
+      .then((store) => store.get<boolean>(UNIFYUNSTAGED_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !unifyUnstagedTouched) {
+          unifyUnstaged = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load unifyUnstaged setting", e));
+  }
+
+  function persistUnifyUnstaged() {
+    const snapshot = unifyUnstaged;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(UNIFYUNSTAGED_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist unifyUnstaged setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(UNIFYUNSTAGED_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist unifyUnstaged setting", e);
     }
   }
 
@@ -976,6 +1134,37 @@ function makeState() {
       diffSplitTouched = true;
       diffSplit = v;
       persistDiffSplit();
+    },
+    // ── diffContext / diffWholeFile persisted settings (W2) ─────────────────────
+    get diffContext() {
+      return diffContext;
+    },
+    setDiffContext(n: number) {
+      diffContextTouched = true;
+      diffContext = Math.max(0, Math.trunc(n));
+      persistDiffContext();
+    },
+    get diffWholeFile() {
+      return diffWholeFile;
+    },
+    setDiffWholeFile(v: boolean) {
+      diffWholeFileTouched = true;
+      diffWholeFile = v;
+      persistDiffWholeFile();
+    },
+    // The effective -U context the parents send to the backend: whole-file mode
+    // overrides the configured context with a large value showing the whole file.
+    get effectiveDiffContext() {
+      return diffWholeFile ? WHOLE_FILE_CONTEXT : diffContext;
+    },
+    // ── unifyUnstaged persisted setting (W1) ────────────────────────────────────
+    get unifyUnstaged() {
+      return unifyUnstaged;
+    },
+    setUnifyUnstaged(v: boolean) {
+      unifyUnstagedTouched = true;
+      unifyUnstaged = v;
+      persistUnifyUnstaged();
     },
     get sidebarWidth() {
       return sidebarWidth;

@@ -306,21 +306,27 @@ pub fn diff(
     path: Option<String>,
     staged: bool,
     untracked: bool,
+    context: u32,
 ) -> Result<String, String> {
     let repo = PathBuf::from(repo);
     if untracked {
         match path.as_deref() {
-            Some(p) => ops_worktree::diff_untracked(&repo, p),
+            Some(p) => ops_worktree::diff_untracked(&repo, p, context),
             None => Ok(String::new()),
         }
     } else {
-        ops_worktree::diff(&repo, path.as_deref(), staged)
+        ops_worktree::diff(&repo, path.as_deref(), staged, context)
     }
 }
 
 #[tauri::command]
-pub fn commit_diff(repo: String, sha: String, path: Option<String>) -> Result<String, String> {
-    ops_worktree::commit_diff(&PathBuf::from(repo), &sha, path.as_deref())
+pub fn commit_diff(
+    repo: String,
+    sha: String,
+    path: Option<String>,
+    context: u32,
+) -> Result<String, String> {
+    ops_worktree::commit_diff(&PathBuf::from(repo), &sha, path.as_deref(), context)
 }
 
 #[tauri::command]

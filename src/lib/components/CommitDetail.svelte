@@ -33,6 +33,8 @@
   // Re-fetch when selected commit changes
   $effect(() => {
     const sha = appState.currentSha;
+    // Read so the effect re-runs when the context / whole-file setting changes.
+    const context = appState.effectiveDiffContext;
     if (!sha || !isTauri() || !appState.repo) {
       diffPatch = "";
       diffError = null;
@@ -42,7 +44,7 @@
     diffLoading = true;
     diffError = null;
     diffPatch = "";
-    api.commitDiff(appState.repo, sha, null)
+    api.commitDiff(appState.repo, sha, null, context)
       .then((patch) => {
         // Guard: the user may have navigated away during the async gap.
         if (appState.currentSha !== sha) return;
