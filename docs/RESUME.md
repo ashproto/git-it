@@ -1,9 +1,9 @@
-# RESUME — Git It → Fork/SourceTree-style git client
+# RESUME — Git It (formerly "Git It") → Fork/SourceTree-style git client
 
-> Handoff note. **The 6-phase migration is COMPLETE** — all merged to `main`, working
-> tree clean, all gates green as of 2026-06-15. A follow-on **UI/UX redesign** is now in
-> flight (see the Redesign section just below); only optional opportunistic follow-ups
-> remain from the migration itself (listed at the end of the TL;DR).
+> Handoff note. **The 6-phase migration AND the 4-slice UI/UX redesign are both COMPLETE** —
+> all merged to `main`, working tree clean, all gates green as of 2026-06-15. The app has
+> been **renamed to "Git It"** (final redesign slice R4). See the Redesign section just
+> below; only optional opportunistic follow-ups remain (listed at the end of the TL;DR).
 
 ## Redesign (post-roadmap shell rework — IN PROGRESS)
 The chrome needed a redesign to turn it
@@ -12,7 +12,9 @@ as the phases). Full detail in the `git-client-redesign.md` memory file.
 - **R1 — multi-repo shell — DONE** (`b05e217`): tab strip + sidebar repo list, switchable by a user setting; `openRepos`/`recentRepos`/`repoSwitcherMode` store state; retired RepoLoader; empty state.
 - **R2 — toolbar/status-bar/lazy-load/panels — DONE** (`beb6191`): infinite-scroll commit loading (`load_graph` paging, `appendGraphCommits`); slim header; bottom `StatusBar`; app-shell layout (pinned chrome + scrolling content); grouped recovery panels.
 - **R3 — time-edit on-demand drawer — DONE** (`7a1db36`): time-editing moved out of the always-on main column into a right-side slide-in **`TimeEditDrawer`** (controller `timeEditDrawer.svelte.ts`; re-hosts `EditTabs`+`ApplyPanel` unchanged) opened from an "Edit timestamps…" header button + context-menu item; removed the "New date" column (edited rows now show an inline `.new-pill` + an unclippable `.row.edited` left-bar accent); raised the graph height cap.
-- **R4 — rename + open-source README — NOT STARTED, NEEDS USER INPUT.** "Git It" no longer fits; the puns "git it" / "gitsome" are already taken (`jlord/git-it`, `donnemartin/gitsome`). Pick a distinct name (check GitHub/npm/Homebrew availability) before building R4.
+- **R4 — rename + open-source README — DONE** (`612ea34`): the app is now **"Git It"** (`git-it` / `git_it_lib` / identifier `com.ashshah.gitit`) — renamed across app.html, the wordmark, tauri.conf, package.json, Cargo.toml, main.rs, and the `gte.*`→`gitit.*` localStorage keys (kept the `.git/git-it-bundles` backup dir + `legacy/` provenance). Added an open-source README (full-client description). Licensing is intentionally undecided — `package.json` is `UNLICENSED` and a license can be chosen before any public release. Adversarial review: zero findings.
+
+**✅ THE REDESIGN IS COMPLETE (R1–R4 merged).** git-it → **Git It**, with a new **"Graph tick+" app icon** (commit nodes forming a checkmark on a gradient squircle; `f34c921`). Optional only: DOM virtualization for huge histories, dead `RepoLoader.svelte` deletion. Manual (user): `npm run tauri build`; create the `<user>/git-it` GitHub repo (+ a Homebrew tap if distributing — `git-it`/`gitsome` are taken on npm/PyPI but a Tauri `.dmg` publishes to neither).
 
 ## TL;DR — where we are
 Building `git-it` into a full Fork/SourceTree-style
