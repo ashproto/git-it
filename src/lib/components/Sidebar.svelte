@@ -6,8 +6,9 @@
   import { graphView } from "../graphView.svelte";
   import { buildRefTree } from "../refTree";
   import type { RefEntry } from "../types";
-  import RecoveryPanels from "./RecoveryPanels.svelte";
+  import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import RefTree from "./RefTree.svelte";
+  import StashPanel from "./StashPanel.svelte";
 
   const refs = $derived(appState.refsByKind);
   // Folderize slashed ref names (feature/x → feature ▸ x), Fork/SourceTree-style.
@@ -29,9 +30,8 @@
     ),
   );
 
-  let openLocal = $state(true);
-  let openRemote = $state(true);
-  let openTags = $state(true);
+  // Ref sections (Local/Remotes/Tags) now use CollapsiblePanel, which manages its
+  // own collapse state — no per-section open flags needed here.
 
   // Display-only navigation: focus + select the ref's commit and scroll to it.
   // (Checkout etc. arrive in the operations phases.)
@@ -158,50 +158,32 @@
       <span class="rn">HEAD (detached)</span>
     </button>
   {/if}
-  <section>
-    <button class="sec" onclick={() => (openLocal = !openLocal)} aria-expanded={openLocal}>
-      <span class="chev" class:open={openLocal} aria-hidden="true">▸</span>
-      <span class="label">Local</span>
-      <span class="n">{refs.local.length}</span>
-    </button>
-    {#if openLocal}
-      <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} />
-      {#if refs.local.length === 0}<p class="none">No local branches</p>{/if}
-    {/if}
-  </section>
+  <CollapsiblePanel title="Local">
+    {#snippet headerActions()}<span class="ref-count">{refs.local.length}</span>{/snippet}
+    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} />
+    {#if refs.local.length === 0}<p class="none">No local branches</p>{/if}
+  </CollapsiblePanel>
 
-  <section>
-    <button class="sec" onclick={() => (openRemote = !openRemote)} aria-expanded={openRemote}>
-      <span class="chev" class:open={openRemote} aria-hidden="true">▸</span>
-      <span class="label">Remotes</span>
-      <span class="n">{refs.remote.length}</span>
-    </button>
-    {#if openRemote}
-      <RefTree nodes={remoteTree} kind="remote" onJump={jumpTo} onContext={onRefContext} />
-      {#if refs.remote.length === 0}<p class="none">No remotes</p>{/if}
-    {/if}
-  </section>
+  <CollapsiblePanel title="Remotes">
+    {#snippet headerActions()}<span class="ref-count">{refs.remote.length}</span>{/snippet}
+    <RefTree nodes={remoteTree} kind="remote" onJump={jumpTo} onContext={onRefContext} />
+    {#if refs.remote.length === 0}<p class="none">No remotes</p>{/if}
+  </CollapsiblePanel>
 
-  <section>
-    <button class="sec" onclick={() => (openTags = !openTags)} aria-expanded={openTags}>
-      <span class="chev" class:open={openTags} aria-hidden="true">▸</span>
-      <span class="label">Tags</span>
-      <span class="n">{refs.tags.length}</span>
-    </button>
-    {#if openTags}
-      <RefTree nodes={tagTree} kind="tag" onJump={jumpTo} onContext={onRefContext} />
-      {#if refs.tags.length === 0}<p class="none">No tags</p>{/if}
-    {/if}
-  </section>
+  <CollapsiblePanel title="Tags">
+    {#snippet headerActions()}<span class="ref-count">{refs.tags.length}</span>{/snippet}
+    <RefTree nodes={tagTree} kind="tag" onJump={jumpTo} onContext={onRefContext} />
+    {#if refs.tags.length === 0}<p class="none">No tags</p>{/if}
+  </CollapsiblePanel>
 
-  <RecoveryPanels />
+  <StashPanel />
 </aside>
 
 <style>
   .sidebar {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 8px;
     font-size: 13px;
   }
   /* Pinned view switcher — Local Changes / Commit Timeline entries. */
@@ -251,7 +233,6 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    margin-bottom: 4px;
   }
   /* Hollow node glyph for Commit Timeline — distinct from the filled accent dot. */
   .tl-dot {
@@ -262,42 +243,9 @@
     box-sizing: border-box;
     flex-shrink: 0;
   }
-  section {
-    display: flex;
-    flex-direction: column;
-  }
-  .sec {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    padding: 6px 6px;
-    margin-top: 4px;
-    background: none;
-    border: none;
-    color: var(--text-muted);
+  /* Count shown in each ref panel's header (via CollapsiblePanel headerActions). */
+  .ref-count {
     font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    cursor: pointer;
-  }
-  .sec:hover {
-    color: var(--text);
-  }
-  .chev {
-    display: inline-block;
-    transition: transform 0.12s ease;
-    font-size: 10px;
-  }
-  .chev.open {
-    transform: rotate(90deg);
-  }
-  .label {
-    flex: 1;
-    text-align: left;
-  }
-  .n {
     color: var(--text-muted);
     font-weight: 500;
   }
@@ -337,10 +285,9 @@
     font-weight: 600;
   }
   .none {
-    margin: 0 0 4px 18px;
+    margin: 2px 0 0;
     font-size: 12px;
     color: var(--text-muted);
     font-style: italic;
   }
-
 </style>

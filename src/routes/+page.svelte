@@ -8,6 +8,8 @@
   import PrereqBanner from "$lib/components/PrereqBanner.svelte";
   import SettingsPanel from "$lib/components/SettingsPanel.svelte";
   import { settingsPanel } from "$lib/settingsPanel.svelte";
+  import ManageRepoModal from "$lib/components/ManageRepoModal.svelte";
+  import { manageRepo } from "$lib/manageRepo.svelte";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import UndoBar from "$lib/components/UndoBar.svelte";
@@ -37,7 +39,7 @@
       ? { ahead: appState.currentAhead, behind: appState.currentBehind }
       : null,
   );
-  const noRemoteTitle = "Add a remote first (see Remotes panel in the sidebar)";
+  const noRemoteTitle = "Add a remote first (Manage Repository ▸ Remotes)";
 
   // ── Reload-on-switch effect (Tauri only) ─────────────────────────────────────
   // Fires once per actual repo change; the lastLoaded guard prevents re-running
@@ -147,6 +149,29 @@
       <button
         type="button"
         class="gear-btn"
+        aria-label="Manage repository"
+        title="Manage repository — backups, history, remotes"
+        onclick={() => manageRepo.openPanel()}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="4" width="18" height="4" rx="1"></rect>
+          <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"></path>
+          <line x1="10" y1="12" x2="14" y2="12"></line>
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="gear-btn"
         aria-label="Settings"
         title="Settings"
         onclick={() => settingsPanel.openPanel()}
@@ -236,6 +261,7 @@
   <RebaseTodo />
   <TimeEditDrawer />
   <SettingsPanel />
+  <ManageRepoModal />
   <StatusBar />
 </main>
 
@@ -479,6 +505,7 @@
   .gear {
     position: relative;
     display: inline-flex;
+    gap: 6px;
     flex-shrink: 0;
   }
   .gear-btn {
