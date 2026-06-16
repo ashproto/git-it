@@ -152,6 +152,28 @@ function loadSyncPullRebase(): boolean {
   }
 }
 
+// Sidebar width is a layout dimension, so it is persisted in localStorage only
+// (read+written in both browser and the Tauri webview). That gives a correct
+// width synchronously on launch — an async Tauri-store hydrate would start at the
+// default and visibly snap to the saved width on every launch.
+const SIDEBAR_WIDTH_KEY = "gitit.sidebarWidth.v1";
+const SIDEBAR_WIDTH_MIN = 180;
+const SIDEBAR_WIDTH_MAX = 520;
+const SIDEBAR_WIDTH_DEFAULT = 240;
+function clampSidebarWidth(n: number): number {
+  if (!Number.isFinite(n)) return SIDEBAR_WIDTH_DEFAULT;
+  return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(n)));
+}
+function loadSyncSidebarWidth(): number {
+  try {
+    if (typeof localStorage === "undefined") return SIDEBAR_WIDTH_DEFAULT;
+    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    return raw === null ? SIDEBAR_WIDTH_DEFAULT : clampSidebarWidth(Number(raw));
+  } catch {
+    return SIDEBAR_WIDTH_DEFAULT;
+  }
+}
+
 // Lazily load (and memoize) the Tauri store. Dynamically imported so the plugin
 // never loads in a non-Tauri bundle.
 let storePromise: Promise<Store> | null = null;
@@ -361,6 +383,17 @@ function makeState() {
       if (typeof localStorage !== "undefined") localStorage.setItem(DIFFSPLIT_KEY, String(snapshot));
     } catch (e) {
       console.warn("[gte] could not persist diffSplit setting", e);
+    }
+  }
+
+  // sidebarWidth: localStorage-persisted layout dimension (see loader above).
+  let sidebarWidth = $state<number>(loadSyncSidebarWidth());
+  function persistSidebarWidth() {
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    } catch (e) {
+      console.warn("[gte] could not persist sidebarWidth", e);
     }
   }
 
@@ -744,6 +777,13 @@ function makeState() {
       diffSplitTouched = true;
       diffSplit = v;
       persistDiffSplit();
+    },
+    get sidebarWidth() {
+      return sidebarWidth;
+    },
+    setSidebarWidth(v: number) {
+      sidebarWidth = clampSidebarWidth(v);
+      persistSidebarWidth();
     },
     // ── relativeDates persisted setting ────────────────────────────────────────
     get relativeDates() {

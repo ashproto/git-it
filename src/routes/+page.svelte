@@ -72,6 +72,26 @@
     }
   });
 
+  // ── Sidebar resize ────────────────────────────────────────────────────────
+  // Drag the divider between the sidebar and main column; width persists. The
+  // store clamps to a sane range. Double-click the handle to reset to default.
+  function startSidebarResize(e: PointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = appState.sidebarWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: PointerEvent) => appState.setSidebarWidth(startW + (ev.clientX - startX));
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
   // Derived: nothing to show — no active repo, no open repos, and no loaded commits.
   // (The graphCommits check keeps the browser preview's sample graph visible, since
   // its onMount loads commits without setting a repo.)
@@ -166,12 +186,22 @@
   <div class="scroll-area">
     <div class="scroll-inner">
       <div class="shell">
-        <aside class="side-col">
+        <aside class="side-col" style={`--sidebar-w:${appState.sidebarWidth}px`}>
           {#if appState.repoSwitcherMode === "sidebar"}
             <RepoList />
           {/if}
           <Sidebar />
         </aside>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          title="Drag to resize · double-click to reset"
+          onpointerdown={startSidebarResize}
+          ondblclick={() => appState.setSidebarWidth(240)}
+        ></div>
         {#if isEmpty}
           <!-- Empty state: no repos open yet -->
           <div class="empty-state main-col">
@@ -505,15 +535,41 @@
 
   .shell {
     display: flex;
-    gap: 14px;
+    /* No gap: the resize handle IS the gutter between the columns. */
+    gap: 0;
     align-items: flex-start;
   }
   .side-col {
-    flex: 0 0 240px;
+    /* Width is the persisted --sidebar-w (set inline); the @media below overrides
+       flex for the stacked column layout. */
+    flex: 0 0 var(--sidebar-w, 240px);
     display: flex;
     flex-direction: column;
     gap: 12px;
     min-width: 0;
+  }
+  /* Drag handle between sidebar and main column; doubles as the visual gutter. */
+  .resize-handle {
+    flex: 0 0 14px;
+    align-self: stretch;
+    cursor: col-resize;
+    position: relative;
+    touch-action: none;
+  }
+  .resize-handle::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    background: var(--border);
+    transform: translateX(-50%);
+    transition: background 0.1s, width 0.1s;
+  }
+  .resize-handle:hover::before {
+    background: var(--accent);
+    width: 2px;
   }
   .main-col {
     flex: 1;
@@ -525,6 +581,7 @@
   @media (max-width: 900px) {
     .shell {
       flex-direction: column;
+      gap: 12px;
       /* Column mode: stretch children to the viewport width (not max-content) so a
          wide child (the commits table) scrolls inside its own overflow:auto box
          instead of forcing page-level horizontal scroll that pushes panel controls
@@ -534,6 +591,9 @@
     .side-col {
       flex: 1 1 auto;
       width: 100%;
+    }
+    .resize-handle {
+      display: none;
     }
   }
 </style>
