@@ -2,6 +2,7 @@
   import { appState } from "../store.svelte";
   import { api } from "../api";
   import { gitActions } from "../gitActions";
+  import { amendDialog } from "../amendDialog.svelte";
   import type { ConflictEntry } from "../types";
 
   function inTauri(): boolean {
@@ -10,6 +11,7 @@
 
   const op = $derived(appState.repoStatus?.operation ?? null);
   const conflicted = $derived(appState.repoStatus?.conflicted ?? 0);
+  const headCommit = $derived(appState.graphCommits.find((c) => c.refs.some((r) => r.is_head)) ?? null);
 
   let details = $state<ConflictEntry[]>([]);
 
@@ -41,7 +43,7 @@
 </script>
 
 {#if op}
-  <section class="conflict panel">
+  <section class="conflict panel" class:resolved={conflicted === 0}>
     <header class="ch">
       <span class="title">{opLabel(op)} in progress</span>
       <span class="n" class:clear={conflicted === 0}>
@@ -69,10 +71,19 @@
         {/each}
       </ul>
     {:else if conflicted === 0}
-      <p class="done">All conflicts resolved — continue to finish, or abort.</p>
+      <p class="done">
+        {#if op === "rebase"}
+          Paused — amend the current commit if you need to, then continue (or abort).
+        {:else}
+          All conflicts resolved — continue to finish, or abort.
+        {/if}
+      </p>
     {/if}
 
     <footer class="cf">
+      {#if op === "rebase" && conflicted === 0 && headCommit}
+        <button onclick={() => amendDialog.openWith(headCommit.sha, headCommit.subject)}>Amend commit…</button>
+      {/if}
       <button class="primary" disabled={conflicted > 0} onclick={() => gitActions.opContinue(op)}>
         Continue {opLabel(op).toLowerCase()}
       </button>
@@ -93,6 +104,12 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  .conflict.resolved {
+    border-color: var(--accent);
+  }
+  .conflict.resolved .title {
+    color: var(--accent);
   }
   .ch {
     display: flex;

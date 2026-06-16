@@ -265,7 +265,9 @@ async function runDestructiveRebase(
     }
     appState.status = res.outcome.conflicted
       ? `${label}: ${res.outcome.files.length} conflict(s) to resolve.`
-      : `${label} — done.`;
+      : appState.repoStatus?.operation
+        ? "Rebase paused — amend the commit if needed, then continue."
+        : `${label} — done.`;
     return true;
   } catch (e) {
     try {
