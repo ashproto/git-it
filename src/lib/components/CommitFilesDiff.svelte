@@ -60,10 +60,12 @@
     <span class="ft-label">{files.length} file{files.length === 1 ? "" : "s"} changed</span>
     <button
       class="ft-toggle"
+      class:active={appState.fileTreeView}
       onclick={() => appState.setFileTreeView(!appState.fileTreeView)}
-      title={appState.fileTreeView ? "List view" : "Tree view"}
+      title="Toggle folder tree view"
+      aria-label="Tree view"
       aria-pressed={appState.fileTreeView}
-    >{appState.fileTreeView ? "☰ List" : "⊟ Tree"}</button>
+    >⊟ Tree</button>
   </div>
   <div class="master-detail">
     <ul class="filelist">
@@ -121,6 +123,11 @@
     color: var(--text);
     font-size: 11px;
     cursor: pointer;
+  }
+  .ft-toggle.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
   }
   .ft-toggle:hover {
     background: var(--btn-hover);

@@ -257,10 +257,12 @@
         <span class="ft-label">Local Changes</span>
         <button
           class="ft-toggle"
+          class:active={appState.fileTreeView}
           onclick={() => appState.setFileTreeView(!appState.fileTreeView)}
-          title={appState.fileTreeView ? "List view" : "Tree view"}
+          title="Toggle folder tree view"
+          aria-label="Tree view"
           aria-pressed={appState.fileTreeView}
-        >{appState.fileTreeView ? "☰ List" : "⊟ Tree"}</button>
+        >⊟ Tree</button>
       </div>
       <!-- ── Staged ───────────────────────────────────────────────────────────── -->
       {#if stagedFiles.length > 0}
@@ -494,6 +496,11 @@
     color: var(--text);
     font-size: 11px;
     cursor: pointer;
+  }
+  .ft-toggle.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
   }
   .ft-toggle:hover {
     background: var(--btn-hover);
