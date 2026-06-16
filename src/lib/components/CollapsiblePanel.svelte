@@ -4,30 +4,35 @@
   type Props = {
     title: string;
     collapsed?: boolean;
+    bare?: boolean;
     headerActions?: Snippet;
     children: Snippet;
   };
-  let { title, collapsed = $bindable(false), headerActions, children }: Props = $props();
+  let { title, collapsed = $bindable(false), bare = false, headerActions, children }: Props = $props();
 
   function toggle() {
     collapsed = !collapsed;
   }
 </script>
 
-<section class="panel" class:collapsed>
-  <header class="panel-header">
-    <button type="button" class="toggle" onclick={toggle} aria-expanded={!collapsed}>
-      <span class="chevron" class:open={!collapsed} aria-hidden="true">▶</span>
-      <h2>{title}</h2>
-    </button>
-    {#if headerActions}
-      <div class="actions">{@render headerActions()}</div>
+{#if bare}
+  <div class="cp-bare">{@render children()}</div>
+{:else}
+  <section class="panel" class:collapsed>
+    <header class="panel-header">
+      <button type="button" class="toggle" onclick={toggle} aria-expanded={!collapsed}>
+        <span class="chevron" class:open={!collapsed} aria-hidden="true">▶</span>
+        <h2>{title}</h2>
+      </button>
+      {#if headerActions}
+        <div class="actions">{@render headerActions()}</div>
+      {/if}
+    </header>
+    {#if !collapsed}
+      <div class="body">{@render children()}</div>
     {/if}
-  </header>
-  {#if !collapsed}
-    <div class="body">{@render children()}</div>
-  {/if}
-</section>
+  </section>
+{/if}
 
 <style>
   .panel {
@@ -91,5 +96,8 @@
   }
   .body {
     padding: 10px 14px 14px 14px;
+  }
+  .cp-bare {
+    padding: 2px 0;
   }
 </style>

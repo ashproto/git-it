@@ -87,25 +87,17 @@
         stroke-width="1.5"
       />
     {/if}
-    {#if row.isMerge}
-      <circle
-        cx={laneX(row.lane, g)}
-        cy={dotY(i)}
-        r="4.5"
-        fill="var(--panel-bg)"
-        stroke={resolveColor(row.colorIndex)}
-        stroke-width="2"
-      />
-    {:else}
-      <circle
-        cx={laneX(row.lane, g)}
-        cy={dotY(i)}
-        r="4.5"
-        fill={resolveColor(row.colorIndex)}
-        stroke="var(--panel-bg)"
-        stroke-width="1.5"
-      />
-    {/if}
+    <!-- All commit dots are FILLED in the lane colour (clean, Fork-like). Merges
+         are a touch larger (r=5) for a subtle distinction instead of the old
+         hollow/open style, which read as janky. -->
+    <circle
+      cx={laneX(row.lane, g)}
+      cy={dotY(i)}
+      r={row.isMerge ? 5 : 4.5}
+      fill={resolveColor(row.colorIndex)}
+      stroke="var(--panel-bg)"
+      stroke-width="1.5"
+    />
   {/each}
 </svg>
 

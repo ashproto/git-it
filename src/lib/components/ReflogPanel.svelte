@@ -5,6 +5,8 @@
   import type { ReflogEntry } from "../types";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
 
+  let { bare = false } = $props();
+
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   }
@@ -20,7 +22,9 @@
   $effect(() => {
     // Reading appState.lastUndo subscribes this effect to its changes.
     const _lastUndo = appState.lastUndo;
-    if (!collapsed && isTauri() && appState.repo) {
+    // When `bare` (inside the Manage Repository modal) the panel is always
+    // expanded, so load regardless of `collapsed`.
+    if ((bare || !collapsed) && isTauri() && appState.repo) {
       loadReflog();
     }
   });
@@ -61,7 +65,7 @@
   }
 </script>
 
-<CollapsiblePanel title="History (reflog)" bind:collapsed>
+<CollapsiblePanel title="History (reflog)" bind:collapsed {bare}>
   {#if !isTauri()}
     <p class="note">Desktop app only — reflog is not available in the browser preview.</p>
   {:else if entries.length === 0}

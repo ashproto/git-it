@@ -101,11 +101,11 @@
           aria-label={activeLabel}
         >
           {#if section === "remotes"}
-            <RemotePanel />
+            <RemotePanel bare />
           {:else if section === "history"}
-            <ReflogPanel />
+            <ReflogPanel bare />
           {:else}
-            <BackupsPanel />
+            <BackupsPanel bare />
           {/if}
         </div>
       </div>

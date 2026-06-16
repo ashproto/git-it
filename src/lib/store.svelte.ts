@@ -452,23 +452,38 @@ function makeState() {
   const selectedCommit = $derived(
     currentSha ? (graphCommits.find((c) => c.sha === currentSha) ?? null) : null,
   );
-  // Sidebar ref tree, derived from the loaded graph's ref decorations so it works
-  // in both Tauri and the browser preview without a separate list_refs call.
+  // Sidebar ref tree. Seeded from the COMPLETE repo ref set (refsDetailed, from
+  // list_refs) so tags/branches on commits not yet paged into the graph still show
+  // up without scrolling, then overlaid with the loaded-graph decorations — which
+  // are authoritative for is_head and supply the detached-HEAD pseudo-ref that
+  // list_refs doesn't return. In the browser preview refsDetailed is empty, so it
+  // falls back to the graph decorations (keeps working without a list_refs call).
   const refsByKind = $derived.by(() => {
-    const local: RefEntry[] = [];
-    const remote: RefEntry[] = [];
-    const tags: RefEntry[] = [];
+    const local = new Map<string, RefEntry>();
+    const remote = new Map<string, RefEntry>();
+    const tags = new Map<string, RefEntry>();
     const head: RefEntry[] = []; // detached-HEAD decoration (RefKind "head")
+    for (const r of refsDetailed) {
+      const entry: RefEntry = { name: r.name, sha: r.target_sha, isHead: false };
+      if (r.kind === "local") local.set(r.name, entry);
+      else if (r.kind === "remote") remote.set(r.name, entry);
+      else if (r.kind === "tag") tags.set(r.name, entry);
+    }
     for (const c of graphCommits) {
       for (const r of c.refs) {
         const entry: RefEntry = { name: r.name, sha: c.sha, isHead: r.is_head };
-        if (r.kind === "local") local.push(entry);
-        else if (r.kind === "remote") remote.push(entry);
-        else if (r.kind === "tag") tags.push(entry);
+        if (r.kind === "local") local.set(r.name, entry);
+        else if (r.kind === "remote") remote.set(r.name, entry);
+        else if (r.kind === "tag") tags.set(r.name, entry);
         else if (r.kind === "head") head.push(entry);
       }
     }
-    return { local, remote, tags, head };
+    return {
+      local: [...local.values()],
+      remote: [...remote.values()],
+      tags: [...tags.values()],
+      head,
+    };
   });
 
   // ── Per-branch colour overrides (persisted, keyed by repo path → ref name → hex).
@@ -1026,7 +1041,6 @@ function makeState() {
         suggestedCommitMessage = "";
         remoteOpActive = false;
         remoteLog = [];
-        remotesState = [];
         currentSha = null;
         selected = new Set();
         newDates = new Map();
@@ -1037,6 +1051,7 @@ function makeState() {
           workingChanges = [];
           workingChangesRev = 0;
           refsDetailed = [];
+          remotesState = [];
           graphCommits = [];
           commits = [];
         }

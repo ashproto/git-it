@@ -4,6 +4,8 @@
   import type { BundleInfo, SafetyRef } from "../types";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
 
+  let { bare = false } = $props();
+
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   }
@@ -109,7 +111,7 @@
   }
 </script>
 
-<CollapsiblePanel title="Backups" collapsed>
+<CollapsiblePanel title="Backups" collapsed {bare}>
   {#if !isTauri()}
     <p class="note">Desktop app only — backups are not available in the browser preview.</p>
   {:else}

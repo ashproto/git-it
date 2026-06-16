@@ -486,6 +486,15 @@ export const gitActions = {
     runWorktree(`Unstage ${selected.length} line(s) in ${path}`, () => api.unstageLines(appState.repo, path, hunkIndex, selected, appState.effectiveDiffContext)),
   commitChanges: (message: string, signoff = false) =>
     runWorktree("Commit", () => api.commit(appState.repo, message, signoff)),
+  // Seamless composer amend (Fork-style): folds the currently-staged changes into
+  // HEAD with the (edited) message via `git commit --amend -F <file>`. Unlike the
+  // `amend` action above it does NOT route through runDestructive's blocking confirm
+  // dialog — Fork amends without a modal; the configurable auto-backup is the safety
+  // net. resetAuthorDate/resetCommitterDate=false preserve the original author.
+  amendCommit: (message: string) =>
+    runWorktree("Amend commit", () =>
+      api.amend(appState.repo, message, false, false, appState.autoBackupDestructive),
+    ),
   stashPush: (message: string | null) =>
     runWorktree("Stash changes", () => api.stashPush(appState.repo, message)),
   stashApply: (index: number) =>

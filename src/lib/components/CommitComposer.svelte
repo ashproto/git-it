@@ -3,7 +3,18 @@
   import { gitActions } from "../gitActions";
 
   let message = $state("");
-  let signoff = $state(false);
+
+  // ── Amend toggle (Fork-style) ───────────────────────────────────────────────
+  // When ON, the message box is prefilled with HEAD's full message for editing and
+  // the Commit button becomes "Amend" (folds the staged changes into HEAD via
+  // `git commit --amend`). Turning it OFF restores the user's previous draft.
+  let amend = $state(false);
+  let draft = $state(""); // the user's commit draft, saved while amending
+
+  // HEAD commit (the one to amend). null in an empty repo → amend is disabled.
+  const headCommit = $derived(
+    appState.graphCommits.find((c) => c.refs.some((r) => r.is_head)) ?? null,
+  );
 
   // Prefill the message from a squash-merge suggestion exactly once (only when
   // the user hasn't typed anything yet), then clear the suggestion so it won't
@@ -18,12 +29,37 @@
 
   // Count staged files reactively.
   const stagedCount = $derived(appState.workingChanges.filter((f) => f.staged).length);
-  const canCommit = $derived(message.trim().length > 0 && stagedCount > 0);
+  // Amend can edit just the message (no staged files required); a normal commit
+  // needs both a message and at least one staged file.
+  const canCommit = $derived(
+    amend ? message.trim().length > 0 : message.trim().length > 0 && stagedCount > 0,
+  );
+
+  // Toggle handler (onchange, not $effect, to avoid reactive loops). ON: stash the
+  // current draft and load HEAD's message for editing. OFF: restore the draft.
+  async function onAmendToggle(e: Event) {
+    const on = (e.currentTarget as HTMLInputElement).checked;
+    amend = on;
+    if (on) {
+      draft = message;
+      const head = headCommit;
+      message = head ? await gitActions.getCommitMessage(head.sha) : "";
+    } else {
+      message = draft;
+      draft = "";
+    }
+  }
 
   async function doCommit() {
     if (!canCommit) return;
-    await gitActions.commitChanges(message.trim(), signoff);
+    if (amend) {
+      await gitActions.amendCommit(message.trim());
+    } else {
+      await gitActions.commitChanges(message.trim());
+    }
     message = "";
+    amend = false;
+    draft = "";
   }
 </script>
 
@@ -45,21 +81,30 @@
     }}
   ></textarea>
   <div class="actions">
-    <label class="signoff-label">
-      <input type="checkbox" bind:checked={signoff} />
-      Sign off
+    <label class="signoff-label" class:disabled={!headCommit}>
+      <input
+        type="checkbox"
+        checked={amend}
+        disabled={!headCommit}
+        onchange={onAmendToggle}
+      />
+      Amend last commit
     </label>
     <button
       class="commit-btn"
       disabled={!canCommit}
       onclick={doCommit}
       title={!canCommit
-        ? stagedCount === 0
-          ? "Stage at least one file first"
-          : "Enter a commit message"
-        : "Commit staged changes (⌘↵)"}
+        ? amend
+          ? "Enter a commit message"
+          : stagedCount === 0
+            ? "Stage at least one file first"
+            : "Enter a commit message"
+        : amend
+          ? "Amend the last commit (⌘↵)"
+          : "Commit staged changes (⌘↵)"}
     >
-      Commit {stagedCount > 0 ? `(${stagedCount})` : ""}
+      {#if amend}Amend{:else}Commit {stagedCount > 0 ? `(${stagedCount})` : ""}{/if}
     </button>
   </div>
 </div>
@@ -117,6 +162,10 @@
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
+  }
+  .signoff-label.disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .commit-btn {

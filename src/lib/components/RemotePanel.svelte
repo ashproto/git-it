@@ -4,6 +4,8 @@
   import { dialogs } from "../dialogs.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
 
+  let { bare = false } = $props();
+
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   }
@@ -53,7 +55,7 @@
   }
 </script>
 
-<CollapsiblePanel title="Remotes" bind:collapsed>
+<CollapsiblePanel title="Remotes" bind:collapsed {bare}>
   {#if !isTauri()}
     <p class="note">Desktop app only — remote management is not available in the browser preview.</p>
   {:else}

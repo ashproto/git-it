@@ -2,6 +2,7 @@
   import { appState } from "../store.svelte";
   import { gitActions } from "../gitActions";
   import { api } from "../api";
+  import { contextMenu } from "../contextMenu.svelte";
   import DiffView from "./DiffView.svelte";
   import CommitComposer from "./CommitComposer.svelte";
   import type { WorkingFile } from "../types";
@@ -40,6 +41,18 @@
   // the `git diff --no-index` path (and hunk/line staging doesn't apply to them).
   const selectedIsUntracked = $derived(
     selectedFile !== null && untrackedFiles.some((f) => f.path === selectedFile),
+  );
+
+  // Whether the selected file is a tracked, modified (non-untracked) unstaged file.
+  const selectedIsUnstaged = $derived(
+    selectedFile !== null && unstagedFiles.some((f) => f.path === selectedFile),
+  );
+
+  // Whether the selected file is displayed in the Unstaged section. In unified mode
+  // that section also lists untracked files, so a selected untracked file counts too.
+  // Drives the Unstaged header button's Fork-style "Stage" vs "Stage all".
+  const selectedInUnstagedSection = $derived(
+    selectedIsUnstaged || (appState.unifyUnstaged && selectedIsUntracked),
   );
 
   // Raw patch for the selected file. Re-fetches whenever selectedFile changes OR
@@ -102,6 +115,34 @@
     appState.setSelectedFile(path === selectedFile ? null : path);
   }
 
+  // ── Right-click context menu (Fork-style) ────────────────────────────────────
+  // Mirrors GraphHistory.onRowContext: preventDefault, select the row (so the diff
+  // updates), then open the shared contextMenu with file-state-appropriate actions.
+  // discard/clean already show their own confirm — no extra confirm is added here.
+  function onRowContext(e: MouseEvent, f: WorkingFile) {
+    e.preventDefault();
+    // Select the row so the diff pane follows the right-click. selectFile toggles
+    // off when re-clicking the selected row, so only set it if not already selected.
+    if (selectedFile !== f.path) appState.setSelectedFile(f.path);
+    if (f.staged) {
+      contextMenu.openAt(e.clientX, e.clientY, [
+        { label: "Unstage", action: () => gitActions.unstage([f.path]) },
+      ]);
+    } else if (f.untracked) {
+      contextMenu.openAt(e.clientX, e.clientY, [
+        { label: "Stage", action: () => gitActions.stage([f.path]) },
+        { separator: true },
+        { label: "Remove", danger: true, action: () => gitActions.clean([f.path]) },
+      ]);
+    } else {
+      contextMenu.openAt(e.clientX, e.clientY, [
+        { label: "Stage", action: () => gitActions.stage([f.path]) },
+        { separator: true },
+        { label: "Discard changes", danger: true, action: () => gitActions.discard([f.path]) },
+      ]);
+    }
+  }
+
   // ── Horizontal resize: file-list ↔ diff (ITEM 5) ─────────────────────────────
   // Mirrors GraphHistory's resize-handle convention. The .files column is LEFT-
   // anchored (the diff pane is flex:1 to its right), so it GROWS when the handle is
@@ -142,8 +183,11 @@
             <span class="section-title">Staged ({stagedFiles.length})</span>
             <button
               class="hdr-btn"
-              onclick={() => gitActions.unstage(stagedFiles.map((f) => f.path))}
-            >Unstage all</button>
+              onclick={() =>
+                selectedIsStaged
+                  ? gitActions.unstage([selectedFile!])
+                  : gitActions.unstage(stagedFiles.map((f) => f.path))}
+            >{selectedIsStaged ? "Unstage" : "Unstage all"}</button>
           </header>
           <ul class="file-list">
             {#each stagedFiles as f (f.path)}
@@ -153,21 +197,13 @@
                 role="row"
                 tabindex="0"
                 onmousedown={() => selectFile(f.path)}
+                oncontextmenu={(e) => onRowContext(e, f)}
                 onkeydown={(e) => {
                   if (e.key === "Enter" || e.key === " ") selectFile(f.path);
                 }}
               >
                 <span class="glyph staged">{glyph(f)}</span>
                 <span class="path mono" title={f.path}>{f.path}</span>
-                <span class="row-actions">
-                  <button
-                    class="row-btn"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      gitActions.unstage([f.path]);
-                    }}>Unstage</button
-                  >
-                </span>
               </li>
             {/each}
           </ul>
@@ -181,10 +217,16 @@
         <section class="file-section">
           <header class="section-header">
             <span class="section-title">Unstaged ({unstagedDisplay.length})</span>
+            <!-- Context-aware: when a file in THIS section is selected, stage just it
+                 (in unified mode that selection may be an untracked file too); else
+                 stage every file shown in the section. -->
             <button
               class="hdr-btn"
-              onclick={() => gitActions.stage(unstagedDisplay.map((f) => f.path))}
-            >Stage all</button>
+              onclick={() =>
+                selectedInUnstagedSection
+                  ? gitActions.stage([selectedFile!])
+                  : gitActions.stage(unstagedDisplay.map((f) => f.path))}
+            >{selectedInUnstagedSection ? "Stage" : "Stage all"}</button>
           </header>
           <ul class="file-list">
             {#each unstagedDisplay as f (f.path)}
@@ -194,6 +236,7 @@
                 role="row"
                 tabindex="0"
                 onmousedown={() => selectFile(f.path)}
+                oncontextmenu={(e) => onRowContext(e, f)}
                 onkeydown={(e) => {
                   if (e.key === "Enter" || e.key === " ") selectFile(f.path);
                 }}
@@ -202,32 +245,6 @@
                   >{glyph(f)}</span
                 >
                 <span class="path mono" title={f.path}>{f.path}</span>
-                <span class="row-actions">
-                  <button
-                    class="row-btn"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      gitActions.stage([f.path]);
-                    }}>Stage</button
-                  >
-                  {#if f.untracked}
-                    <button
-                      class="row-btn danger"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        gitActions.clean([f.path]);
-                      }}>Remove</button
-                    >
-                  {:else}
-                    <button
-                      class="row-btn danger"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        gitActions.discard([f.path]);
-                      }}>Discard</button
-                    >
-                  {/if}
-                </span>
               </li>
             {/each}
           </ul>
@@ -241,8 +258,11 @@
             <span class="section-title">Untracked ({untrackedFiles.length})</span>
             <button
               class="hdr-btn"
-              onclick={() => gitActions.stage(untrackedFiles.map((f) => f.path))}
-            >Stage all</button>
+              onclick={() =>
+                selectedIsUntracked
+                  ? gitActions.stage([selectedFile!])
+                  : gitActions.stage(untrackedFiles.map((f) => f.path))}
+            >{selectedIsUntracked ? "Stage" : "Stage all"}</button>
           </header>
           <ul class="file-list">
             {#each untrackedFiles as f (f.path)}
@@ -252,28 +272,13 @@
                 role="row"
                 tabindex="0"
                 onmousedown={() => selectFile(f.path)}
+                oncontextmenu={(e) => onRowContext(e, f)}
                 onkeydown={(e) => {
                   if (e.key === "Enter" || e.key === " ") selectFile(f.path);
                 }}
               >
                 <span class="glyph untracked">{glyph(f)}</span>
                 <span class="path mono" title={f.path}>{f.path}</span>
-                <span class="row-actions">
-                  <button
-                    class="row-btn"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      gitActions.stage([f.path]);
-                    }}>Stage</button
-                  >
-                  <button
-                    class="row-btn danger"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      gitActions.clean([f.path]);
-                    }}>Remove</button
-                  >
-                </span>
               </li>
             {/each}
           </ul>
@@ -478,39 +483,6 @@
     white-space: nowrap;
     font-size: 12px;
     color: var(--text);
-  }
-
-  .row-actions {
-    flex: 0 0 auto;
-    display: flex;
-    gap: 4px;
-    opacity: 0;
-    transition: opacity 0.1s;
-  }
-  .file-row:hover .row-actions,
-  .file-row.selected .row-actions {
-    opacity: 1;
-  }
-
-  .row-btn {
-    padding: 1px 8px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    background: var(--btn-bg);
-    color: var(--text);
-    font-size: 11px;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .row-btn:hover {
-    background: var(--btn-hover);
-  }
-  .row-btn.danger {
-    color: var(--danger);
-    border-color: var(--danger);
-  }
-  .row-btn.danger:hover {
-    background: rgba(220, 38, 38, 0.08);
   }
 
   /* ── Diff pane ──────────────────────────────────────────────────────────────── */
