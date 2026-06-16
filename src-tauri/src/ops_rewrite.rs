@@ -181,14 +181,24 @@ pub fn rebase_interactive(repo: &Path, base: &str, steps: &[RebaseStep], auto_ba
         .arg(base);
     let (ok, msg) = ops_merge::run_status(&mut c)?;
     let outcome = ops_merge::outcome_for(repo, "rebase", ok, msg)?;
-    // Only clean up when the rebase actually finished. If still conflicted, leave the
-    // msg-N files in place so the pending `x git commit --amend -F <file>` todo line
-    // can complete after `git rebase --continue`. The dir is reclaimed at the top of
-    // the NEXT call to rebase_interactive.
-    if !outcome.conflicted {
+    // Only clean up when the rebase is FULLY finished (no .git/rebase-merge or
+    // .git/rebase-apply directory). The scratch dir (with its msg-N files) must be
+    // preserved across ANY mid-rebase pause — a conflict OR an `edit`/`break` stop —
+    // so that a pending `x git commit --amend -F <file>` todo line can still complete
+    // after `git rebase --continue`. The dir is reclaimed at the top of the NEXT call
+    // to rebase_interactive.
+    if !rebase_in_progress(repo) {
         let _ = fs::remove_dir_all(&dir);
     }
     Ok(RebaseOutcome { outcome, undo, bundle })
+}
+
+/// True while an interactive/standard rebase is mid-flight (conflict pause OR an
+/// `edit`/`break` stop). git keeps `.git/rebase-merge` (interactive) or
+/// `.git/rebase-apply` (am-based) until the rebase finishes or is aborted.
+pub fn rebase_in_progress(repo: &Path) -> bool {
+    repo.join(".git").join("rebase-merge").exists()
+        || repo.join(".git").join("rebase-apply").exists()
 }
 
 /// `git reflog` for HEAD, most-recent first.
@@ -473,6 +483,34 @@ mod tests {
         assert!(!final_outcome.conflicted, "rebase should complete after resolving the conflict");
         assert_eq!(r.subject("HEAD"), "NEW C",
             "reword message must survive the conflict pause (Fix 1: conditional cleanup)");
+    }
+
+    #[test]
+    fn interactive_edit_pauses_and_keeps_rebase_in_progress() {
+        // base → b → c on main; mark b as `edit` so the rebase stops at it.
+        // The rebase should pause cleanly (not conflicted) but leave the rebase
+        // in progress (.git/rebase-merge must still exist).
+        let r = TempRepo::new();
+        r.commit("a", "1", "A");
+        let base = r.rev("HEAD");
+        r.commit("b", "2", "B");
+        let b = r.rev("HEAD");
+        r.commit("c", "3", "C");
+        let c_sha = r.rev("HEAD");
+        let steps = vec![
+            RebaseStep { action: "edit".into(), sha: b.clone(), message: None },
+            RebaseStep { action: "pick".into(), sha: c_sha.clone(), message: None },
+        ];
+        let out = rebase_interactive(&r.path, &base, &steps, false).unwrap();
+        assert!(!out.outcome.conflicted, "an edit stop is a clean pause, not a conflict");
+        assert!(rebase_in_progress(&r.path), "rebase must still be in progress (paused at edit)");
+        // clean up the paused rebase so the temp repo isn't left mid-rebase
+        std::process::Command::new("git")
+            .current_dir(&r.path)
+            .args(["rebase", "--abort"])
+            .status()
+            .unwrap();
+        assert!(!rebase_in_progress(&r.path), "abort ends the rebase");
     }
 
     // Fix 4: prove that amend(reset_author_date=false, reset_committer_date=false)
