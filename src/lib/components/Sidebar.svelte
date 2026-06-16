@@ -90,15 +90,16 @@
       });
     }
 
-    // Merge this ref into the current branch (contract e: ff/no-ff are distinct
-    // items, never combined). Skip when this IS the checked-out branch. Squash is
-    // deferred to Phase 5: a conflicting --squash writes no MERGE_HEAD (so the
-    // conflict panel/abort can't recover it) and a clean one only stages changes,
-    // needing a commit UI to finish — neither exists yet.
+    // Merge this ref into the current branch (contract e: ff/no-ff/squash are
+    // distinct items, never combined). Skip when this IS the checked-out branch.
+    // Squash is now wired: a clean squash stages changes and opens the commit
+    // composer with a prefilled message; a conflicting squash surfaces conflicts
+    // in the working-copy panel (no MERGE_HEAD, so the user resolves then commits).
     if (!(kind === "local" && r.isHead)) {
       items.push({ separator: true });
       items.push({ label: `Merge ${r.name} into current`, action: () => gitActions.merge(r.name) });
       items.push({ label: `Merge ${r.name} (no-ff)`, action: () => gitActions.merge(r.name, { noFf: true }) });
+      items.push({ label: `Squash merge ${r.name} into current`, action: () => gitActions.squashMerge(r.name) });
     }
     contextMenu.openAt(event.clientX, event.clientY, items);
   }

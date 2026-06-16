@@ -326,6 +326,9 @@ function makeState() {
   let workingChangesRev = $state(0);
   let selectedFile = $state<string | null>(null);
   let workingCopySelected = $state<boolean>(false);
+  // Transient (non-persisted) suggested commit message, set by squash-merge to
+  // prefill the CommitComposer before the user edits/commits.
+  let suggestedCommitMessage = $state("");
 
   // diffSplit: persisted preference — true = split mode, false = unified (default).
   // Mirrors the graphLineStyle pattern.
@@ -721,6 +724,16 @@ function makeState() {
       // When entering working-copy mode, deselect any real commit so the panels
       // don't show stale commit detail alongside the working-copy view.
       if (v) currentSha = null;
+    },
+    // ── Transient suggested commit message (squash-merge prefill) ─────────────
+    get suggestedCommitMessage() {
+      return suggestedCommitMessage;
+    },
+    setSuggestedCommitMessage(s: string) {
+      suggestedCommitMessage = s;
+    },
+    clearSuggestedCommitMessage() {
+      suggestedCommitMessage = "";
     },
     // ── diffSplit persisted setting (Phase 5) ──────────────────────────────────
     get diffSplit() {

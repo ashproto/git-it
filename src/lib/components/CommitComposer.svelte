@@ -5,6 +5,17 @@
   let message = $state("");
   let signoff = $state(false);
 
+  // Prefill the message from a squash-merge suggestion exactly once (only when
+  // the user hasn't typed anything yet), then clear the suggestion so it won't
+  // re-seed on a subsequent open of the working-copy view.
+  $effect(() => {
+    const s = appState.suggestedCommitMessage;
+    if (s && message.trim() === "") {
+      message = s;
+      appState.clearSuggestedCommitMessage();
+    }
+  });
+
   // Count staged files reactively.
   const stagedCount = $derived(appState.workingChanges.filter((f) => f.staged).length);
   const canCommit = $derived(message.trim().length > 0 && stagedCount > 0);

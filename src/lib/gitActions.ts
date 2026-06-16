@@ -475,6 +475,31 @@ export const gitActions = {
     });
   },
 
+  // ── Squash-merge (Phase 5 follow-up) ─────────────────────────────────────
+  // A squash merge stages all changes but creates NO commit and leaves no
+  // MERGE_HEAD, so the normal runOp/ConflictView flow does not apply. Instead:
+  //   • clean squash  → reloadGraph + open composer with a prefilled message
+  //   • conflict squash → same (working copy surfaces conflicts; user resolves then commits)
+  squashMerge: async (reference: string): Promise<void> => {
+    if (!isTauri() || !appState.repo) {
+      appState.status = "Squash merge needs the desktop app and an open repository.";
+      return;
+    }
+    if (appState.remoteOpActive || appState.isRewriting) return;
+    appState.status = `Squash-merging ${reference}…`;
+    try {
+      const outcome = await api.merge(appState.repo, reference, false, true);
+      await reloadGraph();
+      appState.setWorkingCopySelected(true); // open the commit composer on the staged result
+      appState.setSuggestedCommitMessage(`Squash merge '${reference}'`);
+      appState.status = outcome.conflicted
+        ? `Squash merge of ${reference} has conflicts — resolve the files below, then commit.`
+        : `Squashed ${reference} — review the staged changes and commit.`;
+    } catch (e) {
+      appState.status = `Squash merge failed: ${e}`;
+    }
+  },
+
   // ── Remote actions (Phase 6) ───────────────────────────────────────────────
   pull: () => {
     const label = appState.pullRebase ? "Pull (rebase)" : "Pull";
