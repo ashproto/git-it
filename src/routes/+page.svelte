@@ -32,6 +32,11 @@
   const currentBranch = $derived(
     appState.refsByKind.local.find((r) => r.isHead)?.name ?? null,
   );
+  // The project name shown centered in the title bar — the active repo's folder
+  // name (Fork-style), falling back to the app name in the empty state.
+  const repoName = $derived(
+    appState.repo ? (appState.repo.split("/").filter(Boolean).pop() ?? "Git It") : "Git It",
+  );
   const detachedHead = $derived(
     currentBranch === null && appState.refsByKind.head.length > 0,
   );
@@ -107,8 +112,9 @@
 <main>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header class="app-header" onmousedown={onWindowDragMouseDown}>
-    <div class="header-left">
-      <h1>Git It</h1>
+    <div class="tl-inset" aria-hidden="true"></div>
+    <div class="header-center">
+      <h1 title={appState.repo || "Git It"}>{repoName}</h1>
       {#if currentBranch}
         <span class="branch-chip" title="Current branch">
           {currentBranch}{#if aheadBehind}&nbsp;<span class="ahead-behind" aria-label="{aheadBehind.ahead} ahead, {aheadBehind.behind} behind">↑{aheadBehind.ahead} ↓{aheadBehind.behind}</span>{/if}
@@ -398,9 +404,12 @@
     padding-top: 0;
   }
   :global(:root[data-tauri="true"]) .app-header {
-    /* Reserve room for traffic lights + visually separate the title strip. */
-    padding-top: 2.25rem;
-    padding-left: 4px;
+    /* Sit the row BESIDE the traffic lights (not below them): a left inset clears
+       the lights and the shrunk vertical padding reclaims the ~36px band. */
+    --tl-inset: 78px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    min-height: 28px;
   }
   /* Light frosted-glass on top of OS NSVisualEffect vibrancy. Kept light on the
      blur side so the wallpaper detail comes through clearly — the OS material
@@ -413,16 +422,23 @@
   /* Left zone (title + branch chip) absorbs all the variable width, so the
      Fetch/Pull/Push group and the gear stay anchored on the right and never shift
      when the branch name changes (was: two competing margin-left:auto). */
-  .header-left {
+  /* Centered project + branch in the title-bar strip. The header is a grid:
+     [traffic-light inset | centered title | remote buttons | gear]. The inset is
+     0 in the browser and ~78px in glass mode (to clear the macOS lights). */
+  .tl-inset {
+    width: var(--tl-inset, 0px);
+  }
+  .header-center {
+    justify-self: center;
     display: flex;
     align-items: center;
     gap: 10px;
-    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
   }
   .app-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: var(--tl-inset, 0px) 1fr auto auto;
     align-items: center;
     gap: 12px;
     /* Native macOS titlebars are non-selectable so click-drag doesn't start
