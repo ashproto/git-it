@@ -28,6 +28,11 @@
   // Seed a generous initial window so the very first paint shows rows before the
   // geometry effect refines the range (avoids an empty flash on mount).
   let winEnd = $state(50);
+  // Jump-to-commit requests are tracked by a monotonic nonce on the graphView
+  // singleton, which outlives this component. Capture the value seen at mount so a
+  // stale request from before this mount (e.g. after a repo switch remounts the
+  // graph) doesn't auto-scroll; only act on nonces newer than this.
+  let seenJumpNonce = graphView.nonce;
 
   const commits = $derived(appState.graphCommits);
   const rows = $derived(appState.rows);
@@ -228,9 +233,10 @@
     winEnd = w.end;
   }
 
-  // Re-window when the data set or the wc-row's presence changes (and on mount).
-  // recomputeWindow reads commits.length and wcOffset, so this effect re-runs
-  // exactly when either changes; the geometry reads are non-reactive.
+  // Re-window on mount and whenever the data set or wc-row presence changes. This
+  // effect tracks the reactive reads inside recomputeWindow (commits.length,
+  // wcOffset, the bound refs); the geometry reads are non-reactive. It can't loop:
+  // it writes winStart/winEnd but never reads them.
   $effect(() => {
     recomputeWindow();
   });
@@ -246,9 +252,11 @@
 
   // Resolve an external "scroll to commit" request (Sidebar jump-to-ref). Keyed
   // only on the nonce — untrack the rest so appending commits doesn't re-scroll.
+  // Ignore any nonce at-or-below the mount-time value (stale request / remount).
   $effect(() => {
     const n = graphView.nonce;
-    if (n === 0) return;
+    if (n === seenJumpNonce) return;
+    seenJumpNonce = n;
     untrack(() => {
       const sha = graphView.requestSha;
       if (!sha || !wrapEl) return;
@@ -455,9 +463,12 @@
   .spacer {
     flex: 0 0 auto;
   }
-  /* Virtualization height reservers for the off-window rows above/below. Block
-     divs (the .history is not a flex container) so their inline height is exact. */
+  /* Virtualization height reservers for the off-window rows above/below. Forced
+     block + full width so their inline height is exact and a future change to
+     .history layout can't silently collapse them. */
   .spacer-v {
+    display: block;
+    width: 100%;
     pointer-events: none;
   }
   .subject {
