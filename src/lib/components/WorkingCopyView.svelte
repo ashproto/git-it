@@ -95,7 +95,8 @@
   {:else if appState.workingChanges.length === 0}
     <p class="empty">Working copy is clean — no changes.</p>
   {:else}
-    <div class="sections">
+    <div class="master-detail">
+      <div class="files">
       <!-- ── Staged ───────────────────────────────────────────────────────────── -->
       {#if stagedFiles.length > 0}
         <section class="file-section">
@@ -226,12 +227,13 @@
           </ul>
         </section>
       {/if}
-    </div>
+      </div>
 
-    <!-- ── Diff pane ────────────────────────────────────────────────────────────── -->
-    {#if selectedFile}
+      <!-- ── Diff pane (right column) ─────────────────────────────────────────── -->
       <div class="diff-pane">
-        {#if diffLoading}
+        {#if !selectedFile}
+          <p class="diff-loading">Select a file to view its diff.</p>
+        {:else if diffLoading}
           <p class="diff-loading">Loading diff…</p>
         {:else}
           <DiffView
@@ -252,7 +254,7 @@
           />
         {/if}
       </div>
-    {/if}
+    </div>
   {/if}
 
   <!-- Commit composer always mounted at the bottom -->
@@ -279,12 +281,18 @@
   }
 
   /* ── File sections ──────────────────────────────────────────────────────────── */
-  .sections {
+  /* Master-detail: file sections on the left, diff on the right. */
+  .master-detail {
+    display: flex;
+    height: clamp(320px, 56vh, 760px);
+  }
+  .files {
+    flex: 0 0 300px;
+    min-width: 0;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    gap: 0;
-    max-height: 260px;
-    overflow-y: auto;
   }
 
   .file-section {
@@ -418,13 +426,9 @@
 
   /* ── Diff pane ──────────────────────────────────────────────────────────────── */
   .diff-pane {
-    flex: 1 1 auto;
-    min-height: 120px;
-    max-height: 360px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    border-top: 1px solid var(--border);
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
   }
 
   .diff-loading {

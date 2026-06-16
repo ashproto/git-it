@@ -15,6 +15,20 @@
   const remoteTree = $derived(buildRefTree(refs.remote));
   const tagTree = $derived(buildRefTree(refs.tags));
 
+  // Uncommitted-change count for the pinned "Working Copy" entry — mirrors the
+  // count used by the synthetic graph row.
+  const wcCount = $derived(
+    Math.max(
+      appState.workingChanges.length,
+      appState.repoStatus
+        ? appState.repoStatus.staged +
+            appState.repoStatus.unstaged +
+            appState.repoStatus.untracked +
+            appState.repoStatus.conflicted
+        : 0,
+    ),
+  );
+
   let openLocal = $state(true);
   let openRemote = $state(true);
   let openTags = $state(true);
@@ -114,6 +128,17 @@
 </script>
 
 <aside class="sidebar">
+  <button
+    class="wc-entry"
+    class:active={appState.workingCopySelected}
+    onclick={() => appState.setWorkingCopySelected(true)}
+    title="Working copy — uncommitted changes"
+  >
+    <span class="wc-dot" aria-hidden="true"></span>
+    <span class="wc-label">Working Copy</span>
+    {#if wcCount > 0}<span class="wc-count">{wcCount}</span>{/if}
+  </button>
+
   {#if refs.head.length}
     <button class="ref detached" onclick={() => jumpTo(refs.head[0].sha)} title="Detached HEAD">
       <span class="dot head" aria-hidden="true"></span>
@@ -165,6 +190,48 @@
     flex-direction: column;
     gap: 2px;
     font-size: 13px;
+  }
+  /* Pinned "Working Copy (N)" entry — opens the dedicated changes screen. */
+  .wc-entry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 8px;
+    margin-bottom: 2px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+  }
+  .wc-entry:hover {
+    background: var(--row-hover);
+  }
+  .wc-entry.active {
+    background: var(--row-selected);
+  }
+  .wc-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .wc-label {
+    flex: 1;
+  }
+  .wc-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--btn-bg);
+    border-radius: 999px;
+    padding: 0 7px;
+    min-width: 18px;
+    text-align: center;
   }
   section {
     display: flex;
