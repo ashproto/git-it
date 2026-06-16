@@ -276,11 +276,21 @@ pub fn unstage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), St
 /// Build a partial single-hunk patch keeping only the selected change lines.
 /// `selected` holds ORDINALS over the hunk's change lines (the +/- lines, counted
 /// in order starting at 0; context and `\ No newline` lines are NOT counted).
-/// Unselected `+` lines are dropped; unselected `-` lines become context; context
-/// is kept; the `@@` counts are recomputed (newStart = oldStart). A trailing
-/// `\ No newline…` marker is kept iff the body line it follows was emitted.
+///
+/// When `reverse` is false (staging / `git apply --cached`):
+///   - Unselected `+` lines are dropped.
+///   - Unselected `-` lines become context (present in working tree, not yet staged).
+///
+/// When `reverse` is true (unstaging / `git apply --cached --reverse`):
+///   - The patch's NEW side must match the staged file.
+///   - Unselected `+` lines stay as context (they ARE in the staged file).
+///   - Unselected `-` lines are dropped (they are absent from the staged file).
+///
+/// Selected `+`/`-` lines: kept as-is in both directions (mark real change).
+/// Context, `\ No newline` handling, header recompute, and the any_real_change
+/// guard are unchanged.
 /// Returns None when the selection keeps no change line (caller should no-op).
-fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>) -> Option<String> {
+fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, reverse: bool) -> Option<String> {
     let mut lines = hunk.splitn(2, '\n');
     let at_line = lines.next().unwrap_or("");
     let body = lines.next().unwrap_or("");
@@ -318,11 +328,22 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>) -
                 let this = ord;
                 ord += 1;
                 if selected.contains(&this) {
+                    // Selected addition: keep as `+` in both directions.
                     out.push_str(raw_line);
                     new_n += 1;
                     last_emitted = true;
                     any_real_change = true;
+                } else if reverse {
+                    // Unstage path: this `+` line IS in the staged (new) image,
+                    // so the reverse patch must treat it as context.
+                    let rest = &raw_line[1..];
+                    out.push(' ');
+                    out.push_str(rest);
+                    old_n += 1;
+                    new_n += 1;
+                    last_emitted = true;
                 } else {
+                    // Stage path: unselected addition → drop it entirely.
                     last_emitted = false;
                 }
             }
@@ -330,12 +351,17 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>) -
                 let this = ord;
                 ord += 1;
                 if selected.contains(&this) {
+                    // Selected deletion: keep as `-` in both directions.
                     out.push_str(raw_line);
                     old_n += 1;
                     last_emitted = true;
                     any_real_change = true;
+                } else if reverse {
+                    // Unstage path: this `-` line is absent from the staged (new) image,
+                    // so drop it entirely (it has no presence in the staged file to anchor on).
+                    last_emitted = false;
                 } else {
-                    // demote to context
+                    // Stage path: unselected deletion → demote to context.
                     let rest = &raw_line[1..];
                     out.push(' ');
                     out.push_str(rest);
@@ -383,7 +409,7 @@ pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
-    let partial = build_partial_hunk(h, &set).ok_or("no lines selected to stage")?;
+    let partial = build_partial_hunk(h, &set, false).ok_or("no lines selected to stage")?;
     git_apply(repo, &format!("{}{}", header, partial), false)
 }
 
@@ -393,7 +419,7 @@ pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usi
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
-    let partial = build_partial_hunk(h, &set).ok_or("no lines selected to unstage")?;
+    let partial = build_partial_hunk(h, &set, true).ok_or("no lines selected to unstage")?;
     git_apply(repo, &format!("{}{}", header, partial), true)
 }
 
@@ -651,7 +677,7 @@ mod tests {
     #[test]
     fn partial_hunk_two_adds_select_first() {
         let hunk = "@@ -10,3 +10,5 @@\n context\n+add0\n+add1\n context2\n";
-        let result = build_partial_hunk(hunk, &set(&[0])).expect("should produce patch");
+        let result = build_partial_hunk(hunk, &set(&[0]), false).expect("should produce patch");
         assert!(result.contains("+add0"), "selected add kept");
         assert!(!result.contains("+add1"), "unselected add dropped");
         // old_n: 2 context lines = 2; new_n: 2 context + 1 kept add = 3
@@ -663,7 +689,7 @@ mod tests {
     fn partial_hunk_minus_kept_vs_demoted() {
         // hunk with two `-` lines (ordinals 0,1); select only 0
         let hunk = "@@ -5,4 +5,2 @@\n ctx\n-keep\n-demote\n ctx2\n";
-        let result = build_partial_hunk(hunk, &set(&[0])).expect("should produce patch");
+        let result = build_partial_hunk(hunk, &set(&[0]), false).expect("should produce patch");
         // "keep" stays as `-keep`
         assert!(result.contains("-keep"), "kept minus preserved");
         // "demote" becomes ` demote` (context)
@@ -677,7 +703,7 @@ mod tests {
     fn partial_hunk_mixed_select_plus_only() {
         let hunk = "@@ -12,4 +12,4 @@\n ctx1\n-removed\n+added\n ctx2\n";
         // ordinal 0 = `-removed`, ordinal 1 = `+added`; select only 1
-        let result = build_partial_hunk(hunk, &set(&[1])).expect("should produce patch");
+        let result = build_partial_hunk(hunk, &set(&[1]), false).expect("should produce patch");
         assert!(result.starts_with("@@ -12,3 +12,4 @@\n"), "header: {}", &result);
         assert!(result.contains(" removed"), "demoted to context");
         assert!(!result.contains("-removed"), "not a removal");
@@ -690,13 +716,13 @@ mod tests {
         let hunk = "@@ -1,1 +1,1 @@\n-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n";
         // ordinal 0 = `-old`, ordinal 1 = `+new`
         // select only 1 (the add); `-old` becomes context
-        let result_add_only = build_partial_hunk(hunk, &set(&[1])).expect("patch");
+        let result_add_only = build_partial_hunk(hunk, &set(&[1]), false).expect("patch");
         // The no-newline after `-old` becomes context so last_emitted=true → marker kept
         // The no-newline after `+new` which is kept → also kept
         assert!(result_add_only.contains("\\ No newline"), "marker kept after emitted lines");
 
         // Now select only 0 (the remove); `+new` is dropped
-        let result_rm_only = build_partial_hunk(hunk, &set(&[0])).expect("patch");
+        let result_rm_only = build_partial_hunk(hunk, &set(&[0]), false).expect("patch");
         // The no-newline after `-old` (which is kept): last_emitted=true → kept
         // The no-newline after `+new` (which is dropped): last_emitted=false → dropped
         // We expect marker after the kept `-old`, but not a second one after dropped `+new`
@@ -708,14 +734,14 @@ mod tests {
     #[test]
     fn partial_hunk_empty_selection_is_none() {
         let hunk = "@@ -1,2 +1,3 @@\n ctx\n+add\n ctx2\n";
-        assert!(build_partial_hunk(hunk, &set(&[])).is_none());
+        assert!(build_partial_hunk(hunk, &set(&[]), false).is_none());
     }
 
     /// Count-omitted header `@@ -5 +5 @@` parses old_start as 5.
     #[test]
     fn partial_hunk_count_omitted_header() {
         let hunk = "@@ -5 +5 @@\n+newline\n";
-        let result = build_partial_hunk(hunk, &set(&[0])).expect("patch");
+        let result = build_partial_hunk(hunk, &set(&[0]), false).expect("patch");
         assert!(result.starts_with("@@ -5,"), "old_start=5: {}", result);
     }
 
@@ -776,5 +802,126 @@ mod tests {
         // Untracked file: path must be the full "new file.txt".
         let untracked = by("new file.txt").expect("'new file.txt' missing from working_changes");
         assert!(untracked.untracked, "'new file.txt' should be untracked");
+    }
+
+    // ── build_partial_hunk REVERSE unit test ─────────────────────────────────
+
+    /// Reverse transform for a mixed ctx,-,+,ctx hunk selecting only the `+`:
+    /// - unselected `-` must be DROPPED (not present in the staged/new image).
+    /// - unselected `+` would become context, but here the `+` is selected so kept.
+    /// old_n = 2 (ctx + ctx), new_n = 3 (ctx + kept_add + ctx).
+    /// Also validates the `@@ -N,old_n +N,new_n @@` counts.
+    #[test]
+    fn partial_hunk_reverse_mixed_select_plus_drops_minus() {
+        // ordinal 0 = `-removed`, ordinal 1 = `+added`; select only 1 (the add)
+        let hunk = "@@ -12,4 +12,4 @@\n ctx1\n-removed\n+added\n ctx2\n";
+        let result = build_partial_hunk(hunk, &set(&[1]), true).expect("should produce patch");
+        // `-removed` must be dropped entirely in reverse mode (absent from staged image)
+        assert!(!result.contains("-removed"), "unselected minus dropped in reverse");
+        assert!(!result.contains(" removed"), "demoted context must NOT appear in reverse");
+        // `+added` is selected → kept as addition
+        assert!(result.contains("+added"), "selected add kept");
+        // ctx1 and ctx2 still present
+        assert!(result.contains(" ctx1"), "ctx1 kept");
+        assert!(result.contains(" ctx2"), "ctx2 kept");
+        // old_n = 2 (ctx1 + ctx2), new_n = 3 (ctx1 + kept_add + ctx2)
+        assert!(result.starts_with("@@ -12,2 +12,3 @@\n"), "header: {}", result);
+    }
+
+    // ── unstage_lines integration tests ──────────────────────────────────────
+
+    /// Helper: read a file's content from a TempRepo.
+    fn read_file(r: &TempRepo, f: &str) -> String {
+        fs::read_to_string(r.path.join(f)).unwrap()
+    }
+
+    /// Set up: commit base, stage two additions via stage_lines, verify staged state.
+    /// Returns TempRepo already in the right state.
+    fn repo_with_two_staged_additions() -> TempRepo {
+        let r = TempRepo::new();
+        r.commit_file("g.txt", "base\n", "init");
+        r.write("g.txt", "base\nlineA\nlineB\n");
+        // Stage both lines first (full stage)
+        stage(&r.path, &["g.txt".into()]).unwrap();
+        // Verify staged
+        let staged = diff(&r.path, Some("g.txt"), true).unwrap();
+        assert!(staged.contains("+lineA"), "setup: lineA staged");
+        assert!(staged.contains("+lineB"), "setup: lineB staged");
+        r
+    }
+
+    /// Unstage ordinal [1] (lineB) only → lineB moves to unstaged, lineA stays staged.
+    #[test]
+    fn unstage_lines_unstages_last_of_two_additions() {
+        let r = repo_with_two_staged_additions();
+        // After full stage, worktree == index so unstaged diff is empty.
+        // unstage_lines partial-unstages ordinal 1 (lineB) from the staged diff.
+        unstage_lines(&r.path, "g.txt", 0, &[1]).unwrap();
+
+        let staged = diff(&r.path, Some("g.txt"), true).unwrap();
+        assert!(staged.contains("+lineA"), "lineA should remain staged");
+        assert!(!staged.contains("+lineB"), "lineB should be unstaged now");
+
+        let unstaged = diff(&r.path, Some("g.txt"), false).unwrap();
+        assert!(unstaged.contains("+lineB"), "lineB should appear in unstaged diff");
+        assert!(!unstaged.contains("+lineA"), "lineA should not appear in unstaged diff");
+    }
+
+    /// Unstage ordinal [0] (lineA) only → lineA moves to unstaged, lineB stays staged.
+    #[test]
+    fn unstage_lines_unstages_first_of_two_additions() {
+        let r = repo_with_two_staged_additions();
+        unstage_lines(&r.path, "g.txt", 0, &[0]).unwrap();
+
+        let staged = diff(&r.path, Some("g.txt"), true).unwrap();
+        assert!(!staged.contains("+lineA"), "lineA should be unstaged now");
+        assert!(staged.contains("+lineB"), "lineB should remain staged");
+
+        let unstaged = diff(&r.path, Some("g.txt"), false).unwrap();
+        assert!(unstaged.contains("+lineA"), "lineA should appear in unstaged diff");
+        assert!(!unstaged.contains("+lineB"), "lineB should not appear in unstaged diff");
+    }
+
+    /// Staged deletions: commit file with two lines, stage their removal, partially unstage.
+    /// Unstage ordinal [0] (the deletion of lineX) only → lineX deletion reverts, lineY stays staged.
+    #[test]
+    fn unstage_lines_partial_unstage_of_deletions() {
+        let r = TempRepo::new();
+        r.commit_file("h.txt", "lineX\nlineY\n", "init");
+        // Delete both lines
+        r.write("h.txt", "");
+        stage(&r.path, &["h.txt".into()]).unwrap();
+        // Both deletions are staged
+        let staged = diff(&r.path, Some("h.txt"), true).unwrap();
+        assert!(staged.contains("-lineX"), "setup: lineX deletion staged");
+        assert!(staged.contains("-lineY"), "setup: lineY deletion staged");
+
+        // Unstage only the deletion of lineX (ordinal 0)
+        unstage_lines(&r.path, "h.txt", 0, &[0]).unwrap();
+
+        let staged_after = diff(&r.path, Some("h.txt"), true).unwrap();
+        assert!(!staged_after.contains("-lineX"), "lineX deletion should be unstaged");
+        assert!(staged_after.contains("-lineY"), "lineY deletion should remain staged");
+    }
+
+    /// Round-trip: stage selected lines, then unstage the same ordinals → file fully unstaged.
+    #[test]
+    fn unstage_lines_roundtrip_stage_then_unstage() {
+        let r = TempRepo::new();
+        r.commit_file("rt.txt", "base\n", "init");
+        r.write("rt.txt", "base\nroundtrip\n");
+
+        // Stage ordinal 0 (the single addition)
+        stage_lines(&r.path, "rt.txt", 0, &[0]).unwrap();
+        let staged = diff(&r.path, Some("rt.txt"), true).unwrap();
+        assert!(staged.contains("+roundtrip"), "after stage_lines: roundtrip should be staged");
+
+        // Now unstage ordinal 0 → should return to fully unstaged
+        unstage_lines(&r.path, "rt.txt", 0, &[0]).unwrap();
+        let staged_after = diff(&r.path, Some("rt.txt"), true).unwrap();
+        assert!(!staged_after.contains("+roundtrip"), "after unstage_lines: nothing staged");
+
+        let unstaged = diff(&r.path, Some("rt.txt"), false).unwrap();
+        assert!(unstaged.contains("+roundtrip"), "roundtrip line back in unstaged diff");
     }
 }
