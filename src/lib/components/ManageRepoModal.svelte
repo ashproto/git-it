@@ -38,6 +38,20 @@
       manageRepo.close();
     }
   }
+
+  // WAI-ARIA tablist keyboard nav: arrows / Home / End move selection + focus.
+  function onTablistKeydown(e: KeyboardEvent) {
+    const idx = sections.findIndex((s) => s.id === section);
+    let next = idx;
+    if (e.key === "ArrowDown" || e.key === "ArrowRight") next = (idx + 1) % sections.length;
+    else if (e.key === "ArrowUp" || e.key === "ArrowLeft") next = (idx - 1 + sections.length) % sections.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = sections.length - 1;
+    else return;
+    e.preventDefault();
+    section = sections[next].id;
+    document.getElementById(`manage-tab-${section}`)?.focus();
+  }
 </script>
 
 {#if manageRepo.open}

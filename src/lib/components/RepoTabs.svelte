@@ -50,13 +50,20 @@
   $effect(() => {
     if (!dropdownOpen) return;
     const onBlur = () => closeDropdown();
+    // The menu is position:fixed at coords captured on open, so close it if the
+    // tab strip scrolls or the window resizes (it would otherwise float away).
+    const onReflow = () => closeDropdown();
     document.addEventListener("pointerdown", onDocPointerDown, true);
     document.addEventListener("keydown", onKeydown);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("resize", onReflow);
     return () => {
       document.removeEventListener("pointerdown", onDocPointerDown, true);
       document.removeEventListener("keydown", onKeydown);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("scroll", onReflow, true);
+      window.removeEventListener("resize", onReflow);
     };
   });
 

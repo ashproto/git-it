@@ -58,7 +58,24 @@ export async function reloadGraph(): Promise<void> {
   // with a stale repo's (the flicker fix keeps the old data visible until here).
   const target = appState.repo;
   if (!target) return;
-  const gc = await api.loadGraph(target, PAGE, 0);
+  let gc: GraphCommit[];
+  try {
+    gc = await api.loadGraph(target, PAGE, 0);
+  } catch (e) {
+    // Load failed (repo moved / deleted / corrupt). Because the flicker fix keeps
+    // the PREVIOUS repo's data on screen until this point, we must clear it on
+    // failure for the still-current repo — otherwise one repo's history would show
+    // under another's name. Bail silently if a newer switch already superseded us.
+    if (appState.repo === target) {
+      appState.setGraphCommits([]);
+      appState.setGraphHasMore(false);
+      appState.setRepoStatus(null);
+      appState.setRefsDetailed([]);
+      appState.setWorkingChanges([]);
+      appState.status = `Could not open ${target}: ${e}`;
+    }
+    return;
+  }
   if (appState.repo !== target) return;
   appState.setGraphCommits(gc);
   appState.setGraphHasMore(gc.length === PAGE);

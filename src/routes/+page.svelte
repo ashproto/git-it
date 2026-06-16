@@ -56,6 +56,9 @@
     const r = appState.repo;
     const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
     if (inTauri && r && r !== lastLoaded) { lastLoaded = r; reloadGraph(); }
+    // Closing the last repo (r === "") resets the guard so re-opening the same
+    // path triggers a fresh reload instead of showing a stale-empty graph.
+    else if (!r) lastLoaded = "";
   });
 
   // ── Empty-state open flow ─────────────────────────────────────────────────────
