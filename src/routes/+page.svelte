@@ -6,7 +6,8 @@
   import Sidebar from "$lib/components/Sidebar.svelte";
   import LogPanel from "$lib/components/LogPanel.svelte";
   import PrereqBanner from "$lib/components/PrereqBanner.svelte";
-  import DateFormatMenu from "$lib/components/DateFormatMenu.svelte";
+  import SettingsPanel from "$lib/components/SettingsPanel.svelte";
+  import { settingsPanel } from "$lib/settingsPanel.svelte";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import UndoBar from "$lib/components/UndoBar.svelte";
@@ -120,23 +121,32 @@
         >▾</button>
       </div>
     </div>
-    <!-- Repo switcher mode toggle: Tabs | Sidebar -->
-    <div class="mode-toggle" data-no-drag aria-label="Repo switcher mode">
+    <div class="gear" data-no-drag>
       <button
-        class="mode-btn"
-        class:active={appState.repoSwitcherMode === "tabs"}
-        onclick={() => appState.setRepoSwitcherMode("tabs")}
-        title="Show open repos as tabs"
-        aria-pressed={appState.repoSwitcherMode === "tabs"}
-      >Tabs</button><button
-        class="mode-btn"
-        class:active={appState.repoSwitcherMode === "sidebar"}
-        onclick={() => appState.setRepoSwitcherMode("sidebar")}
-        title="Show open repos in sidebar"
-        aria-pressed={appState.repoSwitcherMode === "sidebar"}
-      >Sidebar</button>
+        type="button"
+        class="gear-btn"
+        aria-label="Settings"
+        title="Settings"
+        onclick={() => settingsPanel.openPanel()}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="3"></circle>
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+          ></path>
+        </svg>
+      </button>
     </div>
-    <DateFormatMenu />
   </header>
 
   <!-- Repo tab strip (tabs mode only) — sits between header and shell -->
@@ -188,6 +198,7 @@
   <AmendDialog />
   <RebaseTodo />
   <TimeEditDrawer />
+  <SettingsPanel />
   <StatusBar />
 </main>
 
@@ -405,36 +416,33 @@
     font-weight: 400;
   }
 
-  /* Segmented Tabs | Sidebar toggle — matches GraphHistory curved/angular control */
-  .mode-toggle {
-    display: flex;
-    align-items: center;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
-    flex-shrink: 0;
+  /* Gear button — opens the Settings panel */
+  .gear {
+    position: relative;
+    margin-left: auto; /* push to the right edge of the header */
     align-self: center;
+    display: inline-flex;
   }
-  .mode-btn {
-    padding: 3px 9px;
-    border: none;
+  .gear-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 7px;
+    border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text-muted);
-    font-size: 11.5px;
     cursor: pointer;
-    transition: background 0.1s, color 0.1s;
-    white-space: nowrap;
   }
-  .mode-btn + .mode-btn {
-    border-left: 1px solid var(--border);
-  }
-  .mode-btn:hover {
+  .gear-btn:hover {
     background: var(--btn-hover);
     color: var(--text);
   }
-  .mode-btn.active {
-    background: var(--accent);
-    color: #fff;
+  .gear-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   /* Scrolling content area: takes all remaining height and provides the single

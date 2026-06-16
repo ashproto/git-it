@@ -51,7 +51,7 @@
 
   function localDate(iso: string): string {
     const d = parseISO(iso);
-    return d ? formatCommitDate(d, appState.dateFormat) : iso;
+    return d ? formatCommitDate(d, appState.dateFormat, appState.relativeDates) : iso;
   }
   function newDateLabel(sha: string): string {
     const d = appState.newDates.get(sha);
@@ -204,18 +204,6 @@
 <CollapsiblePanel title="Commits">
   {#snippet headerActions()}
     <span class="count">{appState.selected.size} selected of {commits.length}</span>
-    <div class="seg" role="group" aria-label="Graph line style">
-      <button
-        type="button"
-        class:active={appState.graphLineStyle === "curved"}
-        onclick={() => appState.setGraphLineStyle("curved")}
-      >Curved</button>
-      <button
-        type="button"
-        class:active={appState.graphLineStyle === "angular"}
-        onclick={() => appState.setGraphLineStyle("angular")}
-      >Angular</button>
-    </div>
     <button type="button" onclick={selectAll}>Select all</button>
     <button type="button" onclick={clearSel}>Clear</button>
     <button
@@ -308,24 +296,6 @@
   .count {
     color: var(--text-muted);
     font-size: 12px;
-  }
-  .seg {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
-  }
-  .seg button {
-    padding: 3px 9px;
-    border: none;
-    background: var(--btn-bg);
-    color: var(--text-muted);
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .seg button.active {
-    background: var(--accent);
-    color: #fff;
   }
   button {
     padding: 4px 10px;

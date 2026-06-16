@@ -13,7 +13,7 @@
 
   function fmt(iso: string): string {
     const d = parseISO(iso);
-    return d ? formatCommitDate(d, appState.dateFormat) : iso;
+    return d ? formatCommitDate(d, appState.dateFormat, appState.relativeDates) : iso;
   }
   function initials(name: string): string {
     return name
