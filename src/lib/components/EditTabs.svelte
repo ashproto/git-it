@@ -381,6 +381,7 @@
     margin: 4px 0 0;
     font-size: 11.5px;
     color: var(--text-muted);
+    overflow-wrap: anywhere;
   }
   .preview-line .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

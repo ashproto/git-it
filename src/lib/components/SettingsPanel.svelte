@@ -131,6 +131,14 @@
         />
         <span>Show month name</span>
       </label>
+      <label class="opt">
+        <input
+          type="checkbox"
+          checked={appState.dateFormat.showTz !== false}
+          onchange={() => appState.setDateFormat({ showTz: appState.dateFormat.showTz === false })}
+        />
+        <span>Show timezone offset (e.g. −0700)</span>
+      </label>
 
       <hr class="divider" />
 

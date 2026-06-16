@@ -69,8 +69,14 @@
     anchorIndex = null;
   }
   const heads = $derived(commits.map((c) => c.refs.some((r) => r.is_head)));
-  const gutterWidth = $derived(
+  const autoGutterWidth = $derived(
     OFFSET_X + Math.max(1, rows.reduce((m, r) => Math.max(m, r.width), 1)) * LANE_WIDTH,
+  );
+  // G3c: the user can widen the graph area past the auto lane width by dragging
+  // the graph↔description boundary. graphWidth=0 ⇒ auto; clamped so the rendered
+  // width never drops below the auto lane width (lanes are never clipped).
+  const gutterWidth = $derived(
+    appState.graphWidth > 0 ? Math.max(autoGutterWidth, appState.graphWidth) : autoGutterWidth,
   );
 
   // ── G2: lane line into the synthetic "Uncommitted changes" row ──────────────
@@ -119,8 +125,32 @@
     const startW = appState.commitColWidths[key];
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
+    // The handle sits on each fixed column's LEFT edge. The fixed columns are
+    // right-anchored (the flexible Description column absorbs the slack), so a
+    // column grows when its left edge is dragged LEFT — hence `startW - delta`.
     const onMove = (ev: PointerEvent) =>
-      appState.setCommitColWidth(key, startW + (ev.clientX - startX));
+      appState.setCommitColWidth(key, startW - (ev.clientX - startX));
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+  // Resize the graph gutter (graph↔description boundary). The gutter is
+  // left-anchored, so it grows when the handle is dragged RIGHT — hence `+ delta`
+  // (the opposite sign from the right-anchored data columns above).
+  function startGutterResize(e: PointerEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = gutterWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: PointerEvent) =>
+      appState.setGraphWidth(startW + (ev.clientX - startX));
     const onUp = () => {
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
@@ -391,7 +421,16 @@
       : colVars}
   >
     <div class="head-row" bind:this={headEl} style={`padding-left:${gutterWidth}px`}>
-      <span class="h subject">Description</span>
+      <span class="h subject"
+        >Description<span
+          class="col-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize graph column"
+          title="Drag to resize the graph · double-click to reset"
+          onpointerdown={startGutterResize}
+          ondblclick={() => appState.setGraphWidth(0)}
+        ></span></span>
       <span class="h author"
         >Author<span
           class="col-resize-handle"
@@ -534,18 +573,23 @@
       {/if}
     </div>
   </div>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="v-resize-handle"
-    role="separator"
-    aria-orientation="horizontal"
-    aria-label="Resize commits area"
-    title="Drag to resize · double-click to reset"
-    onpointerdown={startCommitsResize}
-    ondblclick={() => appState.setCommitsHeight(0)}
-  ></div>
   <p class="hint">Click to select · ⌘-click to add/remove · Shift-click to select range</p>
 </CollapsiblePanel>
+
+<!-- G4: drag-divider in the gap BETWEEN the commits panel and the details panel.
+     Rendered outside the panel — .timeline-stack is display:contents, so this is
+     a main-col flex item sitting on the boundary the user drags to reallocate
+     vertical space between the two panels. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  class="v-resize-handle"
+  role="separator"
+  aria-orientation="horizontal"
+  aria-label="Resize commits area"
+  title="Drag to resize commits · double-click to reset"
+  onpointerdown={startCommitsResize}
+  ondblclick={() => appState.setCommitsHeight(0)}
+></div>
 
 <style>
   .count {
@@ -693,9 +737,11 @@
   /* Column resize handle: a thin grabbable strip on the right edge of each header
      cell. Mirrors the sidebar resize-handle visual (1px gutter → accent on hover). */
   .col-resize-handle {
+    /* Sits centred on the column's LEFT edge (the boundary with the previous
+       column) so dragging a visible divider resizes the column to its right. */
     position: absolute;
     top: 0;
-    right: 0;
+    left: -3px;
     bottom: 0;
     width: 6px;
     cursor: col-resize;
@@ -718,6 +764,9 @@
     width: 2px;
   }
   .new-pill {
+    /* Show the full previewed date — never clip the end (e.g. the tz offset).
+       The .subject row clips overall, and .msg ellipsis-truncates first, so a
+       wide pill can't break the layout. */
     flex: 0 0 auto;
     margin-left: 6px;
     padding: 0 6px;
@@ -727,9 +776,6 @@
     font-size: 11px;
     line-height: 1.6;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 200px;
   }
   button.edit-ts:not(:disabled) {
     border-color: var(--accent);
@@ -785,6 +831,9 @@
     flex: 0 0 12px;
     align-self: stretch;
     height: 12px;
+    /* Tuck into the surrounding main-col gap so the divider doesn't add a big
+       dead band between the commits and details panels. */
+    margin: -6px 0;
     cursor: ns-resize;
     position: relative;
     touch-action: none;

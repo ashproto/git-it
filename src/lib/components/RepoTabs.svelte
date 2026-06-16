@@ -13,10 +13,25 @@
   // ── Recent-repos dropdown ────────────────────────────────────────────────────
   let dropdownOpen = $state(false);
   let dropdownRoot: HTMLDivElement | undefined = $state();
+  let addBtnEl: HTMLButtonElement | undefined = $state();
+  // The menu is position:fixed (anchored to the + button via getBoundingClientRect)
+  // so it escapes the tab strip's overflow-x clipping — which previously hid it
+  // "behind" the page content.
+  let menuPos = $state<{ top: number; left: number } | null>(null);
+
+  function openMenu() {
+    if (!addBtnEl) return;
+    const r = addBtnEl.getBoundingClientRect();
+    const MENU_W = 260;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - MENU_W - 8));
+    menuPos = { top: r.bottom + 4, left };
+    dropdownOpen = true;
+  }
 
   function toggleDropdown(e: MouseEvent) {
     e.stopPropagation();
-    dropdownOpen = !dropdownOpen;
+    if (dropdownOpen) closeDropdown();
+    else openMenu();
   }
 
   function closeDropdown() {
@@ -102,23 +117,25 @@
     </button>
   {/each}
 
-  <!-- + button to open a new repo -->
-  <button class="add-btn" title="Open repository…" onclick={openRepoFlow} aria-label="Open repository">
-    +
-  </button>
-
-  <!-- Recent repos dropdown -->
-  <div class="recent-wrap" bind:this={dropdownRoot}>
+  <!-- + button: opens a menu with "Open repository…" + recent repositories -->
+  <div class="add-wrap" bind:this={dropdownRoot}>
     <button
-      class="recent-btn"
+      class="add-btn"
+      bind:this={addBtnEl}
       title="Open or recent repositories"
+      aria-haspopup="menu"
       aria-expanded={dropdownOpen}
       onclick={toggleDropdown}
       aria-label="Open or recent repositories"
-    >▾</button>
+    >+</button>
 
-    {#if dropdownOpen}
-      <div class="dropdown" role="menu" aria-label="Open or recent repositories">
+    {#if dropdownOpen && menuPos}
+      <div
+        class="dropdown"
+        role="menu"
+        aria-label="Open or recent repositories"
+        style={`top:${menuPos.top}px; left:${menuPos.left}px`}
+      >
         <button
           class="drop-item open-item"
           role="menuitem"
@@ -225,7 +242,7 @@
     height: 28px;
     align-self: center;
     flex-shrink: 0;
-    margin-left: 2px;
+    margin-left: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--btn-bg);
@@ -239,39 +256,20 @@
     color: var(--text);
   }
 
-  /* Recent dropdown */
-  .recent-wrap {
+  /* + button + its open/recent menu */
+  .add-wrap {
     position: relative;
     display: flex;
     align-items: center;
-    margin-left: 1px;
+    margin-left: 2px;
     flex-shrink: 0;
   }
 
-  .recent-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 28px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--btn-bg);
-    color: var(--text-muted);
-    font-size: 11px;
-    cursor: pointer;
-    padding: 0;
-  }
-  .recent-btn:hover {
-    background: var(--btn-hover);
-    color: var(--text);
-  }
-
   .dropdown {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    z-index: 1000;
+    /* Fixed (anchored to the + button) so the tab strip's overflow-x can't clip
+       it; coordinates are set inline from getBoundingClientRect. */
+    position: fixed;
+    z-index: 3000;
     min-width: 200px;
     max-width: 320px;
     max-height: 280px;

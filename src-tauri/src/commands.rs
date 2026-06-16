@@ -330,23 +330,23 @@ pub fn commit_diff(
 }
 
 #[tauri::command]
-pub fn stage_hunk(repo: String, path: String, hunk_index: usize) -> Result<(), String> {
-    ops_worktree::stage_hunk(&PathBuf::from(repo), &path, hunk_index)
+pub fn stage_hunk(repo: String, path: String, hunk_index: usize, context: u32) -> Result<(), String> {
+    ops_worktree::stage_hunk(&PathBuf::from(repo), &path, hunk_index, context)
 }
 
 #[tauri::command]
-pub fn unstage_hunk(repo: String, path: String, hunk_index: usize) -> Result<(), String> {
-    ops_worktree::unstage_hunk(&PathBuf::from(repo), &path, hunk_index)
+pub fn unstage_hunk(repo: String, path: String, hunk_index: usize, context: u32) -> Result<(), String> {
+    ops_worktree::unstage_hunk(&PathBuf::from(repo), &path, hunk_index, context)
 }
 
 #[tauri::command]
-pub fn stage_lines(repo: String, path: String, hunk_index: usize, selected: Vec<usize>) -> Result<(), String> {
-    ops_worktree::stage_lines(&PathBuf::from(repo), &path, hunk_index, &selected)
+pub fn stage_lines(repo: String, path: String, hunk_index: usize, selected: Vec<usize>, context: u32) -> Result<(), String> {
+    ops_worktree::stage_lines(&PathBuf::from(repo), &path, hunk_index, &selected, context)
 }
 
 #[tauri::command]
-pub fn unstage_lines(repo: String, path: String, hunk_index: usize, selected: Vec<usize>) -> Result<(), String> {
-    ops_worktree::unstage_lines(&PathBuf::from(repo), &path, hunk_index, &selected)
+pub fn unstage_lines(repo: String, path: String, hunk_index: usize, selected: Vec<usize>, context: u32) -> Result<(), String> {
+    ops_worktree::unstage_lines(&PathBuf::from(repo), &path, hunk_index, &selected, context)
 }
 
 #[tauri::command]

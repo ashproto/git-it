@@ -6,6 +6,8 @@ export type DateFormatPrefs = {
   hour12: boolean;
   weekday: boolean;
   monthName: boolean;
+  /** Show the ±HHMM timezone-offset suffix. Optional for back-compat; absent ⇒ show. */
+  showTz?: boolean;
 };
 
 // Fixed, locale-independent abbreviations — keeps the table aligned and avoids
@@ -61,11 +63,12 @@ export function formatCommitDate(
     timePart = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
   const tz = formatTzOffset(d);
+  const showTz = p.showTz !== false; // undefined ⇒ show (back-compat)
 
   // Relative: "Today"/"Yesterday" replaces the weekday + date entirely.
   if (relative) {
     const rel = relativeDayLabel(d, now);
-    if (rel) return `${rel} ${timePart} ${tz}`;
+    if (rel) return showTz ? `${rel} ${timePart} ${tz}` : `${rel} ${timePart}`;
   }
 
   const parts: string[] = [];
@@ -76,7 +79,7 @@ export function formatCommitDate(
     parts.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
   }
   parts.push(timePart);
-  parts.push(tz);
+  if (showTz) parts.push(tz);
   return parts.join(" ");
 }
 

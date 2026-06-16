@@ -1,20 +1,36 @@
 <script lang="ts">
   // "Manage Repository" modal — houses the History & Recovery panels that used to
-  // live in the sidebar (Backups, History/reflog, Remotes). Stashes intentionally
+  // live in the sidebar (Remotes, History/reflog, Backups). Stashes intentionally
   // stay in the sidebar. Structure mirrors SettingsPanel (overlay + dialog + Escape
-  // + scrim-close + deferred focus).
+  // + scrim-close + deferred focus), but laid out as a two-column SECTIONED dialog:
+  // a left vertical tab-nav switches the single visible panel on the right.
   import { manageRepo } from "../manageRepo.svelte";
   import BackupsPanel from "./BackupsPanel.svelte";
   import ReflogPanel from "./ReflogPanel.svelte";
   import RemotePanel from "./RemotePanel.svelte";
 
+  type Section = "remotes" | "history" | "backups";
+
+  const sections: { id: Section; label: string }[] = [
+    { id: "remotes", label: "Remotes" },
+    { id: "history", label: "History" },
+    { id: "backups", label: "Backups" },
+  ];
+
+  let section = $state<Section>("remotes");
+
   let closeBtn = $state<HTMLButtonElement | undefined>();
 
+  // Deferred focus on the close button when the modal opens (mirrors SettingsPanel).
   $effect(() => {
     if (manageRepo.open) {
       Promise.resolve().then(() => closeBtn?.focus());
     }
   });
+
+  const activeLabel = $derived(
+    sections.find((s) => s.id === section)?.label ?? "",
+  );
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
@@ -45,10 +61,39 @@
         >✕</button>
       </div>
 
-      <div class="panels">
-        <BackupsPanel />
-        <ReflogPanel />
-        <RemotePanel />
+      <div class="body">
+        <div class="nav" role="tablist" aria-label="Repository sections" aria-orientation="vertical">
+          {#each sections as s (s.id)}
+            <button
+              type="button"
+              role="tab"
+              id="manage-tab-{s.id}"
+              class="nav-item"
+              class:active={section === s.id}
+              aria-selected={section === s.id}
+              aria-controls="manage-panel"
+              tabindex={section === s.id ? 0 : -1}
+              onclick={() => (section = s.id)}
+            >{s.label}</button>
+          {/each}
+        </div>
+
+        <div
+          class="content"
+          id="manage-panel"
+          role="tabpanel"
+          tabindex="0"
+          aria-labelledby="manage-tab-{section}"
+          aria-label={activeLabel}
+        >
+          {#if section === "remotes"}
+            <RemotePanel />
+          {:else if section === "history"}
+            <ReflogPanel />
+          {:else}
+            <BackupsPanel />
+          {/if}
+        </div>
       </div>
     </div>
   </div>
@@ -66,10 +111,10 @@
   }
 
   .dialog {
-    width: 560px;
+    width: 640px;
     max-width: calc(100vw - 32px);
     max-height: calc(100vh - 80px);
-    overflow-y: auto;
+    overflow: hidden;
     background: var(--popover-bg, var(--panel-bg));
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -119,9 +164,60 @@
     outline-offset: 2px;
   }
 
-  .panels {
+  /* Two-column body: left tab-nav + right scrolling content. */
+  .body {
+    display: flex;
+    gap: 14px;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .nav {
+    flex: 0 0 150px;
+    width: 150px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 2px;
+  }
+
+  .nav-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .nav-item:hover {
+    background: var(--row-hover);
+    color: var(--text);
+  }
+
+  .nav-item.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .nav-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .content {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+  }
+
+  .content:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
 </style>

@@ -42,12 +42,6 @@
     selectedFile !== null && untrackedFiles.some((f) => f.path === selectedFile),
   );
 
-  // Hunk/line staging is reconstructed on the backend from a -U3 diff, so the
-  // displayed hunk indices + line ordinals only line up with it at the default
-  // context. At any other context (or whole-file view) the indices would diverge
-  // and stage the WRONG content — so gate the partial-staging affordances to -U3.
-  const partialStagingOk = $derived(appState.diffContext === 3 && !appState.diffWholeFile);
-
   // Raw patch for the selected file. Re-fetches whenever selectedFile changes OR
   // workingChanges is refreshed (after every op, including hunk ops). We key on a
   // monotonic revision counter (workingChangesRev) instead of the file count so that
@@ -107,6 +101,30 @@
   function selectFile(path: string) {
     appState.setSelectedFile(path === selectedFile ? null : path);
   }
+
+  // ── Horizontal resize: file-list ↔ diff (ITEM 5) ─────────────────────────────
+  // Mirrors GraphHistory's resize-handle convention. The .files column is LEFT-
+  // anchored (the diff pane is flex:1 to its right), so it GROWS when the handle is
+  // dragged RIGHT — hence `startW + delta`. The width is persisted in the store
+  // (clamped 180–640). Double-click resets to the 300px default.
+  function startFilesResize(e: PointerEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = appState.localFilesWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: PointerEvent) =>
+      appState.setLocalFilesWidth(startW + (ev.clientX - startX));
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
 </script>
 
 <div class="wc-view panel">
@@ -115,7 +133,7 @@
   {:else if appState.workingChanges.length === 0}
     <p class="empty">No local changes — your working copy is clean.</p>
   {:else}
-    <div class="master-detail">
+    <div class="master-detail" style={`--files-w:${appState.localFilesWidth}px`}>
       <div class="files">
       <!-- ── Staged ───────────────────────────────────────────────────────────── -->
       {#if stagedFiles.length > 0}
@@ -263,6 +281,17 @@
       {/if}
       </div>
 
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="files-resize-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize file list"
+        title="Drag to resize · double-click to reset"
+        onpointerdown={startFilesResize}
+        ondblclick={() => appState.setLocalFilesWidth(300)}
+      ></div>
+
       <!-- ── Diff pane (right column) ─────────────────────────────────────────── -->
       <div class="diff-pane">
         {#if !selectedFile}
@@ -270,22 +299,19 @@
         {:else if diffLoading}
           <p class="diff-loading">Loading diff…</p>
         {:else}
-          {#if !partialStagingOk && !selectedIsUntracked}
-            <p class="diff-note">Hunk &amp; line staging is available at the default context — set Context to 3 and turn off “Whole file”.</p>
-          {/if}
           <DiffView
             patch={diffPatch}
             staged={selectedIsStaged}
-            onStageHunk={!partialStagingOk || selectedIsStaged || selectedIsUntracked
+            onStageHunk={selectedIsStaged || selectedIsUntracked
               ? undefined
               : (i) => gitActions.stageHunk(selectedFile!, i)}
-            onUnstageHunk={partialStagingOk && selectedIsStaged
+            onUnstageHunk={selectedIsStaged
               ? (i) => gitActions.unstageHunk(selectedFile!, i)
               : undefined}
-            onStageLines={!partialStagingOk || selectedIsStaged || selectedIsUntracked
+            onStageLines={selectedIsStaged || selectedIsUntracked
               ? undefined
               : (hi, sel) => gitActions.stageLines(selectedFile!, hi, sel)}
-            onUnstageLines={partialStagingOk && selectedIsStaged
+            onUnstageLines={selectedIsStaged
               ? (hi, sel) => gitActions.unstageLines(selectedFile!, hi, sel)
               : undefined}
           />
@@ -324,12 +350,38 @@
     height: clamp(320px, 56vh, 760px);
   }
   .files {
-    flex: 0 0 300px;
+    flex: 0 0 var(--files-w, 300px);
     min-width: 0;
     overflow-y: auto;
-    border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
+  }
+
+  /* Vertical drag handle on the file-list ↔ diff boundary. A thin grabbable strip
+     whose centred 1px line (::before) is the column divider; it thickens to the
+     accent colour on hover. Mirrors GraphHistory's .col-resize-handle. */
+  .files-resize-handle {
+    flex: 0 0 6px;
+    align-self: stretch;
+    position: relative;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 2;
+  }
+  .files-resize-handle::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    background: var(--border);
+    transform: translateX(-50%);
+    transition: background 0.1s, width 0.1s;
+  }
+  .files-resize-handle:hover::before {
+    background: var(--accent);
+    width: 2px;
   }
 
   .file-section {
@@ -474,14 +526,6 @@
     font-size: 12px;
     color: var(--text-muted);
     font-style: italic;
-  }
-  .diff-note {
-    margin: 0;
-    padding: 6px 12px;
-    font-size: 11px;
-    color: var(--text-muted);
-    background: var(--header-bg);
-    border-bottom: 1px solid var(--border-subtle);
   }
 
   .mono {

@@ -12,7 +12,7 @@ import { computeLanes, laneColor } from "./graph";
 const DATE_FMT_KEY = "gitit.dateFormat.v1"; // localStorage key (non-Tauri fallback)
 const STORE_FILE = "settings.json"; // Tauri store file
 const STORE_KEY = "dateFormat";
-const DEFAULT_FMT: DateFormatPrefs = { hour12: false, weekday: false, monthName: false };
+const DEFAULT_FMT: DateFormatPrefs = { hour12: false, weekday: false, monthName: false, showTz: true };
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -22,7 +22,13 @@ function isTauri(): boolean {
 // well-formed prefs object — never throws, always the three booleans.
 function coerceFmt(p: unknown): DateFormatPrefs {
   const o = (p ?? {}) as Record<string, unknown>;
-  return { hour12: !!o.hour12, weekday: !!o.weekday, monthName: !!o.monthName };
+  return {
+    hour12: !!o.hour12,
+    weekday: !!o.weekday,
+    monthName: !!o.monthName,
+    // Absent in older persisted payloads ⇒ default to showing the tz offset.
+    showTz: o.showTz === undefined ? true : !!o.showTz,
+  };
 }
 
 // Synchronous best-guess for the very first render. In Tauri the durable value
@@ -321,6 +327,48 @@ function loadSyncCommitColWidths(): CommitColWidths {
     };
   } catch {
     return { ...COMMIT_COLS_DEFAULT };
+  }
+}
+
+// graphWidth: localStorage-only override for the commit-graph gutter width (the
+// "graph ↔ description" boundary). DEFAULT 0 = auto (the lane-derived width). A
+// positive value widens the graph area; the view never shrinks below the auto
+// lane width, so lanes are never clipped.
+const GRAPH_WIDTH_KEY = "gitit.graphWidth.v1";
+const GRAPH_WIDTH_MIN = 24;
+const GRAPH_WIDTH_MAX = 600;
+const GRAPH_WIDTH_DEFAULT = 0;
+function clampGraphWidth(n: number): number {
+  if (!Number.isFinite(n) || n <= 0) return GRAPH_WIDTH_DEFAULT;
+  return Math.min(GRAPH_WIDTH_MAX, Math.max(GRAPH_WIDTH_MIN, Math.round(n)));
+}
+function loadSyncGraphWidth(): number {
+  try {
+    if (typeof localStorage === "undefined") return GRAPH_WIDTH_DEFAULT;
+    const raw = localStorage.getItem(GRAPH_WIDTH_KEY);
+    return raw === null ? GRAPH_WIDTH_DEFAULT : clampGraphWidth(Number(raw));
+  } catch {
+    return GRAPH_WIDTH_DEFAULT;
+  }
+}
+
+// localFilesWidth: localStorage-only width (px) of the Local Changes file-list
+// column — the boundary between the staged/unstaged file list and the diff view.
+const LOCALFILES_WIDTH_KEY = "gitit.localFilesWidth.v1";
+const LOCALFILES_WIDTH_MIN = 180;
+const LOCALFILES_WIDTH_MAX = 640;
+const LOCALFILES_WIDTH_DEFAULT = 300;
+function clampLocalFilesWidth(n: number): number {
+  if (!Number.isFinite(n)) return LOCALFILES_WIDTH_DEFAULT;
+  return Math.min(LOCALFILES_WIDTH_MAX, Math.max(LOCALFILES_WIDTH_MIN, Math.round(n)));
+}
+function loadSyncLocalFilesWidth(): number {
+  try {
+    if (typeof localStorage === "undefined") return LOCALFILES_WIDTH_DEFAULT;
+    const raw = localStorage.getItem(LOCALFILES_WIDTH_KEY);
+    return raw === null ? LOCALFILES_WIDTH_DEFAULT : clampLocalFilesWidth(Number(raw));
+  } catch {
+    return LOCALFILES_WIDTH_DEFAULT;
   }
 }
 
@@ -719,6 +767,24 @@ function makeState() {
         localStorage.setItem(COMMITS_HEIGHT_KEY, String(commitsHeight));
     } catch (e) {
       console.warn("[gte] could not persist commitsHeight", e);
+    }
+  }
+  let graphWidth = $state<number>(loadSyncGraphWidth());
+  function persistGraphWidth() {
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(GRAPH_WIDTH_KEY, String(graphWidth));
+    } catch (e) {
+      console.warn("[gte] could not persist graphWidth", e);
+    }
+  }
+  let localFilesWidth = $state<number>(loadSyncLocalFilesWidth());
+  function persistLocalFilesWidth() {
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(LOCALFILES_WIDTH_KEY, String(localFilesWidth));
+    } catch (e) {
+      console.warn("[gte] could not persist localFilesWidth", e);
     }
   }
   let commitColWidths = $state<CommitColWidths>(loadSyncCommitColWidths());
@@ -1254,6 +1320,22 @@ function makeState() {
     setCommitsHeight(v: number) {
       commitsHeight = clampCommitsHeight(v);
       persistCommitsHeight();
+    },
+    // graphWidth: 0 ⇒ auto (lane-derived gutter); >0 ⇒ explicit minimum graph width.
+    get graphWidth() {
+      return graphWidth;
+    },
+    setGraphWidth(v: number) {
+      graphWidth = clampGraphWidth(v);
+      persistGraphWidth();
+    },
+    // localFilesWidth: width (px) of the Local Changes file-list column.
+    get localFilesWidth() {
+      return localFilesWidth;
+    },
+    setLocalFilesWidth(v: number) {
+      localFilesWidth = clampLocalFilesWidth(v);
+      persistLocalFilesWidth();
     },
     // commitColWidths: per-column fixed widths for the author/date/sha columns.
     get commitColWidths() {

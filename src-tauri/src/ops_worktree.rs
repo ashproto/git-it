@@ -282,22 +282,28 @@ fn git_apply(repo: &Path, patch: &str, reverse: bool) -> Result<(), String> {
 }
 
 /// Stage one hunk (by index) of `path`'s UNSTAGED diff.
+/// The patch is reconstructed from a diff fetched at the caller's display `context`,
+/// so the supplied `hunk_index` lines up with the hunks the user is actually viewing
+/// (the frontend fetches the displayed diff at the same context). The partial-hunk
+/// builder recomputes the `@@` header from the emitted lines, so any context depth works.
 /// Hunk indices refer to the CURRENT live diff; after a successful stage/unstage the remaining
 /// diff re-indexes, so callers must re-fetch the diff before issuing another hunk op.
-pub fn stage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), String> {
-    // Hunk patches are reconstructed from a -U3 diff; keep context fixed at 3 here.
-    let d = diff(repo, Some(path), false, 3)?;
+pub fn stage_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) -> Result<(), String> {
+    let d = diff(repo, Some(path), false, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     git_apply(repo, &format!("{}{}", header, h), false)
 }
 
 /// Unstage one hunk (by index) of `path`'s STAGED diff.
+/// The patch is reconstructed from a diff fetched at the caller's display `context`,
+/// so the supplied `hunk_index` lines up with the hunks the user is actually viewing
+/// (the frontend fetches the displayed diff at the same context). The partial-hunk
+/// builder recomputes the `@@` header from the emitted lines, so any context depth works.
 /// Hunk indices refer to the CURRENT live diff; after a successful stage/unstage the remaining
 /// diff re-indexes, so callers must re-fetch the diff before issuing another hunk op.
-pub fn unstage_hunk(repo: &Path, path: &str, hunk_index: usize) -> Result<(), String> {
-    // Hunk patches are reconstructed from a -U3 diff; keep context fixed at 3 here.
-    let d = diff(repo, Some(path), true, 3)?;
+pub fn unstage_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) -> Result<(), String> {
+    let d = diff(repo, Some(path), true, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     git_apply(repo, &format!("{}{}", header, h), true)
@@ -438,9 +444,11 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
 }
 
 /// Stage selected lines (change-line ordinals) of one hunk of `path`'s UNSTAGED diff.
-pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize]) -> Result<(), String> {
-    // Line patches are reconstructed from a -U3 diff; keep context fixed at 3 here.
-    let d = diff(repo, Some(path), false, 3)?;
+/// The diff is fetched at the caller's display `context` so `hunk_index` and the
+/// change-line ordinals line up with the diff the user is viewing. `build_partial_hunk`
+/// recomputes the `@@` header from the emitted lines, so any context depth works.
+pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize], context: u32) -> Result<(), String> {
+    let d = diff(repo, Some(path), false, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
@@ -449,9 +457,11 @@ pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize
 }
 
 /// Unstage selected lines (change-line ordinals) of one hunk of `path`'s STAGED diff.
-pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize]) -> Result<(), String> {
-    // Line patches are reconstructed from a -U3 diff; keep context fixed at 3 here.
-    let d = diff(repo, Some(path), true, 3)?;
+/// The diff is fetched at the caller's display `context` so `hunk_index` and the
+/// change-line ordinals line up with the diff the user is viewing. `build_partial_hunk`
+/// recomputes the `@@` header from the emitted lines, so any context depth works.
+pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize], context: u32) -> Result<(), String> {
+    let d = diff(repo, Some(path), true, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
@@ -698,7 +708,7 @@ mod tests {
         let d = diff(&r.path, Some("a.txt"), false, 3).unwrap();
         let (_h, hunks) = split_hunks(&d);
         assert_eq!(hunks.len(), 2, "two separated edits = two hunks");
-        stage_hunk(&r.path, "a.txt", 0).unwrap();
+        stage_hunk(&r.path, "a.txt", 0, 3).unwrap();
         let staged = diff(&r.path, Some("a.txt"), true, 3).unwrap();
         assert!(staged.contains("+A"));
         assert!(!staged.contains("+J"), "only hunk 0 should be staged");
@@ -795,6 +805,51 @@ mod tests {
         assert!(result.starts_with("@@ -5,"), "old_start=5: {}", result);
     }
 
+    /// Context-depth independence: a hunk with 6 leading + 6 trailing context lines
+    /// around two changes (a `-` and a `+`). build_partial_hunk must select the right
+    /// change-line ordinals regardless of how deep the surrounding context is, and the
+    /// recomputed header counts must match the emitted body. This proves partial staging
+    /// works at any display context (not just -U3), which is the basis for ITEM 6's fix.
+    #[test]
+    fn partial_hunk_independent_of_context_depth() {
+        // 6 context lines, then `-removed` (ord 0) and `+added` (ord 1), then 6 context.
+        // Header counts here are illustrative; the builder recomputes them from the body.
+        let hunk = "@@ -10,14 +10,14 @@\n c1\n c2\n c3\n c4\n c5\n c6\n-removed\n+added\n c7\n c8\n c9\n c10\n c11\n c12\n";
+
+        // Select only the `+added` (ordinal 1): the unselected `-removed` is demoted to context.
+        let result = build_partial_hunk(hunk, &set(&[1]), false).expect("should produce patch");
+        assert!(result.contains("+added"), "selected add kept");
+        assert!(result.contains(" removed"), "unselected minus demoted to context");
+        assert!(!result.contains("-removed"), "unselected minus is not a removal");
+
+        // Verify the recomputed header counts match the emitted body lines.
+        let mut hl = result.splitn(2, '\n');
+        let header = hl.next().unwrap();
+        let body = hl.next().unwrap();
+        // old_n = lines that exist on the old side (' ' or '-');
+        // new_n = lines that exist on the new side (' ' or '+').
+        let mut old_n = 0u64;
+        let mut new_n = 0u64;
+        for line in body.split_inclusive('\n') {
+            match line.chars().next() {
+                Some(' ') => { old_n += 1; new_n += 1; }
+                Some('+') => { new_n += 1; }
+                Some('-') => { old_n += 1; }
+                _ => {}
+            }
+        }
+        // Body: 12 demoted/real context lines + 1 kept add → old_n=13, new_n=14.
+        assert_eq!(old_n, 13, "old count from body");
+        assert_eq!(new_n, 14, "new count from body");
+        let expected = format!("@@ -10,{} +10,{} @@", old_n, new_n);
+        assert_eq!(header, expected, "header counts must match emitted body: {}", result);
+
+        // Select only the `-removed` (ordinal 0): the unselected `+added` is dropped.
+        let rm_only = build_partial_hunk(hunk, &set(&[0]), false).expect("should produce patch");
+        assert!(rm_only.contains("-removed"), "selected minus kept as removal");
+        assert!(!rm_only.contains("+added"), "unselected add dropped");
+    }
+
     // ── stage_lines integration test ─────────────────────────────────────────
 
     #[test]
@@ -809,7 +864,7 @@ mod tests {
         let (_h, hunks) = split_hunks(&d);
         assert_eq!(hunks.len(), 1, "expect 1 hunk");
         // stage only ordinal 1 (line2)
-        stage_lines(&r.path, "f.txt", 0, &[1]).unwrap();
+        stage_lines(&r.path, "f.txt", 0, &[1], 3).unwrap();
         // staged diff should contain only +line2
         let staged = diff(&r.path, Some("f.txt"), true, 3).unwrap();
         assert!(staged.contains("+line2"), "line2 should be staged");
@@ -906,7 +961,7 @@ mod tests {
         let r = repo_with_two_staged_additions();
         // After full stage, worktree == index so unstaged diff is empty.
         // unstage_lines partial-unstages ordinal 1 (lineB) from the staged diff.
-        unstage_lines(&r.path, "g.txt", 0, &[1]).unwrap();
+        unstage_lines(&r.path, "g.txt", 0, &[1], 3).unwrap();
 
         let staged = diff(&r.path, Some("g.txt"), true, 3).unwrap();
         assert!(staged.contains("+lineA"), "lineA should remain staged");
@@ -921,7 +976,7 @@ mod tests {
     #[test]
     fn unstage_lines_unstages_first_of_two_additions() {
         let r = repo_with_two_staged_additions();
-        unstage_lines(&r.path, "g.txt", 0, &[0]).unwrap();
+        unstage_lines(&r.path, "g.txt", 0, &[0], 3).unwrap();
 
         let staged = diff(&r.path, Some("g.txt"), true, 3).unwrap();
         assert!(!staged.contains("+lineA"), "lineA should be unstaged now");
@@ -947,7 +1002,7 @@ mod tests {
         assert!(staged.contains("-lineY"), "setup: lineY deletion staged");
 
         // Unstage only the deletion of lineX (ordinal 0)
-        unstage_lines(&r.path, "h.txt", 0, &[0]).unwrap();
+        unstage_lines(&r.path, "h.txt", 0, &[0], 3).unwrap();
 
         let staged_after = diff(&r.path, Some("h.txt"), true, 3).unwrap();
         assert!(!staged_after.contains("-lineX"), "lineX deletion should be unstaged");
@@ -962,12 +1017,12 @@ mod tests {
         r.write("rt.txt", "base\nroundtrip\n");
 
         // Stage ordinal 0 (the single addition)
-        stage_lines(&r.path, "rt.txt", 0, &[0]).unwrap();
+        stage_lines(&r.path, "rt.txt", 0, &[0], 3).unwrap();
         let staged = diff(&r.path, Some("rt.txt"), true, 3).unwrap();
         assert!(staged.contains("+roundtrip"), "after stage_lines: roundtrip should be staged");
 
         // Now unstage ordinal 0 → should return to fully unstaged
-        unstage_lines(&r.path, "rt.txt", 0, &[0]).unwrap();
+        unstage_lines(&r.path, "rt.txt", 0, &[0], 3).unwrap();
         let staged_after = diff(&r.path, Some("rt.txt"), true, 3).unwrap();
         assert!(!staged_after.contains("+roundtrip"), "after unstage_lines: nothing staged");
 

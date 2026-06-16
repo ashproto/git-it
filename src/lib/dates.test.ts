@@ -54,6 +54,26 @@ describe("formatCommitDate — relative=false (default)", () => {
   });
 });
 
+describe("formatCommitDate — timezone toggle (showTz)", () => {
+  it("omits the tz offset when showTz is false (absolute)", () => {
+    expect(formatCommitDate(d, { ...prefs, showTz: false })).toBe("2026-06-15 14:30:05");
+  });
+
+  it("omits the tz offset when showTz is false (relative Today)", () => {
+    expect(formatCommitDate(d, { ...prefs, showTz: false }, true, d)).toBe("Today 14:30:05");
+  });
+
+  it("keeps the tz offset when showTz is true", () => {
+    expect(formatCommitDate(d, { ...prefs, showTz: true })).toBe(
+      `2026-06-15 14:30:05 ${formatTzOffset(d)}`,
+    );
+  });
+
+  it("keeps the tz offset when showTz is absent (back-compat)", () => {
+    expect(formatCommitDate(d, prefs)).toBe(`2026-06-15 14:30:05 ${formatTzOffset(d)}`);
+  });
+});
+
 describe("formatCommitDate — existing absolute format unchanged", () => {
   it("pins the 24h absolute output byte-for-byte", () => {
     expect(formatCommitDate(d, { hour12: false, weekday: false, monthName: false })).toBe(

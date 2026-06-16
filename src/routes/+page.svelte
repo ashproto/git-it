@@ -172,9 +172,10 @@
           stroke-linejoin="round"
           aria-hidden="true"
         >
-          <rect x="3" y="4" width="18" height="4" rx="1"></rect>
-          <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"></path>
-          <line x1="10" y1="12" x2="14" y2="12"></line>
+          <line x1="4" y1="8" x2="20" y2="8"></line>
+          <circle cx="10" cy="8" r="2.4"></circle>
+          <line x1="4" y1="16" x2="20" y2="16"></line>
+          <circle cx="15" cy="16" r="2.4"></circle>
         </svg>
       </button>
       <button

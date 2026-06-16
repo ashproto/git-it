@@ -39,7 +39,7 @@
         aria-expanded={!collapsed.has(node.path)}
         title={node.path}
       >
-        <span class="chev" class:open={!collapsed.has(node.path)} aria-hidden="true">▸</span>
+        <span class="chev" class:open={!collapsed.has(node.path)} aria-hidden="true">▶</span>
         <span class="fn">{node.name}</span>
       </button>
       {#if !collapsed.has(node.path)}
@@ -92,7 +92,8 @@
     transition: transform 0.12s ease;
     font-size: 10px;
     color: var(--text-muted);
-    width: 9px;
+    width: 12px;
+    text-align: center;
     flex-shrink: 0;
   }
   .chev.open {
