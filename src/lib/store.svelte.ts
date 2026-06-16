@@ -271,6 +271,59 @@ function loadSyncSidebarWidth(): number {
   }
 }
 
+// commitsHeight: localStorage-only (mirrors sidebarWidth) so the commits panel can
+// be vertically resized. DEFAULT 0 means "unset" — the CSS clamp height applies and
+// the panel sizes to the viewport; any positive value pins an explicit pixel height.
+const COMMITS_HEIGHT_KEY = "gitit.commitsHeight.v1";
+const COMMITS_HEIGHT_MIN = 220;
+const COMMITS_HEIGHT_MAX = 1400;
+const COMMITS_HEIGHT_DEFAULT = 0;
+function clampCommitsHeight(n: number): number {
+  if (!Number.isFinite(n) || n <= 0) return COMMITS_HEIGHT_DEFAULT;
+  return Math.min(COMMITS_HEIGHT_MAX, Math.max(COMMITS_HEIGHT_MIN, Math.round(n)));
+}
+function loadSyncCommitsHeight(): number {
+  try {
+    if (typeof localStorage === "undefined") return COMMITS_HEIGHT_DEFAULT;
+    const raw = localStorage.getItem(COMMITS_HEIGHT_KEY);
+    return raw === null ? COMMITS_HEIGHT_DEFAULT : clampCommitsHeight(Number(raw));
+  } catch {
+    return COMMITS_HEIGHT_DEFAULT;
+  }
+}
+
+// commitColWidths: localStorage-only fixed-width pixel sizes for the three resizable
+// commit-list columns (author/date/sha). The Description column stays flex:1 and
+// absorbs the remainder, so it is not stored here. Each value clamps to [60,420].
+const COMMIT_COLS_KEY = "gitit.commitColWidths.v1";
+const COMMIT_COL_MIN = 60;
+const COMMIT_COL_MAX = 420;
+export interface CommitColWidths {
+  author: number;
+  date: number;
+  sha: number;
+}
+const COMMIT_COLS_DEFAULT: CommitColWidths = { author: 110, date: 168, sha: 84 };
+function clampCommitCol(n: number, fallback: number): number {
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(COMMIT_COL_MAX, Math.max(COMMIT_COL_MIN, Math.round(n)));
+}
+function loadSyncCommitColWidths(): CommitColWidths {
+  try {
+    if (typeof localStorage === "undefined") return { ...COMMIT_COLS_DEFAULT };
+    const raw = localStorage.getItem(COMMIT_COLS_KEY);
+    if (raw === null) return { ...COMMIT_COLS_DEFAULT };
+    const p = JSON.parse(raw) as Partial<Record<keyof CommitColWidths, unknown>>;
+    return {
+      author: clampCommitCol(Number(p?.author), COMMIT_COLS_DEFAULT.author),
+      date: clampCommitCol(Number(p?.date), COMMIT_COLS_DEFAULT.date),
+      sha: clampCommitCol(Number(p?.sha), COMMIT_COLS_DEFAULT.sha),
+    };
+  } catch {
+    return { ...COMMIT_COLS_DEFAULT };
+  }
+}
+
 // Lazily load (and memoize) the Tauri store. Dynamically imported so the plugin
 // never loads in a non-Tauri bundle.
 let storePromise: Promise<Store> | null = null;
@@ -654,6 +707,27 @@ function makeState() {
         localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
     } catch (e) {
       console.warn("[gte] could not persist sidebarWidth", e);
+    }
+  }
+
+  // commitsHeight / commitColWidths: localStorage-persisted layout dimensions for
+  // the commits panel (see loaders above). 0 = unset (CSS clamp applies).
+  let commitsHeight = $state<number>(loadSyncCommitsHeight());
+  function persistCommitsHeight() {
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(COMMITS_HEIGHT_KEY, String(commitsHeight));
+    } catch (e) {
+      console.warn("[gte] could not persist commitsHeight", e);
+    }
+  }
+  let commitColWidths = $state<CommitColWidths>(loadSyncCommitColWidths());
+  function persistCommitColWidths() {
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(COMMIT_COLS_KEY, JSON.stringify(commitColWidths));
+    } catch (e) {
+      console.warn("[gte] could not persist commitColWidths", e);
     }
   }
 
@@ -1172,6 +1246,25 @@ function makeState() {
     setSidebarWidth(v: number) {
       sidebarWidth = clampSidebarWidth(v);
       persistSidebarWidth();
+    },
+    // commitsHeight: 0 ⇒ unset (use the CSS clamp); >0 ⇒ explicit pixel height.
+    get commitsHeight() {
+      return commitsHeight;
+    },
+    setCommitsHeight(v: number) {
+      commitsHeight = clampCommitsHeight(v);
+      persistCommitsHeight();
+    },
+    // commitColWidths: per-column fixed widths for the author/date/sha columns.
+    get commitColWidths() {
+      return commitColWidths;
+    },
+    setCommitColWidth(key: keyof CommitColWidths, v: number) {
+      commitColWidths = {
+        ...commitColWidths,
+        [key]: clampCommitCol(v, COMMIT_COLS_DEFAULT[key]),
+      };
+      persistCommitColWidths();
     },
     // ── relativeDates persisted setting ────────────────────────────────────────
     get relativeDates() {

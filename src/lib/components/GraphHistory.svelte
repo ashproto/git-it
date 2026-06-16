@@ -11,7 +11,7 @@
   import { timeEditDrawer } from "../timeEditDrawer.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import GraphGutter from "./GraphGutter.svelte";
-  import { LANE_WIDTH, OFFSET_X, commitWindow } from "../graph";
+  import { LANE_WIDTH, OFFSET_X, commitWindow, laneX, type GeomConfig } from "../graph";
 
   const rowHeight = 30;
   // Overscan rows above/below the viewport so fast scrolling never reveals a gap.
@@ -72,6 +72,89 @@
   const gutterWidth = $derived(
     OFFSET_X + Math.max(1, rows.reduce((m, r) => Math.max(m, r.width), 1)) * LANE_WIDTH,
   );
+
+  // ── G2: lane line into the synthetic "Uncommitted changes" row ──────────────
+  // The gutter SVG starts at top:wcOffset, so HEAD's lane line only descends FROM
+  // HEAD's dot — it never reaches the wc-row above it. This contained overlay draws
+  // a vertical segment from the wc-row node down to HEAD's dot so the uncommitted
+  // changes visibly belong to HEAD's lineage. It positions by ABSOLUTE pixel y
+  // (headRowIndex, not the virtualization window), so it stays aligned even when
+  // HEAD's row is scrolled out of the rendered DOM window.
+  const geom: GeomConfig = $derived({
+    laneWidth: LANE_WIDTH,
+    rowHeight,
+    offsetX: OFFSET_X,
+  });
+  const headRowIndex = $derived(commits.findIndex((c) => c.refs.some((r) => r.is_head)));
+  const headLane = $derived(headRowIndex >= 0 ? (rows[headRowIndex]?.lane ?? null) : null);
+  const headColorIndex = $derived(
+    headRowIndex >= 0 ? (rows[headRowIndex]?.colorIndex ?? null) : null,
+  );
+  const showWcConnector = $derived(
+    hasWorkingChanges && headRowIndex >= 0 && headLane != null,
+  );
+  // Coordinates (only valid when showWcConnector): x = HEAD's lane centre; topY =
+  // the wc-row dot centre (first row); headDotY = HEAD's dot centre, one row per
+  // commit below the wc-row offset.
+  const wcConnX = $derived(headLane != null ? laneX(headLane, geom) : 0);
+  const wcConnTopY = rowHeight / 2;
+  const wcConnHeadY = $derived(wcOffset + headRowIndex * rowHeight + rowHeight / 2);
+  const wcConnColor = $derived(
+    headColorIndex != null ? appState.colorForIndex(headColorIndex) : "var(--accent)",
+  );
+
+  // ── G3b: resizable commit-list columns ──────────────────────────────────────
+  // The three fixed columns are driven by CSS custom properties on .wrap so a width
+  // change updates the sticky header AND every (virtualized) row at once.
+  const colVars = $derived(
+    `--col-author:${appState.commitColWidths.author}px;` +
+      `--col-date:${appState.commitColWidths.date}px;` +
+      `--col-sha:${appState.commitColWidths.sha}px`,
+  );
+
+  function startColResize(e: PointerEvent, key: "author" | "date" | "sha") {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = appState.commitColWidths[key];
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: PointerEvent) =>
+      appState.setCommitColWidth(key, startW + (ev.clientX - startX));
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+  const COL_DEFAULTS = { author: 110, date: 168, sha: 84 } as const;
+
+  // ── G4: vertical resize of the commits area ─────────────────────────────────
+  function startCommitsResize(e: PointerEvent) {
+    e.preventDefault();
+    const startY = e.clientY;
+    // Continue from the rendered size when the height is still "unset" (0), so the
+    // first drag doesn't jump to the clamp default.
+    const startH =
+      appState.commitsHeight > 0
+        ? appState.commitsHeight
+        : (wrapEl?.clientHeight ?? rowHeight * 10);
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: PointerEvent) =>
+      appState.setCommitsHeight(startH + (ev.clientY - startY));
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
 
   function localDate(iso: string): string {
     const d = parseISO(iso);
@@ -299,12 +382,46 @@
     {/if}
   {/snippet}
 
-  <div class="wrap" bind:this={wrapEl} onscroll={onWrapScroll}>
+  <div
+    class="wrap"
+    bind:this={wrapEl}
+    onscroll={onWrapScroll}
+    style={appState.commitsHeight > 0
+      ? `${colVars}; height:${appState.commitsHeight}px; max-height:none`
+      : colVars}
+  >
     <div class="head-row" bind:this={headEl} style={`padding-left:${gutterWidth}px`}>
       <span class="h subject">Description</span>
-      <span class="h author">Author</span>
-      <span class="h date">Date</span>
-      <span class="h sha">Commit</span>
+      <span class="h author"
+        >Author<span
+          class="col-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize Author column"
+          title="Drag to resize · double-click to reset"
+          onpointerdown={(e) => startColResize(e, "author")}
+          ondblclick={() => appState.setCommitColWidth("author", COL_DEFAULTS.author)}
+        ></span></span>
+      <span class="h date"
+        >Date<span
+          class="col-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize Date column"
+          title="Drag to resize · double-click to reset"
+          onpointerdown={(e) => startColResize(e, "date")}
+          ondblclick={() => appState.setCommitColWidth("date", COL_DEFAULTS.date)}
+        ></span></span>
+      <span class="h sha"
+        >Commit<span
+          class="col-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize Commit column"
+          title="Drag to resize · double-click to reset"
+          onpointerdown={(e) => startColResize(e, "sha")}
+          ondblclick={() => appState.setCommitColWidth("sha", COL_DEFAULTS.sha)}
+        ></span></span>
     </div>
 
     <div class="history" bind:this={histEl}>
@@ -320,6 +437,34 @@
         />
       </div>
 
+      {#if showWcConnector}
+        <svg
+          class="wc-connector"
+          style={`left:0; top:0; width:${gutterWidth}px; height:${wcConnHeadY + rowHeight}px`}
+          width={gutterWidth}
+          height={wcConnHeadY + rowHeight}
+          viewBox={`0 0 ${gutterWidth} ${wcConnHeadY + rowHeight}`}
+          aria-hidden="true"
+        >
+          <line
+            x1={wcConnX}
+            y1={wcConnTopY}
+            x2={wcConnX}
+            y2={wcConnHeadY}
+            stroke={wcConnColor}
+            stroke-width="2"
+          />
+          <circle
+            cx={wcConnX}
+            cy={wcConnTopY}
+            r="4.5"
+            fill="var(--panel-bg)"
+            stroke={wcConnColor}
+            stroke-width="2"
+          />
+        </svg>
+      {/if}
+
       {#if hasWorkingChanges}
         <div
           class="row wc-row"
@@ -332,7 +477,6 @@
         >
           <div class="spacer" style={`width:${gutterWidth}px`}></div>
           <div class="subject wc-subject">
-            <span class="wc-dot" aria-hidden="true">●</span>
             <span class="msg">Uncommitted changes ({workingChangeCount})</span>
           </div>
           <div class="author"></div>
@@ -390,6 +534,16 @@
       {/if}
     </div>
   </div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="v-resize-handle"
+    role="separator"
+    aria-orientation="horizontal"
+    aria-label="Resize commits area"
+    title="Drag to resize · double-click to reset"
+    onpointerdown={startCommitsResize}
+    ondblclick={() => appState.setCommitsHeight(0)}
+  ></div>
   <p class="hint">Click to select · ⌘-click to add/remove · Shift-click to select range</p>
 </CollapsiblePanel>
 
@@ -499,7 +653,7 @@
     white-space: nowrap;
   }
   .author {
-    flex: 0 0 110px;
+    flex: 0 0 var(--col-author, 110px);
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -507,15 +661,61 @@
     padding: 0 8px;
   }
   .date {
-    flex: 0 0 168px;
+    flex: 0 0 var(--col-date, 168px);
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .sha {
-    flex: 0 0 84px;
+    flex: 0 0 var(--col-sha, 84px);
     color: var(--text-muted);
+  }
+  /* Header cells mirror the row column bases so the sticky header lines up with the
+     virtualized rows; position:relative anchors each column's right-edge drag handle. */
+  .head-row .h {
+    position: relative;
+  }
+  .head-row .h.subject {
+    flex: 1 1 auto;
+    min-width: 160px;
+  }
+  .head-row .h.author {
+    flex: 0 0 var(--col-author, 110px);
+    padding: 0 8px;
+  }
+  .head-row .h.date {
+    flex: 0 0 var(--col-date, 168px);
+  }
+  .head-row .h.sha {
+    flex: 0 0 var(--col-sha, 84px);
+  }
+  /* Column resize handle: a thin grabbable strip on the right edge of each header
+     cell. Mirrors the sidebar resize-handle visual (1px gutter → accent on hover). */
+  .col-resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 3;
+  }
+  .col-resize-handle::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    background: var(--border);
+    transform: translateX(-50%);
+    transition: background 0.1s, width 0.1s;
+  }
+  .col-resize-handle:hover::before {
+    background: var(--accent);
+    width: 2px;
   }
   .new-pill {
     flex: 0 0 auto;
@@ -579,6 +779,31 @@
     font-size: 11px;
     color: var(--text-muted);
   }
+  /* G4: horizontal drag bar below the scroll container to resize the commits area.
+     Mirrors the sidebar resize-handle's centred-gutter visual, rotated 90°. */
+  .v-resize-handle {
+    flex: 0 0 12px;
+    align-self: stretch;
+    height: 12px;
+    cursor: ns-resize;
+    position: relative;
+    touch-action: none;
+  }
+  .v-resize-handle::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: var(--border);
+    transform: translateY(-50%);
+    transition: background 0.1s, height 0.1s;
+  }
+  .v-resize-handle:hover::before {
+    background: var(--accent);
+    height: 2px;
+  }
 
   /* ── Synthetic "Uncommitted changes" row ──────────────────────────────────── */
   .wc-row {
@@ -595,20 +820,14 @@
     gap: 8px;
     font-style: italic;
   }
-  .wc-dot {
-    font-style: normal;
-    color: var(--accent);
-    font-size: 10px;
-    /* Dashed-look via outline trick — presentational only */
-    border: 1.5px dashed var(--accent);
-    border-radius: 50%;
-    width: 14px;
-    height: 14px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    line-height: 1;
+  /* G2: lane line continuing up from HEAD's dot into the wc-row's node. Absolutely
+     positioned inside .history (position:relative), one z-layer above the gutter. */
+  .wc-connector {
+    position: absolute;
+    pointer-events: none;
+    z-index: 1;
+    display: block;
+    overflow: visible;
   }
 
   /* ── Infinite-scroll loading / end-of-history hints ──────────────────────── */
