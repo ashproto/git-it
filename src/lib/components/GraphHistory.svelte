@@ -11,6 +11,7 @@
   import { timeEditDrawer } from "../timeEditDrawer.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import GraphGutter from "./GraphGutter.svelte";
+  import RefIcon from "./RefIcon.svelte";
   import { LANE_WIDTH, OFFSET_X, commitWindow, laneX, type GeomConfig } from "../graph";
 
   const rowHeight = 30;
@@ -543,7 +544,11 @@
           <div class="spacer" style={`width:${gutterWidth}px`}></div>
           <div class="subject">
             {#each commit.refs as r}
-              <span class="badge {r.kind}" class:current={r.is_head}>{r.name}</span>
+              <span
+                class="badge {r.kind}"
+                class:current={r.is_head}
+                style={`--ref-color:${appState.colorForRef(r.name, commit.sha)}`}
+              ><RefIcon kind={r.kind} />{r.name}</span>
             {/each}
             <span class="msg">{commit.subject}</span>
             {#if appState.newDates.has(commit.sha)}
@@ -786,29 +791,24 @@
     cursor: not-allowed;
   }
   .badge {
+    /* Colour matches the ref's graph lane (or manual override) via --ref-color;
+       the RefIcon glyph conveys local / remote / tag. */
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     flex: 0 0 auto;
     font-size: 11px;
     padding: 0 6px;
     border-radius: 4px;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
+    border: 1px solid var(--ref-color, var(--border));
+    color: var(--ref-color, var(--text-muted));
     white-space: nowrap;
   }
+  /* HEAD's branch: keep its lane colour but mark "you are here" with a heavier
+     weight + a faint fill of that same colour. */
   .badge.current {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .badge.head {
-    border-color: var(--text-muted);
-    color: var(--text);
     font-weight: 600;
-  }
-  .badge.tag {
-    border-color: var(--err);
-    color: var(--err);
-  }
-  .badge.remote {
-    opacity: 0.7;
+    background: color-mix(in srgb, var(--ref-color, var(--accent)) 16%, transparent);
   }
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { RefEntry } from "../types";
   import type { RefTreeNode } from "../refTree";
+  import RefIcon from "./RefIcon.svelte";
 
   let {
     nodes,
@@ -56,7 +57,9 @@
         oncontextmenu={(e) => onContext(e, node.ref, kind)}
         title={node.ref.name}
       >
-        <span class="dot" style={`background:${colorOf(node.ref)}`} aria-hidden="true"></span>
+        <span class="ref-ic" style={`color:${colorOf(node.ref)}`} aria-hidden="true">
+          <RefIcon {kind} size={13} />
+        </span>
         <span class="rn">{node.name}</span>
       </button>
     {/if}
@@ -118,11 +121,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+  .ref-ic {
+    display: inline-flex;
+    align-items: center;
     flex-shrink: 0;
-    /* Colour is set inline to the ref's graph lane colour (or manual override). */
+    /* The glyph (currentColor) is tinted to the ref's graph lane colour (or
+       manual override); its shape conveys local / remote / tag. */
   }
 </style>

@@ -53,12 +53,19 @@ export async function reloadGraph(): Promise<void> {
     appState.setGraphHasMore(false);
     return;
   }
-  if (!appState.repo) return;
-  const gc = await api.loadGraph(appState.repo, PAGE, 0);
+  // Capture the repo this load is for. If a newer switch supersedes it mid-load,
+  // bail before committing results so we never overwrite the current repo's data
+  // with a stale repo's (the flicker fix keeps the old data visible until here).
+  const target = appState.repo;
+  if (!target) return;
+  const gc = await api.loadGraph(target, PAGE, 0);
+  if (appState.repo !== target) return;
   appState.setGraphCommits(gc);
   appState.setGraphHasMore(gc.length === PAGE);
   await refreshStatus();
+  if (appState.repo !== target) return;
   await refreshWorkingChanges();
+  if (appState.repo !== target) return;
   await refreshRefs();
 }
 

@@ -1019,27 +1019,32 @@ function makeState() {
       // repo, and forks can share SHAs — restoring here could hard-reset the wrong
       // tree) and any in-progress-op status carried from the previous repo.
       if (v !== repo) {
+        // Transient / selection state belongs to the previous repo — always reset.
         lastUndo = null;
-        repoStatus = null;
-        // Clear working-copy state — it belongs to the previous repo.
-        workingChanges = [];
-        workingChangesRev = 0;
         selectedFile = null;
         activeView = "timeline";
         suggestedCommitMessage = "";
-        // Clear remote state — refs/remotes/progress belong to the previous repo.
-        refsDetailed = [];
-        remotesState = [];
         remoteOpActive = false;
         remoteLog = [];
-        // Clear the loaded graph + selection so a switch doesn't briefly show the
-        // previous repo's history/branch chip (the new repo reloads via the +page
-        // effect), and closing the last repo (v="") falls back to the empty state.
-        graphCommits = [];
-        commits = [];
+        remotesState = [];
         currentSha = null;
         selected = new Set();
         newDates = new Map();
+        if (v === "") {
+          // Closing the LAST repo: clear the displayed data so the empty state
+          // shows — nothing will reload it.
+          repoStatus = null;
+          workingChanges = [];
+          workingChangesRev = 0;
+          refsDetailed = [];
+          graphCommits = [];
+          commits = [];
+        }
+        // Switching to ANOTHER repo: deliberately KEEP the previous repo's graph,
+        // refs, status and working changes on screen until reloadGraph() swaps in
+        // the new repo's data. Clearing them here flashed the header branch chip,
+        // sidebar and status bar empty mid-switch (the reported flicker). A
+        // stale-load guard in reloadGraph() prevents cross-repo contamination.
       }
       repo = v;
     },

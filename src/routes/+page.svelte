@@ -428,18 +428,28 @@
      0 in the browser and ~78px in glass mode (to clear the macOS lights). */
   .tl-inset {
     width: var(--tl-inset, 0px);
+    flex: 0 0 auto;
   }
   .header-center {
-    justify-self: center;
+    /* True window-centre: absolutely positioned at 50% of the header (= window)
+       width, so the title doesn't shift when the side button widths change. */
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     align-items: center;
     gap: 10px;
     min-width: 0;
+    max-width: 52%;
     overflow: hidden;
+    /* Never intercept clicks meant for the action buttons (or the window drag),
+       even if a long title visually approaches them. */
+    pointer-events: none;
   }
   .app-header {
-    display: grid;
-    grid-template-columns: var(--tl-inset, 0px) 1fr auto auto;
+    /* position:relative anchors the absolutely-centred title. */
+    position: relative;
+    display: flex;
     align-items: center;
     gap: 12px;
     /* Native macOS titlebars are non-selectable so click-drag doesn't start
@@ -483,6 +493,9 @@
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
+    /* The centred title is out of flow (absolute), so push the action groups
+       (Fetch/Pull/Push + gears) to the right edge. */
+    margin-left: auto;
   }
 
   .fetch-btn {
