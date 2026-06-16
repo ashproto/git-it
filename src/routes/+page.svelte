@@ -236,13 +236,13 @@
 
 <style>
   :global(:root) {
-    --bg: #f6f7f9;
+    --bg: #eceef1;
     --panel-bg: #ffffff;
     --header-bg: #f1f3f5;
     --input-bg: #f7f8fa;
-    --btn-bg: #f1f3f5;
-    --btn-hover: #e7e9ec;
-    --border: #e4e6ea;
+    --btn-bg: #e9ecef;
+    --btn-hover: #dfe3e8;
+    --border: #d6d9de;
     --border-subtle: #eef0f3;
     --text: #1a1d20;
     --text-muted: #6b7280;
@@ -265,12 +265,12 @@
   @media (prefers-color-scheme: dark) {
     :global(:root) {
       --bg: #0f1115;
-      --panel-bg: #15181d;
+      --panel-bg: #1b1f26;
       --header-bg: #1a1e24;
       --input-bg: #1a1e24;
-      --btn-bg: #232931;
-      --btn-hover: #2c343d;
-      --border: #2a3038;
+      --btn-bg: #2a313b;
+      --btn-hover: #353d48;
+      --border: #353c46;
       --border-subtle: #20252c;
       --text: #e5e7eb;
       --text-muted: #9ca3af;
@@ -291,32 +291,32 @@
      downstream picks up the translucent values without touching component CSS. */
   :global(:root[data-tauri="true"]) {
     --bg: transparent;
-    --panel-bg: rgba(255, 255, 255, 0.1);
+    --panel-bg: rgba(255, 255, 255, 0.16);
     /* The settings popover is small + interactive, so it stays much more opaque
        than the panels to guarantee text contrast over any wallpaper. */
     --popover-bg: rgba(250, 250, 252, 0.85);
-    --header-bg: rgba(241, 243, 245, 0.08);
+    --header-bg: rgba(241, 243, 245, 0.16);
     --input-bg: rgba(247, 248, 250, 0.22);
-    /* Buttons need to read clearly against the very translucent panels
-       (0.10), so their fill is more opaque than other glass surfaces. */
+    /* Buttons need to read clearly against the translucent panels, so their fill
+       is more opaque than other glass surfaces. */
     --btn-bg: rgba(241, 243, 245, 0.62);
     --btn-hover: rgba(231, 233, 236, 0.78);
-    --border: rgba(228, 230, 234, 0.22);
-    --border-subtle: rgba(238, 240, 243, 0.12);
+    --border: rgba(255, 255, 255, 0.4);
+    --border-subtle: rgba(255, 255, 255, 0.22);
     --row-hover: rgba(245, 247, 250, 0.22);
   }
   @media (prefers-color-scheme: dark) {
     :global(:root[data-tauri="true"]) {
       --bg: transparent;
-      --panel-bg: rgba(21, 24, 29, 0.14);
+      --panel-bg: rgba(28, 32, 39, 0.24);
       --popover-bg: rgba(24, 27, 32, 0.88);
-      --header-bg: rgba(26, 30, 36, 0.1);
+      --header-bg: rgba(26, 30, 36, 0.2);
       --input-bg: rgba(26, 30, 36, 0.24);
-      /* Lighter + more opaque than the dark panels (0.14) so buttons separate. */
+      /* Lighter + more opaque than the dark panels so buttons separate. */
       --btn-bg: rgba(58, 66, 76, 0.66);
       --btn-hover: rgba(72, 82, 94, 0.8);
-      --border: rgba(42, 48, 56, 0.26);
-      --border-subtle: rgba(32, 37, 44, 0.14);
+      --border: rgba(120, 130, 142, 0.34);
+      --border-subtle: rgba(90, 100, 112, 0.22);
       --row-hover: rgba(28, 32, 39, 0.22);
     }
   }

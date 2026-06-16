@@ -418,6 +418,11 @@
     top: 0;
     z-index: 2;
     background: var(--header-bg);
+    /* Frosted backing: commit rows scrolling underneath are blurred out rather
+       than reading through the translucent header (the column titles stay legible
+       on scroll). The blur is a no-op where --header-bg is opaque (non-glass). */
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
     border-bottom: 1px solid var(--border);
     font-size: 11px;
     color: var(--text-muted);
