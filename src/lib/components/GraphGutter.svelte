@@ -4,6 +4,8 @@
     curvedEdgePath,
     angularEdgePath,
     laneColor,
+    LANE_WIDTH,
+    OFFSET_X,
     type RowLayout,
     type Edge,
     type GeomConfig,
@@ -21,11 +23,9 @@
     lineStyle?: "curved" | "angular";
   } = $props();
 
-  const laneWidth = 16;
-  const offsetX = 12;
-  const g: GeomConfig = $derived({ laneWidth, rowHeight, offsetX });
+  const g: GeomConfig = $derived({ laneWidth: LANE_WIDTH, rowHeight, offsetX: OFFSET_X });
   const maxLanes = $derived(rows.reduce((m, r) => Math.max(m, r.width), 1));
-  const width = $derived(offsetX + maxLanes * laneWidth);
+  const width = $derived(OFFSET_X + maxLanes * LANE_WIDTH);
   const height = $derived(Math.max(rows.length * rowHeight, rowHeight));
 
   const dotY = (i: number) => i * rowHeight + rowHeight / 2;

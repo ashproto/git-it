@@ -10,6 +10,12 @@ export interface GeomConfig {
   offsetX: number;
 }
 
+/** Lane geometry shared by the gutter SVG (GraphGutter) and the commit-row
+ * layout (GraphHistory's gutter width). Single source of truth so the SVG lanes
+ * and the table's left padding can never drift apart. */
+export const LANE_WIDTH = 16;
+export const OFFSET_X = 12;
+
 export function laneX(lane: number, g: GeomConfig): number {
   return g.offsetX + lane * g.laneWidth;
 }

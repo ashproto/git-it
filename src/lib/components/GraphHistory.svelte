@@ -9,6 +9,7 @@
   import { timeEditDrawer } from "../timeEditDrawer.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import GraphGutter from "./GraphGutter.svelte";
+  import { LANE_WIDTH, OFFSET_X } from "../graph";
 
   const rowHeight = 30;
   let anchorIndex = $state<number | null>(null);
@@ -45,7 +46,7 @@
   }
   const heads = $derived(commits.map((c) => c.refs.some((r) => r.is_head)));
   const gutterWidth = $derived(
-    12 + Math.max(1, rows.reduce((m, r) => Math.max(m, r.width), 1)) * 16,
+    OFFSET_X + Math.max(1, rows.reduce((m, r) => Math.max(m, r.width), 1)) * LANE_WIDTH,
   );
 
   function localDate(iso: string): string {
