@@ -60,6 +60,9 @@ const AUTOBACKUP_STORE_KEY = "safetyAutoBackup";
 const DIFFSPLIT_KEY = "gitit.diffSplit.v1";
 const DIFFSPLIT_STORE_KEY = "diffSplit";
 
+const RELDATES_KEY = "gitit.relativeDates.v1";
+const RELDATES_STORE_KEY = "relativeDates";
+
 const PULLREBASE_KEY = "gitit.pullRebase.v1";
 const PULLREBASE_STORE_KEY = "pullRebase";
 
@@ -124,6 +127,17 @@ function loadSyncDiffSplit(): boolean {
     return raw === "true";
   } catch {
     return false;
+  }
+}
+
+function loadSyncRelativeDates(): boolean {
+  if (isTauri()) return true;
+  try {
+    if (typeof localStorage === "undefined") return true;
+    const raw = localStorage.getItem(RELDATES_KEY);
+    return raw === null ? true : raw !== "false";
+  } catch {
+    return true;
   }
 }
 
@@ -344,6 +358,41 @@ function makeState() {
       if (typeof localStorage !== "undefined") localStorage.setItem(DIFFSPLIT_KEY, String(snapshot));
     } catch (e) {
       console.warn("[gte] could not persist diffSplit setting", e);
+    }
+  }
+
+  // ── relativeDates persisted setting ───────────────────────────────────────
+  // Whether commit dates show "Today"/"Yesterday" labels (true, default).
+  // Mirrors the diffSplit pattern exactly, but defaults to true.
+  let relativeDates = $state<boolean>(loadSyncRelativeDates());
+  let relativeDatesTouched = false;
+
+  const rdHydrate = getStore();
+  if (rdHydrate) {
+    rdHydrate
+      .then((store) => store.get<boolean>(RELDATES_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !relativeDatesTouched) {
+          relativeDates = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load relativeDates setting", e));
+  }
+
+  function persistRelativeDates() {
+    const snapshot = relativeDates;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(RELDATES_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist relativeDates setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(RELDATES_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist relativeDates setting", e);
     }
   }
 
@@ -681,6 +730,15 @@ function makeState() {
       diffSplitTouched = true;
       diffSplit = v;
       persistDiffSplit();
+    },
+    // ── relativeDates persisted setting ────────────────────────────────────────
+    get relativeDates() {
+      return relativeDates;
+    },
+    setRelativeDates(v: boolean) {
+      relativeDatesTouched = true;
+      relativeDates = v;
+      persistRelativeDates();
     },
     setGraphCommits(gc: GraphCommit[]) {
       graphCommits = gc;

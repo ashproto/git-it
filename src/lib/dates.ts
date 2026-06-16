@@ -23,34 +23,60 @@ export function parseISO(iso: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** "Today" / "Yesterday" if `d` falls on the same local calendar day as `now`
+ * or the day before; otherwise null. Used for Fork-style relative commit dates. */
+export function relativeDayLabel(d: Date, now: Date): "Today" | "Yesterday" | null {
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  if (sameDay(d, now)) return "Today";
+  const yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  if (sameDay(d, yest)) return "Yesterday";
+  return null;
+}
+
 /**
- * Render a commit timestamp honoring the user's display preferences. Display-only:
- * the git rewrite path never goes through here (it uses toEpochTz/formatTzOffset).
- * With every pref false this returns the default `YYYY-MM-DD HH:mm:ss ±HHMM`.
+ * Render a commit timestamp honoring the user's display preferences. Display-only.
+ * With every pref false this returns `YYYY-MM-DD HH:mm:ss ±HHMM`. When `relative`
+ * is true and the date is today/yesterday, the weekday+date is replaced by
+ * "Today"/"Yesterday" (the time + tz are kept). `now` is injectable for testing.
  */
-export function formatCommitDate(d: Date, p: DateFormatPrefs): string {
+export function formatCommitDate(
+  d: Date,
+  p: DateFormatPrefs,
+  relative = false,
+  now: Date = new Date(),
+): string {
   const pad = (n: number, w = 2) => String(n).padStart(w, "0");
-  const parts: string[] = [];
 
-  if (p.weekday) parts.push(WEEKDAYS[d.getDay()]);
-
-  if (p.monthName) {
-    // "MMM D, YYYY" — day not zero-padded, matching the "Jan 5, 2026" convention.
-    parts.push(`${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`);
-  } else {
-    parts.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
-  }
-
+  // Time component (shared by absolute + relative renderings).
+  let timePart: string;
   if (p.hour12) {
     const h24 = d.getHours();
     const h12 = ((h24 + 11) % 12) + 1; // 0->12, 13->1, 23->11
     const suffix = h24 < 12 ? "AM" : "PM";
-    parts.push(`${h12}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${suffix}`);
+    timePart = `${h12}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${suffix}`;
   } else {
-    parts.push(`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`);
+    timePart = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+  const tz = formatTzOffset(d);
+
+  // Relative: "Today"/"Yesterday" replaces the weekday + date entirely.
+  if (relative) {
+    const rel = relativeDayLabel(d, now);
+    if (rel) return `${rel} ${timePart} ${tz}`;
   }
 
-  parts.push(formatTzOffset(d));
+  const parts: string[] = [];
+  if (p.weekday) parts.push(WEEKDAYS[d.getDay()]);
+  if (p.monthName) {
+    parts.push(`${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`);
+  } else {
+    parts.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+  }
+  parts.push(timePart);
+  parts.push(tz);
   return parts.join(" ");
 }
 
