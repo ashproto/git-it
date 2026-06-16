@@ -3,7 +3,7 @@
   import { api } from "../api";
   import { parseISO, formatCommitDate } from "../dates";
   import { parseDiff } from "../diff/parse";
-  import DiffView from "./DiffView.svelte";
+  import CommitFilesDiff from "./CommitFilesDiff.svelte";
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -103,7 +103,7 @@
             <span class="files-changed">{fileCount} file{fileCount === 1 ? "" : "s"} changed</span>
           </div>
         {/if}
-        <DiffView patch={diffPatch} />
+        <CommitFilesDiff patch={diffPatch} />
       {/if}
     </div>
   {:else}
@@ -208,7 +208,6 @@
   .diff-section {
     margin-top: 14px;
     border-top: 1px solid var(--border-subtle);
-    overflow: auto;
   }
   .diff-summary {
     padding: 6px 0 4px 0;
