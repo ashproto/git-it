@@ -177,6 +177,14 @@
         />
         <span>Merge Untracked into Unstaged</span>
       </label>
+      <label class="opt">
+        <input
+          type="checkbox"
+          checked={appState.showOutput}
+          onchange={() => appState.setShowOutput(!appState.showOutput)}
+        />
+        <span>Show Output panel (debug)</span>
+      </label>
     </div>
   </div>
 {/if}

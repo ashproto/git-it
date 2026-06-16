@@ -681,8 +681,11 @@
 
   .diff-table {
     border-collapse: collapse;
-    width: 100%;
-    table-layout: fixed;
+    /* Grow to the widest line so the WHOLE diff scrolls horizontally as one unit
+       (.diff-table-wrap is the single scroll container) — instead of each cell
+       scrolling on its own. min-width keeps short diffs filling the pane. */
+    width: max-content;
+    min-width: 100%;
   }
 
   /* Split-view column sizing (see the <colgroup> in the markup): the gutters are
@@ -715,7 +718,6 @@
     padding: 0 4px 0 2px;
     white-space: pre;
     word-break: keep-all;
-    overflow-x: auto;
     vertical-align: top;
   }
 

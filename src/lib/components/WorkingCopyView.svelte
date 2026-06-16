@@ -5,7 +5,12 @@
   import { contextMenu } from "../contextMenu.svelte";
   import DiffView from "./DiffView.svelte";
   import CommitComposer from "./CommitComposer.svelte";
+  import FileTree from "./FileTree.svelte";
+  import { buildFileTree } from "../fileTree";
   import type { WorkingFile } from "../types";
+
+  // Last path segment — shown as the leaf label in tree mode (full path in title).
+  const basename = (p: string) => p.split("/").pop() ?? p;
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -181,6 +186,64 @@
   }
 </script>
 
+<!-- Tree-mode leaf rows: one snippet per section so each closes over its own
+     section string for onRowContext. Each renders the SAME clickable row as flat
+     mode (glyph + name + selection + context-menu), but indented and showing the
+     basename (full path in title). `ind` is the tree indent in px. -->
+{#snippet stagedRow(f: WorkingFile, ind: number)}
+  <li
+    class="file-row"
+    class:selected={selectedFile === f.path}
+    role="row"
+    tabindex="0"
+    style={`padding-left:${ind}px`}
+    onmousedown={() => selectFile(f.path)}
+    oncontextmenu={(e) => onRowContext(e, f, "staged")}
+    onkeydown={(e) => {
+      if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+    }}
+  >
+    <span class="glyph staged">{glyph(f)}</span>
+    <span class="path mono" title={f.path}>{basename(f.path)}</span>
+  </li>
+{/snippet}
+
+{#snippet unstagedRow(f: WorkingFile, ind: number)}
+  <li
+    class="file-row"
+    class:selected={selectedFile === f.path}
+    role="row"
+    tabindex="0"
+    style={`padding-left:${ind}px`}
+    onmousedown={() => selectFile(f.path)}
+    oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
+    onkeydown={(e) => {
+      if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+    }}
+  >
+    <span class="glyph" class:unstaged={!f.untracked} class:untracked={f.untracked}>{glyph(f)}</span>
+    <span class="path mono" title={f.path}>{basename(f.path)}</span>
+  </li>
+{/snippet}
+
+{#snippet untrackedRow(f: WorkingFile, ind: number)}
+  <li
+    class="file-row"
+    class:selected={selectedFile === f.path}
+    role="row"
+    tabindex="0"
+    style={`padding-left:${ind}px`}
+    onmousedown={() => selectFile(f.path)}
+    oncontextmenu={(e) => onRowContext(e, f, "untracked")}
+    onkeydown={(e) => {
+      if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+    }}
+  >
+    <span class="glyph untracked">{glyph(f)}</span>
+    <span class="path mono" title={f.path}>{basename(f.path)}</span>
+  </li>
+{/snippet}
+
 <div class="wc-view panel">
   {#if !isTauri()}
     <p class="desktop-only">Local changes are only available in the desktop app.</p>
@@ -189,6 +252,16 @@
   {:else}
     <div class="master-detail" style={`--files-w:${appState.localFilesWidth}px`}>
       <div class="files">
+      <!-- ── View toggle (flat list ↔ folder tree) — one control for all sections ── -->
+      <div class="files-toolbar">
+        <span class="ft-label">Local Changes</span>
+        <button
+          class="ft-toggle"
+          onclick={() => appState.setFileTreeView(!appState.fileTreeView)}
+          title={appState.fileTreeView ? "List view" : "Tree view"}
+          aria-pressed={appState.fileTreeView}
+        >{appState.fileTreeView ? "☰ List" : "⊟ Tree"}</button>
+      </div>
       <!-- ── Staged ───────────────────────────────────────────────────────────── -->
       {#if stagedFiles.length > 0}
         <section class="file-section">
@@ -202,24 +275,30 @@
                   : gitActions.unstage(stagedFiles.map((f) => f.path))}
             >{selectedIsStaged ? "Unstage" : "Unstage all"}</button>
           </header>
-          <ul class="file-list">
-            {#each stagedFiles as f (f.path)}
-              <li
-                class="file-row"
-                class:selected={selectedFile === f.path}
-                role="row"
-                tabindex="0"
-                onmousedown={() => selectFile(f.path)}
-                oncontextmenu={(e) => onRowContext(e, f, "staged")}
-                onkeydown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") selectFile(f.path);
-                }}
-              >
-                <span class="glyph staged">{glyph(f)}</span>
-                <span class="path mono" title={f.path}>{f.path}</span>
-              </li>
-            {/each}
-          </ul>
+          {#if appState.fileTreeView}
+            <ul class="file-list">
+              <FileTree nodes={buildFileTree(stagedFiles, (f) => f.path)} fileRow={stagedRow} />
+            </ul>
+          {:else}
+            <ul class="file-list">
+              {#each stagedFiles as f (f.path)}
+                <li
+                  class="file-row"
+                  class:selected={selectedFile === f.path}
+                  role="row"
+                  tabindex="0"
+                  onmousedown={() => selectFile(f.path)}
+                  oncontextmenu={(e) => onRowContext(e, f, "staged")}
+                  onkeydown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+                  }}
+                >
+                  <span class="glyph staged">{glyph(f)}</span>
+                  <span class="path mono" title={f.path}>{f.path}</span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </section>
       {/if}
 
@@ -241,26 +320,32 @@
                   : gitActions.stage(unstagedDisplay.map((f) => f.path))}
             >{selectedInUnstagedSection ? "Stage" : "Stage all"}</button>
           </header>
-          <ul class="file-list">
-            {#each unstagedDisplay as f (f.path)}
-              <li
-                class="file-row"
-                class:selected={selectedFile === f.path}
-                role="row"
-                tabindex="0"
-                onmousedown={() => selectFile(f.path)}
-                oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
-                onkeydown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") selectFile(f.path);
-                }}
-              >
-                <span class="glyph" class:unstaged={!f.untracked} class:untracked={f.untracked}
-                  >{glyph(f)}</span
+          {#if appState.fileTreeView}
+            <ul class="file-list">
+              <FileTree nodes={buildFileTree(unstagedDisplay, (f) => f.path)} fileRow={unstagedRow} />
+            </ul>
+          {:else}
+            <ul class="file-list">
+              {#each unstagedDisplay as f (f.path)}
+                <li
+                  class="file-row"
+                  class:selected={selectedFile === f.path}
+                  role="row"
+                  tabindex="0"
+                  onmousedown={() => selectFile(f.path)}
+                  oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
+                  onkeydown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+                  }}
                 >
-                <span class="path mono" title={f.path}>{f.path}</span>
-              </li>
-            {/each}
-          </ul>
+                  <span class="glyph" class:unstaged={!f.untracked} class:untracked={f.untracked}
+                    >{glyph(f)}</span
+                  >
+                  <span class="path mono" title={f.path}>{f.path}</span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </section>
       {/if}
 
@@ -277,24 +362,30 @@
                   : gitActions.stage(untrackedFiles.map((f) => f.path))}
             >{selectedIsUntracked ? "Stage" : "Stage all"}</button>
           </header>
-          <ul class="file-list">
-            {#each untrackedFiles as f (f.path)}
-              <li
-                class="file-row"
-                class:selected={selectedFile === f.path}
-                role="row"
-                tabindex="0"
-                onmousedown={() => selectFile(f.path)}
-                oncontextmenu={(e) => onRowContext(e, f, "untracked")}
-                onkeydown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") selectFile(f.path);
-                }}
-              >
-                <span class="glyph untracked">{glyph(f)}</span>
-                <span class="path mono" title={f.path}>{f.path}</span>
-              </li>
-            {/each}
-          </ul>
+          {#if appState.fileTreeView}
+            <ul class="file-list">
+              <FileTree nodes={buildFileTree(untrackedFiles, (f) => f.path)} fileRow={untrackedRow} />
+            </ul>
+          {:else}
+            <ul class="file-list">
+              {#each untrackedFiles as f (f.path)}
+                <li
+                  class="file-row"
+                  class:selected={selectedFile === f.path}
+                  role="row"
+                  tabindex="0"
+                  onmousedown={() => selectFile(f.path)}
+                  oncontextmenu={(e) => onRowContext(e, f, "untracked")}
+                  onkeydown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+                  }}
+                >
+                  <span class="glyph untracked">{glyph(f)}</span>
+                  <span class="path mono" title={f.path}>{f.path}</span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </section>
       {/if}
       </div>
@@ -373,6 +464,39 @@
     overflow-y: auto;
     display: flex;
     flex-direction: column;
+  }
+
+  /* Toolbar above the sections: holds the one flat/tree view toggle. */
+  .files-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px 5px 12px;
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--border-subtle);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  .ft-label {
+    flex: 1;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .ft-toggle {
+    padding: 2px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--text);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .ft-toggle:hover {
+    background: var(--btn-hover);
   }
 
   /* Vertical drag handle on the file-list ↔ diff boundary. A thin grabbable strip

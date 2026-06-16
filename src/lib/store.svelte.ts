@@ -372,6 +372,19 @@ function loadSyncLocalFilesWidth(): number {
   }
 }
 
+// showOutput / fileTreeView: localStorage-only boolean UI prefs.
+const SHOW_OUTPUT_KEY = "gitit.showOutput.v1";
+const FILE_TREE_VIEW_KEY = "gitit.fileTreeView.v1";
+function loadSyncBool(key: string, dflt: boolean): boolean {
+  try {
+    if (typeof localStorage === "undefined") return dflt;
+    const raw = localStorage.getItem(key);
+    return raw === null ? dflt : raw === "true";
+  } catch {
+    return dflt;
+  }
+}
+
 // Lazily load (and memoize) the Tauri store. Dynamically imported so the plugin
 // never loads in a non-Tauri bundle.
 let storePromise: Promise<Store> | null = null;
@@ -800,6 +813,24 @@ function makeState() {
         localStorage.setItem(LOCALFILES_WIDTH_KEY, String(localFilesWidth));
     } catch (e) {
       console.warn("[gte] could not persist localFilesWidth", e);
+    }
+  }
+  let showOutput = $state<boolean>(loadSyncBool(SHOW_OUTPUT_KEY, false));
+  function persistShowOutput() {
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(SHOW_OUTPUT_KEY, String(showOutput));
+    } catch (e) {
+      console.warn("[gte] could not persist showOutput", e);
+    }
+  }
+  let fileTreeView = $state<boolean>(loadSyncBool(FILE_TREE_VIEW_KEY, false));
+  function persistFileTreeView() {
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(FILE_TREE_VIEW_KEY, String(fileTreeView));
+    } catch (e) {
+      console.warn("[gte] could not persist fileTreeView", e);
     }
   }
   let commitColWidths = $state<CommitColWidths>(loadSyncCommitColWidths());
@@ -1363,6 +1394,22 @@ function makeState() {
     setLocalFilesWidth(v: number) {
       localFilesWidth = clampLocalFilesWidth(v);
       persistLocalFilesWidth();
+    },
+    // showOutput: when off (default) the Output/log panel is hidden (debug only).
+    get showOutput() {
+      return showOutput;
+    },
+    setShowOutput(v: boolean) {
+      showOutput = v;
+      persistShowOutput();
+    },
+    // fileTreeView: render file lists (working copy + commit files) as a folder tree.
+    get fileTreeView() {
+      return fileTreeView;
+    },
+    setFileTreeView(v: boolean) {
+      fileTreeView = v;
+      persistFileTreeView();
     },
     // commitColWidths: per-column fixed widths for the author/date/sha columns.
     get commitColWidths() {

@@ -1,6 +1,10 @@
 <script lang="ts">
   import { splitDiffFiles } from "../diff/split";
   import DiffView from "./DiffView.svelte";
+  import FileTree from "./FileTree.svelte";
+  import { buildFileTree } from "../fileTree";
+  import { appState } from "../store.svelte";
+  import type { DiffFileEntry } from "../diff/split";
 
   let { patch }: { patch: string } = $props();
 
@@ -29,26 +33,59 @@
   };
 </script>
 
+<!-- Tree-mode leaf: the SAME .file button as flat mode (status badge + basename),
+     indented and selecting THAT file. Selection is by index, so map the leaf item
+     back to its index by identity. -->
+{#snippet commitFileRow(f: DiffFileEntry, ind: number)}
+  {@const i = files.indexOf(f)}
+  <li>
+    <button
+      type="button"
+      class="file"
+      class:active={i === selectedIdx}
+      style={`padding-left:${ind}px`}
+      onclick={() => (selectedIdx = i)}
+      title={f.path}
+    >
+      <span class="status {f.status}" title={f.status}>{STATUS_LABEL[f.status]}</span>
+      <span class="fname">{basename(f.path)}</span>
+    </button>
+  </li>
+{/snippet}
+
 {#if files.length === 0}
   <p class="empty">No file changes.</p>
 {:else}
+  <div class="files-toolbar">
+    <span class="ft-label">{files.length} file{files.length === 1 ? "" : "s"} changed</span>
+    <button
+      class="ft-toggle"
+      onclick={() => appState.setFileTreeView(!appState.fileTreeView)}
+      title={appState.fileTreeView ? "List view" : "Tree view"}
+      aria-pressed={appState.fileTreeView}
+    >{appState.fileTreeView ? "☰ List" : "⊟ Tree"}</button>
+  </div>
   <div class="master-detail">
     <ul class="filelist">
-      {#each files as f, i (f.path + ":" + i)}
-        <li>
-          <button
-            type="button"
-            class="file"
-            class:active={i === selectedIdx}
-            onclick={() => (selectedIdx = i)}
-            title={f.path}
-          >
-            <span class="status {f.status}" title={f.status}>{STATUS_LABEL[f.status]}</span>
-            <span class="fname">{basename(f.path)}</span>
-            {#if dirname(f.path)}<span class="fdir">{dirname(f.path)}</span>{/if}
-          </button>
-        </li>
-      {/each}
+      {#if appState.fileTreeView}
+        <FileTree nodes={buildFileTree(files, (f) => f.path)} fileRow={commitFileRow} />
+      {:else}
+        {#each files as f, i (f.path + ":" + i)}
+          <li>
+            <button
+              type="button"
+              class="file"
+              class:active={i === selectedIdx}
+              onclick={() => (selectedIdx = i)}
+              title={f.path}
+            >
+              <span class="status {f.status}" title={f.status}>{STATUS_LABEL[f.status]}</span>
+              <span class="fname">{basename(f.path)}</span>
+              {#if dirname(f.path)}<span class="fdir">{dirname(f.path)}</span>{/if}
+            </button>
+          </li>
+        {/each}
+      {/if}
     </ul>
     <div class="diffpane">
       {#if selected}
@@ -61,10 +98,38 @@
 {/if}
 
 <style>
+  .files-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 4px 6px 4px 0;
+  }
+  .ft-label {
+    flex: 1;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .ft-toggle {
+    padding: 2px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--text);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .ft-toggle:hover {
+    background: var(--btn-hover);
+  }
+
   .master-detail {
     display: flex;
     height: clamp(320px, 58vh, 820px);
-    margin-top: 8px;
+    margin-top: 4px;
   }
   .filelist {
     flex: 0 0 230px;

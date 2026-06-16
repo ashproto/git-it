@@ -263,7 +263,9 @@
                 <InlineEditCommit />
               {/if}
             {/if}
-            <LogPanel />
+            {#if appState.showOutput}
+              <LogPanel />
+            {/if}
           </div>
         {/if}
       </div>
