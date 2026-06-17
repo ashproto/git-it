@@ -13,6 +13,10 @@
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   }
 
+  // Optional fixed height for the underlying panel (set by the slide-up details pane
+  // so its height stays stable while the diff loads; the body scrolls inside).
+  let { height }: { height?: number } = $props();
+
   const c = $derived(appState.selectedCommit);
 
   // Edit mode: the panel flips between read-only details and the inline edit tools
@@ -82,7 +86,7 @@
   });
 </script>
 
-<CollapsiblePanel title={editing ? "Edit commit(s)" : "Commit"}>
+<CollapsiblePanel title={editing ? "Edit commit(s)" : "Commit"} {height}>
   {#snippet headerActions()}
     {#if c}
       <button

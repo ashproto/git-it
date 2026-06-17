@@ -320,12 +320,10 @@ async function runWorktree(label: string, fn: () => Promise<unknown>): Promise<b
   try {
     appState.status = `${label}…`;
     await fn();
-    // Refresh working changes first (fast), then the full graph.
-    try {
-      await refreshWorkingChanges();
-    } catch (e) {
-      console.warn("[gte] working changes refresh after op failed", e);
-    }
+    // reloadGraph already refreshes the working changes (+ status, graph, refs).
+    // We deliberately do NOT also refresh working changes separately here: a second
+    // setWorkingChanges() landing mid-flight would interrupt the stage/unstage move
+    // animation (the row would flicker and pop instead of flying). One refresh only.
     try {
       await reloadGraph();
     } catch (e) {

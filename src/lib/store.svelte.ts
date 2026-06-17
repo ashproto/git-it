@@ -1235,6 +1235,10 @@ function makeState() {
     },
     clearSelection() {
       selected = new Set();
+      // Also drop the focused commit so the slide-up details pane (gated on
+      // selectedCommit ← currentSha) unmounts and slides away. Clearing only the
+      // multi-select Set would leave currentSha set, so the pane would stay open.
+      currentSha = null;
     },
     get graphCommits() {
       return graphCommits;

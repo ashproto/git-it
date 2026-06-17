@@ -118,13 +118,23 @@
 
   // ── Commit-details panel resize (drag the boundary between the graph and the
   // slide-up details panel). Dragging UP grows the details panel (graph shrinks).
+  // Keep at least this much height for the graph so dragging the details pane tall
+  // can't hide it entirely (the pane is flex:0 0 auto, i.e. non-shrinking).
+  const GRAPH_FLOOR = 140;
   function startDetailsResize(e: PointerEvent) {
     e.preventDefault();
     const startY = e.clientY;
     const startH = appState.detailsHeight;
+    const mainCol = (e.currentTarget as HTMLElement).closest(".main-col") as HTMLElement | null;
     document.body.style.cursor = "ns-resize";
     document.body.style.userSelect = "none";
-    const onMove = (ev: PointerEvent) => appState.setDetailsHeight(startH + (startY - ev.clientY));
+    const onMove = (ev: PointerEvent) => {
+      let next = startH + (startY - ev.clientY);
+      // Cap against the live container so the graph keeps GRAPH_FLOOR px (setDetailsHeight
+      // still applies the absolute 140–1200 clamp). Adapts as the window is resized.
+      if (mainCol) next = Math.min(next, mainCol.clientHeight - GRAPH_FLOOR);
+      appState.setDetailsHeight(next);
+    };
     const onUp = () => {
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
@@ -331,8 +341,11 @@
             {:else if appState.selectedCommit}
               <!-- Commit details slide up below the (full-height) graph only when a
                    commit is selected; drag the top edge to resize, collapse via the
-                   panel's own chevron. max-height caps it (it scrolls inside) so a
-                   collapsed panel shrinks to its header with no dead space. -->
+                   panel's own chevron. The panel takes a FIXED height (detailsHeight)
+                   and scrolls inside, so its height is stable while the diff loads —
+                   the pane no longer shrinks-then-grows (jitter on open / jump on
+                   commit-switch). Collapsing the panel drops it to auto (header only),
+                   so a collapsed panel has no dead space. -->
               <div class="details-pane" transition:slide={{ duration: 200 }}>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div
@@ -344,9 +357,7 @@
                   onpointerdown={startDetailsResize}
                   ondblclick={() => appState.setDetailsHeight(320)}
                 ></div>
-                <div class="details-scroll" style={`max-height:${appState.detailsHeight}px`}>
-                  <CommitDetail />
-                </div>
+                <CommitDetail height={appState.detailsHeight} />
               </div>
             {/if}
             {#if appState.showOutput}
@@ -780,16 +791,16 @@
   }
 
   /* Slide-up commit-details pane (timeline view): a non-growing column holding the
-     drag handle + a max-height scroll area (set inline from appState.detailsHeight). */
+     drag handle + the CommitDetail panel, which takes a FIXED height (detailsHeight)
+     and scrolls internally, so the pane's height is stable while the diff loads.
+     flex:0 0 auto so the pane keeps its requested height and the GRAPH (flex:1, scrolls
+     internally) absorbs any shortage — otherwise a short window would shrink the pane
+     and the fixed-height panel inside would spill over the content below it. */
   .details-pane {
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
-  }
-  .details-scroll {
-    min-height: 0;
-    overflow: auto;
   }
   /* Horizontal drag bar on the graph↔details boundary; mirrors the sidebar handle. */
   .details-resize {

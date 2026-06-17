@@ -12,16 +12,18 @@
   import { flip } from "svelte/animate";
   import { quintOut } from "svelte/easing";
 
-  // Fork/SourceTree-style "file flies to the other section" animation: a row that
-  // leaves one section (out:send) and re-appears in another (in:receive) with the
-  // SAME key animates flying between the two; animate:flip slides the rest up/down.
-  // A send with no matching receive (e.g. a discarded/removed file) falls back to a
-  // fade. Keyed by path — the dominant full-file stage/unstage moves cleanly; a
-  // partially-staged file already living in both sections simply doesn't animate.
+  // Fork/SourceTree-style "file flies to the other section" animation. A row that
+  // leaves one section (out:send|global) and re-appears in another (in:receive|global)
+  // with the SAME key flies between the two; animate:flip slides the rest. The
+  // directives are |global so the move still fires in tree view when a folder
+  // subtree unmounts (local transitions are suppressed by a parent unmount).
+  // The fallback (a send/receive with NO partner — view open/close, repo switch, a
+  // discarded file) is INSTANT (duration 0), so only genuine moves animate and
+  // nothing flickers/fades on mount or unmount.
   const [send, receive] = crossfade({
     duration: 220,
     easing: quintOut,
-    fallback: (node) => fade(node, { duration: 150 }),
+    fallback: () => ({ duration: 0 }),
   });
   const FLIP = { duration: 220, easing: quintOut };
 
@@ -236,8 +238,8 @@
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
-    in:receive={{ key: f.path }}
-    out:send={{ key: f.path }}
+    in:receive|global={{ key: f.path }}
+    out:send|global={{ key: f.path }}
     onmousedown={() => selectFile(f.path)}
     oncontextmenu={(e) => onRowContext(e, f, "staged")}
     onkeydown={(e) => {
@@ -256,8 +258,8 @@
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
-    in:receive={{ key: f.path }}
-    out:send={{ key: f.path }}
+    in:receive|global={{ key: f.path }}
+    out:send|global={{ key: f.path }}
     onmousedown={() => selectFile(f.path)}
     oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
     onkeydown={(e) => {
@@ -276,8 +278,8 @@
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
-    in:receive={{ key: f.path }}
-    out:send={{ key: f.path }}
+    in:receive|global={{ key: f.path }}
+    out:send|global={{ key: f.path }}
     onmousedown={() => selectFile(f.path)}
     oncontextmenu={(e) => onRowContext(e, f, "untracked")}
     onkeydown={(e) => {
@@ -336,7 +338,7 @@
         </header>
         {#if appState.fileTreeView}
           <ul class="file-list">
-            <FileTree nodes={buildFileTree(stagedFiles, (f) => f.path)} fileRow={stagedRow} />
+            <FileTree nodes={buildFileTree(stagedFiles, (f) => f.path)} fileRow={stagedRow} animate />
           </ul>
         {:else}
           <ul class="file-list">
@@ -346,8 +348,8 @@
                 class:selected={selectedFile === f.path}
                 role="row"
                 tabindex="0"
-                in:receive={{ key: f.path }}
-                out:send={{ key: f.path }}
+                in:receive|global={{ key: f.path }}
+                out:send|global={{ key: f.path }}
                 animate:flip={FLIP}
                 onmousedown={() => selectFile(f.path)}
                 oncontextmenu={(e) => onRowContext(e, f, "staged")}
@@ -386,7 +388,7 @@
         </header>
         {#if appState.fileTreeView}
           <ul class="file-list">
-            <FileTree nodes={buildFileTree(unstagedDisplay, (f) => f.path)} fileRow={unstagedRow} />
+            <FileTree nodes={buildFileTree(unstagedDisplay, (f) => f.path)} fileRow={unstagedRow} animate />
           </ul>
         {:else}
           <ul class="file-list">
@@ -396,8 +398,8 @@
                 class:selected={selectedFile === f.path}
                 role="row"
                 tabindex="0"
-                in:receive={{ key: f.path }}
-                out:send={{ key: f.path }}
+                in:receive|global={{ key: f.path }}
+                out:send|global={{ key: f.path }}
                 animate:flip={FLIP}
                 onmousedown={() => selectFile(f.path)}
                 oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
@@ -431,7 +433,7 @@
           </header>
           {#if appState.fileTreeView}
             <ul class="file-list">
-              <FileTree nodes={buildFileTree(untrackedFiles, (f) => f.path)} fileRow={untrackedRow} />
+              <FileTree nodes={buildFileTree(untrackedFiles, (f) => f.path)} fileRow={untrackedRow} animate />
             </ul>
           {:else}
             <ul class="file-list">
@@ -441,8 +443,8 @@
                   class:selected={selectedFile === f.path}
                   role="row"
                   tabindex="0"
-                  in:receive={{ key: f.path }}
-                  out:send={{ key: f.path }}
+                  in:receive|global={{ key: f.path }}
+                  out:send|global={{ key: f.path }}
                   animate:flip={FLIP}
                   onmousedown={() => selectFile(f.path)}
                   oncontextmenu={(e) => onRowContext(e, f, "untracked")}

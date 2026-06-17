@@ -8,10 +8,19 @@
     // fill: the panel grows to fill its flex parent and its body scrolls (used by
     // the commits graph so it occupies the full timeline height). Ignored when collapsed.
     fill?: boolean;
+    // height: a FIXED pixel height for the (expanded) panel; the body becomes the
+    // scrolling region. Used by the slide-up commit-details pane so its height stays
+    // stable while the diff loads async — otherwise content-driven height shrinks then
+    // grows (jitter on open / jump on commit-switch). Ignored when collapsed (→ auto,
+    // so a collapsed panel is just its header with no dead space).
+    height?: number;
     headerActions?: Snippet;
     children: Snippet;
   };
-  let { title, collapsed = $bindable(false), bare = false, fill = false, headerActions, children }: Props = $props();
+  let { title, collapsed = $bindable(false), bare = false, fill = false, height, headerActions, children }: Props = $props();
+
+  // Apply the fixed height only when expanded (collapsed → auto-height header only).
+  const sized = $derived(height != null && !collapsed);
 
   function toggle() {
     collapsed = !collapsed;
@@ -21,7 +30,13 @@
 {#if bare}
   <div class="cp-bare">{@render children()}</div>
 {:else}
-  <section class="panel" class:collapsed class:fill={fill && !collapsed}>
+  <section
+    class="panel"
+    class:collapsed
+    class:fill={fill && !collapsed}
+    class:sized
+    style={sized ? `height:${height}px` : undefined}
+  >
     <header class="panel-header">
       <button type="button" class="toggle" onclick={toggle} aria-expanded={!collapsed}>
         <span class="chevron" class:open={!collapsed} aria-hidden="true">▶</span>
@@ -113,6 +128,20 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  /* sized mode: a FIXED-height panel (height set inline) whose body is the scroll
+     region. Keeps the slide-up details pane a stable height while its diff loads.
+     flex:none so a flex parent can't shrink the explicit height away (e.g. next to
+     the graph's flex:1, which would otherwise starve it to ~0). */
+  .panel.sized {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel.sized .body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
   }
   .cp-bare {
     padding: 2px 0;

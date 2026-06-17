@@ -1,5 +1,8 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { onMount } from "svelte";
+  import { slide } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
   import type { FileTreeNode } from "../fileTree";
 
   // Presentational folder tree. Folders are collapsible <button>s; each file leaf is
@@ -9,10 +12,30 @@
   let {
     nodes,
     fileRow,
+    // animate: slide folders in/out as they appear/empty (Fork-style), so a folder
+    // doesn't hard-pop when its last file is staged away. Opt-in — the commit file
+    // list leaves it off so switching commits doesn't churn the whole tree.
+    animate = false,
   }: {
     nodes: FileTreeNode<any>[];
     fileRow: Snippet<[any, number]>; // (item, indentPx) → renders one file leaf
+    animate?: boolean;
   } = $props();
+
+  // Suppress the folder INTRO on the very first render (opening the view / first data)
+  // so the whole tree doesn't slide in at once — only folders that appear LATER (a
+  // stage/unstage move) slide. Matches how the file rows appear instantly on load and
+  // only fly on a genuine move. The out-transition is never gated (removal only fires
+  // post-mount), so an emptied folder always collapses smoothly.
+  let mounted = $state(false);
+  onMount(() => {
+    mounted = true;
+  });
+  // A folder's slide height-animation also reflows the rows below it, so siblings glide
+  // up/down to follow — no animate:flip needed (and flip isn't usable here: the button
+  // lives inside an {#if}, not as the each block's immediate child).
+  const inDur = $derived(animate && mounted ? 200 : 0);
+  const outDur = $derived(animate ? 200 : 0);
 
   // Collapsed folder paths (in-memory; folders default expanded).
   let collapsed = $state<Set<string>>(new Set());
@@ -32,6 +55,8 @@
         type="button"
         class="folder"
         style={`padding-left:${indent(depth)}px`}
+        in:slide={{ duration: inDur, easing: quintOut }}
+        out:slide={{ duration: outDur, easing: quintOut }}
         onclick={() => toggle(node.path)}
         aria-expanded={!collapsed.has(node.path)}
         title={node.path}
