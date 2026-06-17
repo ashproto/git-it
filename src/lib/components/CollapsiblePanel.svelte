@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { slide } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
 
   type Props = {
     title: string;
@@ -21,6 +23,12 @@
 
   // Apply the fixed height only when expanded (collapsed → auto-height header only).
   const sized = $derived(height != null && !collapsed);
+
+  // Animate the open/close ONLY for normal content panels. A fill/sized panel has a
+  // flex:1 body whose height the (WAAPI, height-captured-once) slide can't measure
+  // correctly — and the graph's fill body drives a ResizeObserver virtualization that
+  // would thrash every frame of the animation — so those collapse instantly instead.
+  const animateBody = $derived(!fill && height == null);
 
   function toggle() {
     collapsed = !collapsed;
@@ -47,7 +55,13 @@
       {/if}
     </header>
     {#if !collapsed}
-      <div class="body">{@render children()}</div>
+      <!-- Slide the body open/closed on toggle. Local transition: it plays when the
+           chevron toggles `collapsed` (the panel stays mounted), but is suppressed when
+           the whole panel unmounts (e.g. a view switch) so nothing lingers. Instant
+           (duration 0) for fill/sized panels — see animateBody above. -->
+      <div class="body" transition:slide={{ duration: animateBody ? 200 : 0, easing: quintOut }}>
+        {@render children()}
+      </div>
     {/if}
   </section>
 {/if}

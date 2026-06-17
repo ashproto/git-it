@@ -13,6 +13,10 @@
   import RefIcon from "./RefIcon.svelte";
   import { LANE_WIDTH, OFFSET_X, commitWindow, laneX, type GeomConfig } from "../graph";
 
+  // Collapsed state is lifted to the parent (+page) so the slide-up details pane can
+  // grow to fill the freed space when the graph is collapsed.
+  let { collapsed = $bindable(false) }: { collapsed?: boolean } = $props();
+
   const rowHeight = 30;
   // Overscan rows above/below the viewport so fast scrolling never reveals a gap.
   const BUFFER = 8;
@@ -363,7 +367,7 @@
   }
 </script>
 
-<CollapsiblePanel title="Commits" fill>
+<CollapsiblePanel title="Commits" fill bind:collapsed>
   {#snippet headerActions()}
     <span class="count">{appState.selected.size} selected of {commits.length}</span>
     <button type="button" onclick={selectAll}>Select all</button>

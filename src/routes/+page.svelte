@@ -116,6 +116,30 @@
     appState.openRepo(p);
   }
 
+  // Collapse state of the two timeline panels, lifted here so the layout can give the
+  // freed space to whichever panel is still open: collapsing the graph lets the details
+  // pane fill (it otherwise stays stuck at detailsHeight), and collapsing the details
+  // pane lets the graph fill (already handled by the graph's flex:1).
+  let graphCollapsed = $state(false);
+  let detailsCollapsed = $state(false);
+  // When the graph is collapsed and the details are open, the details pane grows to fill
+  // (and CommitDetail switches from a fixed height to fill mode); the boundary drag is
+  // hidden then since there's no fixed height to drag.
+  const detailsFills = $derived(graphCollapsed && !detailsCollapsed);
+
+  // Selecting a NEW commit re-expands the details pane, so a stale collapse from a prior
+  // commit never hides the details the user just asked to see. (Graph collapse is a
+  // deliberate layout choice and is intentionally NOT reset here.) prevDetailsSha is a
+  // plain non-reactive cursor of the last focused sha.
+  let prevDetailsSha: string | null = null;
+  $effect(() => {
+    const sha = appState.currentSha;
+    if (sha !== prevDetailsSha) {
+      prevDetailsSha = sha;
+      if (sha) detailsCollapsed = false;
+    }
+  });
+
   // ── Commit-details panel resize (drag the boundary between the graph and the
   // slide-up details panel). Dragging UP grows the details panel (graph shrinks).
   // Keep at least this much height for the graph so dragging the details pane tall
@@ -333,7 +357,7 @@
                  from the changes screen. display:contents → no layout box when shown. -->
             <div class="timeline-stack" class:hidden={appState.activeView === "changes"}>
               <UndoBar />
-              <GraphHistory />
+              <GraphHistory bind:collapsed={graphCollapsed} />
             </div>
             <ConflictView />
             {#if appState.activeView === "changes"}
@@ -346,18 +370,24 @@
                    the pane no longer shrinks-then-grows (jitter on open / jump on
                    commit-switch). Collapsing the panel drops it to auto (header only),
                    so a collapsed panel has no dead space. -->
-              <div class="details-pane" transition:slide={{ duration: 200 }}>
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div
-                  class="details-resize"
-                  role="separator"
-                  aria-orientation="horizontal"
-                  aria-label="Resize commit details"
-                  title="Drag to resize · double-click to reset"
-                  onpointerdown={startDetailsResize}
-                  ondblclick={() => appState.setDetailsHeight(320)}
-                ></div>
-                <CommitDetail height={appState.detailsHeight} />
+              <div class="details-pane" class:fill-details={detailsFills} transition:slide={{ duration: 200 }}>
+                {#if !detailsFills}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="details-resize"
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Resize commit details"
+                    title="Drag to resize · double-click to reset"
+                    onpointerdown={startDetailsResize}
+                    ondblclick={() => appState.setDetailsHeight(320)}
+                  ></div>
+                {/if}
+                <CommitDetail
+                  bind:collapsed={detailsCollapsed}
+                  fill={detailsFills}
+                  height={detailsFills ? undefined : appState.detailsHeight}
+                />
               </div>
             {/if}
             {#if appState.showOutput}
@@ -801,6 +831,11 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  /* When the graph is collapsed, the details pane grows to fill the freed space
+     (CommitDetail switches to fill mode so its body scrolls). */
+  .details-pane.fill-details {
+    flex: 1 1 auto;
   }
   /* Horizontal drag bar on the graph↔details boundary; mirrors the sidebar handle. */
   .details-resize {

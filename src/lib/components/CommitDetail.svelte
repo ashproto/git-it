@@ -13,9 +13,16 @@
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   }
 
-  // Optional fixed height for the underlying panel (set by the slide-up details pane
-  // so its height stays stable while the diff loads; the body scrolls inside).
-  let { height }: { height?: number } = $props();
+  // Layout props forwarded to the underlying CollapsiblePanel:
+  // - height: fixed pixel height (stable while the diff loads) when the graph is expanded.
+  // - fill: grow to fill instead (used when the graph is collapsed so the details pane
+  //   takes the freed space).
+  // - collapsed: bindable so the parent (+page) knows whether the details are collapsed.
+  let {
+    height,
+    fill = false,
+    collapsed = $bindable(false),
+  }: { height?: number; fill?: boolean; collapsed?: boolean } = $props();
 
   const c = $derived(appState.selectedCommit);
 
@@ -86,7 +93,7 @@
   });
 </script>
 
-<CollapsiblePanel title={editing ? "Edit commit(s)" : "Commit"} {height}>
+<CollapsiblePanel title={editing ? "Edit commit(s)" : "Commit"} {height} {fill} bind:collapsed>
   {#snippet headerActions()}
     {#if c}
       <button
