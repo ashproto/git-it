@@ -30,6 +30,7 @@
   import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
   import { onMount } from "svelte";
+  import { slide } from "svelte/transition";
   import { appState } from "$lib/store.svelte";
   import { SAMPLE_GRAPH } from "$lib/graph/sample";
 
@@ -113,6 +114,25 @@
       return;
     }
     appState.openRepo(p);
+  }
+
+  // ── Commit-details panel resize (drag the boundary between the graph and the
+  // slide-up details panel). Dragging UP grows the details panel (graph shrinks).
+  function startDetailsResize(e: PointerEvent) {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = appState.detailsHeight;
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: PointerEvent) => appState.setDetailsHeight(startH + (startY - ev.clientY));
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   }
 
   onMount(() => {
@@ -308,8 +328,26 @@
             <ConflictView />
             {#if appState.activeView === "changes"}
               <WorkingCopyView />
-            {:else}
-              <CommitDetail />
+            {:else if appState.selectedCommit}
+              <!-- Commit details slide up below the (full-height) graph only when a
+                   commit is selected; drag the top edge to resize, collapse via the
+                   panel's own chevron. max-height caps it (it scrolls inside) so a
+                   collapsed panel shrinks to its header with no dead space. -->
+              <div class="details-pane" transition:slide={{ duration: 200 }}>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  class="details-resize"
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label="Resize commit details"
+                  title="Drag to resize · double-click to reset"
+                  onpointerdown={startDetailsResize}
+                  ondblclick={() => appState.setDetailsHeight(320)}
+                ></div>
+                <div class="details-scroll" style={`max-height:${appState.detailsHeight}px`}>
+                  <CommitDetail />
+                </div>
+              </div>
             {/if}
             {#if appState.showOutput}
               <LogPanel />
@@ -733,19 +771,49 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    /* Scroll the main column independently of the sidebar (x stays clipped; wide
-       children like the graph/diff scroll horizontally inside their own boxes). */
-    overflow: hidden auto;
+    /* The graph panel (CollapsiblePanel fill) grows to occupy the timeline height;
+       the slide-up details pane caps itself (max-height) and the Local Changes view
+       fills. Each region scrolls internally, so the column itself doesn't scroll
+       (overflow:hidden clips any overshoot on very short windows instead of adding a
+       second scrollbar). The narrow @media below restores page scrolling. */
+    overflow: hidden;
   }
-  /* In the commit timeline view the stacked panels (graph, commit details, edit
-     tools) must keep their natural height so the main column SCROLLS — otherwise
-     the flex children shrink and squish together when several are expanded. The
-     Local Changes view's .wc-view is excluded so it still flex-fills that screen.
-     .timeline-stack is display:contents, so its promoted children (UndoBar,
-     GraphHistory) are targeted explicitly. */
-  .main-col > :global(:not(.wc-view)),
-  .main-col > .timeline-stack > :global(*) {
-    flex-shrink: 0;
+
+  /* Slide-up commit-details pane (timeline view): a non-growing column holding the
+     drag handle + a max-height scroll area (set inline from appState.detailsHeight). */
+  .details-pane {
+    flex: 0 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .details-scroll {
+    min-height: 0;
+    overflow: auto;
+  }
+  /* Horizontal drag bar on the graph↔details boundary; mirrors the sidebar handle. */
+  .details-resize {
+    flex: 0 0 10px;
+    height: 10px;
+    margin: -6px 0 -2px;
+    cursor: ns-resize;
+    position: relative;
+    touch-action: none;
+  }
+  .details-resize::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: var(--border);
+    transform: translateY(-50%);
+    transition: background 0.1s, height 0.1s;
+  }
+  .details-resize:hover::before {
+    background: var(--accent);
+    height: 2px;
   }
   @media (max-width: 900px) {
     .shell {

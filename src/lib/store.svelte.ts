@@ -315,6 +315,27 @@ function loadSyncCommitsHeight(): number {
   }
 }
 
+// detailsHeight: localStorage-only. The commit-details panel slides up below the
+// (now full-height) graph; this is the max height it occupies (it scrolls inside,
+// and shrinks to its header when collapsed). DEFAULT 320px.
+const DETAILS_HEIGHT_KEY = "gitit.detailsHeight.v1";
+const DETAILS_HEIGHT_MIN = 140;
+const DETAILS_HEIGHT_MAX = 1200;
+const DETAILS_HEIGHT_DEFAULT = 320;
+function clampDetailsHeight(n: number): number {
+  if (!Number.isFinite(n) || n <= 0) return DETAILS_HEIGHT_DEFAULT;
+  return Math.min(DETAILS_HEIGHT_MAX, Math.max(DETAILS_HEIGHT_MIN, Math.round(n)));
+}
+function loadSyncDetailsHeight(): number {
+  try {
+    if (typeof localStorage === "undefined") return DETAILS_HEIGHT_DEFAULT;
+    const raw = localStorage.getItem(DETAILS_HEIGHT_KEY);
+    return raw === null ? DETAILS_HEIGHT_DEFAULT : clampDetailsHeight(Number(raw));
+  } catch {
+    return DETAILS_HEIGHT_DEFAULT;
+  }
+}
+
 // commitColWidths: localStorage-only fixed-width pixel sizes for the three resizable
 // commit-list columns (author/date/sha). The Description column stays flex:1 and
 // absorbs the remainder, so it is not stored here. Each value clamps to [60,420].
@@ -826,6 +847,15 @@ function makeState() {
         localStorage.setItem(COMMITS_HEIGHT_KEY, String(commitsHeight));
     } catch (e) {
       console.warn("[gte] could not persist commitsHeight", e);
+    }
+  }
+  let detailsHeight = $state<number>(loadSyncDetailsHeight());
+  function persistDetailsHeight() {
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(DETAILS_HEIGHT_KEY, String(detailsHeight));
+    } catch (e) {
+      console.warn("[gte] could not persist detailsHeight", e);
     }
   }
   let graphWidth = $state<number>(loadSyncGraphWidth());
@@ -1404,6 +1434,14 @@ function makeState() {
     setCommitsHeight(v: number) {
       commitsHeight = clampCommitsHeight(v);
       persistCommitsHeight();
+    },
+    // detailsHeight: max height of the slide-up commit-details panel (px).
+    get detailsHeight() {
+      return detailsHeight;
+    },
+    setDetailsHeight(v: number) {
+      detailsHeight = clampDetailsHeight(v);
+      persistDetailsHeight();
     },
     // graphWidth: 0 ⇒ auto (lane-derived gutter); >0 ⇒ explicit minimum graph width.
     get graphWidth() {

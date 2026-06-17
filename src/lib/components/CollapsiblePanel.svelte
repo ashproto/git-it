@@ -5,10 +5,13 @@
     title: string;
     collapsed?: boolean;
     bare?: boolean;
+    // fill: the panel grows to fill its flex parent and its body scrolls (used by
+    // the commits graph so it occupies the full timeline height). Ignored when collapsed.
+    fill?: boolean;
     headerActions?: Snippet;
     children: Snippet;
   };
-  let { title, collapsed = $bindable(false), bare = false, headerActions, children }: Props = $props();
+  let { title, collapsed = $bindable(false), bare = false, fill = false, headerActions, children }: Props = $props();
 
   function toggle() {
     collapsed = !collapsed;
@@ -18,7 +21,7 @@
 {#if bare}
   <div class="cp-bare">{@render children()}</div>
 {:else}
-  <section class="panel" class:collapsed>
+  <section class="panel" class:collapsed class:fill={fill && !collapsed}>
     <header class="panel-header">
       <button type="button" class="toggle" onclick={toggle} aria-expanded={!collapsed}>
         <span class="chevron" class:open={!collapsed} aria-hidden="true">▶</span>
@@ -96,6 +99,20 @@
   }
   .body {
     padding: 10px 14px 14px 14px;
+  }
+  /* fill mode: the panel grows to fill its flex parent and the body becomes the
+     flex region whose child (e.g. the graph .wrap) scrolls. */
+  .panel.fill {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel.fill .body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
   .cp-bare {
     padding: 2px 0;

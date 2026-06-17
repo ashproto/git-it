@@ -162,30 +162,6 @@
   }
   const COL_DEFAULTS = { author: 110, date: 168, sha: 84 } as const;
 
-  // ── G4: vertical resize of the commits area ─────────────────────────────────
-  function startCommitsResize(e: PointerEvent) {
-    e.preventDefault();
-    const startY = e.clientY;
-    // Continue from the rendered size when the height is still "unset" (0), so the
-    // first drag doesn't jump to the clamp default.
-    const startH =
-      appState.commitsHeight > 0
-        ? appState.commitsHeight
-        : (wrapEl?.clientHeight ?? rowHeight * 10);
-    document.body.style.cursor = "ns-resize";
-    document.body.style.userSelect = "none";
-    const onMove = (ev: PointerEvent) =>
-      appState.setCommitsHeight(startH + (ev.clientY - startY));
-    const onUp = () => {
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }
-
   function localDate(iso: string): string {
     const d = parseISO(iso);
     return d ? formatCommitDate(d, appState.dateFormat, appState.relativeDates) : iso;
@@ -387,7 +363,7 @@
   }
 </script>
 
-<CollapsiblePanel title="Commits">
+<CollapsiblePanel title="Commits" fill>
   {#snippet headerActions()}
     <span class="count">{appState.selected.size} selected of {commits.length}</span>
     <button type="button" onclick={selectAll}>Select all</button>
@@ -398,9 +374,7 @@
     class="wrap"
     bind:this={wrapEl}
     onscroll={onWrapScroll}
-    style={appState.commitsHeight > 0
-      ? `${colVars}; height:${appState.commitsHeight}px; max-height:none`
-      : colVars}
+    style={colVars}
   >
     <div class="head-row" bind:this={headEl} style={`padding-left:${gutterWidth}px`}>
       <span class="h subject"
@@ -562,21 +536,6 @@
   <p class="hint">Click to select · ⌘-click to add/remove · Shift-click to select range</p>
 </CollapsiblePanel>
 
-<!-- G4: drag-divider in the gap BETWEEN the commits panel and the details panel.
-     Rendered outside the panel — .timeline-stack is display:contents, so this is
-     a main-col flex item sitting on the boundary the user drags to reallocate
-     vertical space between the two panels. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-  class="v-resize-handle"
-  role="separator"
-  aria-orientation="horizontal"
-  aria-label="Resize commits area"
-  title="Drag to resize commits · double-click to reset"
-  onpointerdown={startCommitsResize}
-  ondblclick={() => appState.setCommitsHeight(0)}
-></div>
-
 <style>
   .count {
     color: var(--text-muted);
@@ -598,9 +557,20 @@
     border-radius: 6px;
     border: 1px solid var(--border);
     overflow: auto;
-    max-height: clamp(360px, 58vh, 900px);
+    /* Fill the (fill-mode) panel body so the graph occupies the full timeline
+       height; the commit list scrolls inside. min-height:0 lets it shrink. */
+    flex: 1;
+    min-height: 0;
     user-select: none;
     -webkit-user-select: none;
+  }
+  /* Narrow/stacked layout (≤900px): the shell reverts to content height, so the
+     graph has no definite parent height to fill — give it a floor so it stays
+     visible and the page scrolls, instead of collapsing toward its min-content. */
+  @media (max-width: 900px) {
+    .wrap {
+      min-height: 360px;
+    }
   }
   .head-row {
     display: flex;
@@ -797,34 +767,7 @@
     margin: 6px 0 0 0;
     font-size: 11px;
     color: var(--text-muted);
-  }
-  /* G4: horizontal drag bar below the scroll container to resize the commits area.
-     Mirrors the sidebar resize-handle's centred-gutter visual, rotated 90°. */
-  .v-resize-handle {
-    flex: 0 0 12px;
-    align-self: stretch;
-    height: 12px;
-    /* Tuck into the surrounding main-col gap so the divider doesn't add a big
-       dead band between the commits and details panels. */
-    margin: -6px 0;
-    cursor: ns-resize;
-    position: relative;
-    touch-action: none;
-  }
-  .v-resize-handle::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 1px;
-    background: var(--border);
-    transform: translateY(-50%);
-    transition: background 0.1s, height 0.1s;
-  }
-  .v-resize-handle:hover::before {
-    background: var(--accent);
-    height: 2px;
+    flex: 0 0 auto;
   }
 
   /* ── Synthetic "Uncommitted changes" row ──────────────────────────────────── */
