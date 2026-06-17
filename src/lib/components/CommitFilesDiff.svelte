@@ -180,17 +180,19 @@
     font-size: 11px;
     font-weight: 700;
   }
+  /* Match the Local Changes scheme: add = green, modify = yellow, remove = red.
+     A rename is a change to an existing file → yellow (modify). */
   .status.added {
-    color: #3fb950;
+    color: var(--status-add, #2da44e);
   }
   .status.modified {
-    color: var(--accent);
+    color: var(--status-mod, #bf8700);
   }
   .status.deleted {
-    color: var(--danger);
+    color: var(--status-del, #cf222e);
   }
   .status.renamed {
-    color: #a371f7;
+    color: var(--status-mod, #bf8700);
   }
   .fname {
     flex-shrink: 0;

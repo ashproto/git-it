@@ -181,4 +181,14 @@ export const api = {
     });
   },
   cancelRemote: () => invoke<void>("cancel_remote", {}),
+
+  // ── Filesystem watcher (live Local Changes) ────────────────────────────────
+  // Start watching `repo`'s worktree; `onChange` fires (debounced in Rust) when a
+  // non-.git path changes. Replaces any existing watcher.
+  startWatch: (repo: string, onChange: () => void) => {
+    const channel = new Channel<string>();
+    channel.onmessage = () => onChange();
+    return invoke<void>("start_watch", { repo, onChange: channel });
+  },
+  stopWatch: () => invoke<void>("stop_watch", {}),
 };

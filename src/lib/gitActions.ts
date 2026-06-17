@@ -4,7 +4,7 @@
 import { appState } from "./store.svelte";
 import { api } from "./api";
 import { SAMPLE_GRAPH } from "./graph/sample";
-import type { GraphCommit, OpOutcome, RemoteOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot } from "./types";
+import type { GraphCommit, OpOutcome, RemoteOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot, WorkingFile } from "./types";
 import { dialogs } from "./dialogs.svelte";
 import { graphView } from "./graphView.svelte";
 
@@ -46,6 +46,81 @@ export async function refreshRefs(): Promise<void> {
   } catch (e) {
     console.warn("[gte] refs/remotes refresh failed", e);
   }
+}
+
+// ── Live working-copy watching (filesystem watcher + focus refresh) ───────────
+// Keeps the Local Changes list current as files change on disk, instead of only
+// after explicit git ops. The Rust watcher pushes a debounced "changed" event;
+// onFsChange then refreshes the working copy + status (a real change re-fetches
+// the selected file's diff too, which is correct). A tiny extra debounce batches
+// back-to-back events into a single refresh.
+// Coalesced + change-guarded refresh of the working copy + status. Shared by the
+// filesystem watcher and the focus/visibility refresh. The equality guard is
+// essential: the watcher fires on ANY worktree write — including churn in ignored
+// dirs (node_modules/, target/, editor temp files) that `git status` filters out
+// — so we only REPLACE workingChanges (which bumps workingChangesRev and re-fetches
+// the open diff) when the file list ACTUALLY changed; otherwise the diff pane would
+// flash on every tick. Explicit ops keep using refreshWorkingChanges() directly,
+// which always bumps the rev — hunk/line staging deliberately relies on that.
+function sameWorkingChanges(a: WorkingFile[], b: WorkingFile[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.path !== y.path ||
+      x.status !== y.status ||
+      x.staged !== y.staged ||
+      x.unstaged !== y.unstaged ||
+      x.untracked !== y.untracked ||
+      x.conflicted !== y.conflicted
+    )
+      return false;
+  }
+  return true;
+}
+
+let localRefreshDebounce: ReturnType<typeof setTimeout> | null = null;
+function scheduleLocalRefresh(): void {
+  if (localRefreshDebounce) clearTimeout(localRefreshDebounce);
+  localRefreshDebounce = setTimeout(async () => {
+    localRefreshDebounce = null;
+    if (!isTauri() || !appState.repo) return;
+    try {
+      const next = await api.workingChanges(appState.repo);
+      if (!sameWorkingChanges(appState.workingChanges, next)) appState.setWorkingChanges(next);
+    } catch (e) {
+      console.warn("[gte] local refresh failed", e);
+    }
+    void refreshStatus();
+  }, 80);
+}
+
+// Start (or restart) the filesystem watcher for the current repo. Safe to call
+// repeatedly — the backend replaces any existing watcher.
+export async function startWatchingRepo(): Promise<void> {
+  if (!isTauri() || !appState.repo) return;
+  try {
+    await api.startWatch(appState.repo, scheduleLocalRefresh);
+  } catch (e) {
+    console.warn("[gte] start watch failed", e);
+  }
+}
+
+export async function stopWatchingRepo(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await api.stopWatch();
+  } catch (e) {
+    console.warn("[gte] stop watch failed", e);
+  }
+}
+
+// Focus/visibility refresh (the user may have edited files in another app). Routes
+// through the shared debounced path, so a window re-activation that fires BOTH the
+// focus and visibilitychange events still refreshes once, and uses the same guard.
+export function refreshLocalChanges(): void {
+  scheduleLocalRefresh();
 }
 
 export async function reloadGraph(): Promise<void> {

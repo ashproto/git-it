@@ -87,15 +87,14 @@ const RELDATES_STORE_KEY = "relativeDates";
 const PULLREBASE_KEY = "gitit.pullRebase.v1";
 const PULLREBASE_STORE_KEY = "pullRebase";
 
-const AUTOSHOWEDIT_KEY = "gitit.autoShowEditTools.v1";
-const AUTOSHOWEDIT_STORE_KEY = "autoShowEditTools";
-
 const BRANCHCOLORS_KEY = "gitit.branchColors.v1";
 const BRANCHCOLORS_STORE_KEY = "branchColors";
 
 const OPENREPOS_KEY = "gitit.openRepos.v1";       const OPENREPOS_STORE_KEY = "openRepos";
 const RECENTREPOS_KEY = "gitit.recentRepos.v1";   const RECENTREPOS_STORE_KEY = "recentRepos";
 const REPOMODE_KEY = "gitit.repoSwitcherMode.v1"; const REPOMODE_STORE_KEY = "repoSwitcherMode";
+// The repo that was active at last quit — restored on the next launch.
+const LASTREPO_KEY = "gitit.lastActiveRepo.v1"; const LASTREPO_STORE_KEY = "lastActiveRepo";
 const RECENT_CAP = 12;
 
 // Parse a JSON string[] from localStorage; returns [] on any error or in Tauri
@@ -110,6 +109,35 @@ function loadSyncStringList(lsKey: string): string[] {
     return Array.isArray(parsed) ? (parsed as string[]) : [];
   } catch {
     return [];
+  }
+}
+
+// Sync best-guess for a single persisted string (non-Tauri); "" outside browser.
+function loadSyncString(lsKey: string): string {
+  if (isTauri()) return "";
+  try {
+    if (typeof localStorage === "undefined") return "";
+    return localStorage.getItem(lsKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+// Write-through persist for the last-active-repo path (Tauri store + localStorage
+// fallback), mirroring persistStringList. Fire-and-forget with an explicit save().
+function persistLastActiveRepo(value: string) {
+  const sp = getStore();
+  if (sp) {
+    sp.then(async (store) => {
+      await store.set(LASTREPO_STORE_KEY, value);
+      await store.save();
+    }).catch((e) => console.warn("[gte] could not persist lastActiveRepo", e));
+    return;
+  }
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(LASTREPO_KEY, value);
+  } catch (e) {
+    console.warn("[gte] could not persist lastActiveRepo", e);
   }
 }
 
@@ -210,17 +238,6 @@ function loadSyncPullRebase(): boolean {
   try {
     if (typeof localStorage === "undefined") return false;
     const raw = localStorage.getItem(PULLREBASE_KEY);
-    return raw === "true";
-  } catch {
-    return false;
-  }
-}
-
-function loadSyncAutoShowEditTools(): boolean {
-  if (isTauri()) return false;
-  try {
-    if (typeof localStorage === "undefined") return false;
-    const raw = localStorage.getItem(AUTOSHOWEDIT_KEY);
     return raw === "true";
   } catch {
     return false;
@@ -936,42 +953,6 @@ function makeState() {
     }
   }
 
-  // ── autoShowEditTools persisted setting ───────────────────────────────────
-  // When true, the inline "Edit commit(s)" tools show below the commit details
-  // (and the standalone button/menu-item are hidden). Mirrors the diffSplit
-  // pattern exactly; defaults to false.
-  let autoShowEditTools = $state<boolean>(loadSyncAutoShowEditTools());
-  let autoShowEditToolsTouched = false;
-
-  const aseHydrate = getStore();
-  if (aseHydrate) {
-    aseHydrate
-      .then((store) => store.get<boolean>(AUTOSHOWEDIT_STORE_KEY))
-      .then((saved) => {
-        if (saved !== null && saved !== undefined && !autoShowEditToolsTouched) {
-          autoShowEditTools = !!saved;
-        }
-      })
-      .catch((e) => console.warn("[gte] could not load autoShowEditTools setting", e));
-  }
-
-  function persistAutoShowEditTools() {
-    const snapshot = autoShowEditTools;
-    const sp = getStore();
-    if (sp) {
-      sp.then(async (store) => {
-        await store.set(AUTOSHOWEDIT_STORE_KEY, snapshot);
-        await store.save();
-      }).catch((e) => console.warn("[gte] could not persist autoShowEditTools setting", e));
-      return;
-    }
-    try {
-      if (typeof localStorage !== "undefined")
-        localStorage.setItem(AUTOSHOWEDIT_KEY, String(snapshot));
-    } catch (e) {
-      console.warn("[gte] could not persist autoShowEditTools setting", e);
-    }
-  }
 
   // ── Multi-repo state (Redesign R1) ───────────────────────────────────────
   // openRepos: the set of repos the user has open (tab strip / sidebar list).
@@ -986,6 +967,9 @@ function makeState() {
   let openReposTouched = false;
   let recentReposTouched = false;
   let repoSwitcherModeTouched = false;
+  // The repo active at last quit — persisted on every switch, restored on launch.
+  let lastActiveRepo = $state<string>(loadSyncString(LASTREPO_KEY));
+  let lastActiveRepoTouched = false;
 
   const orHydrate = getStore();
   if (orHydrate) {
@@ -1005,6 +989,16 @@ function makeState() {
         if (Array.isArray(saved) && !recentReposTouched) recentRepos = saved as string[];
       })
       .catch((e) => console.warn("[gte] could not load recentRepos", e));
+  }
+
+  const larHydrate = getStore();
+  if (larHydrate) {
+    larHydrate
+      .then((store) => store.get<string>(LASTREPO_STORE_KEY))
+      .then((saved) => {
+        if (typeof saved === "string" && saved && !lastActiveRepoTouched) lastActiveRepo = saved;
+      })
+      .catch((e) => console.warn("[gte] could not load lastActiveRepo", e));
   }
 
   const rmHydrate = getStore();
@@ -1121,6 +1115,15 @@ function makeState() {
         // the new repo's data. Clearing them here flashed the header branch chip,
         // sidebar and status bar empty mid-switch (the reported flicker). A
         // stale-load guard in reloadGraph() prevents cross-repo contamination.
+
+        // Remember the active repo so the next launch can restore it. Only record
+        // a real repo (not on close, v=""), so closing everything leaves the last
+        // real repo saved — restore is gated on it still being a valid git repo.
+        if (v) {
+          lastActiveRepo = v;
+          lastActiveRepoTouched = true;
+          persistLastActiveRepo(v);
+        }
       }
       repo = v;
     },
@@ -1504,15 +1507,6 @@ function makeState() {
       pullRebase = v;
       persistPullRebase();
     },
-    // ── autoShowEditTools persisted setting ───────────────────────────────────
-    get autoShowEditTools() {
-      return autoShowEditTools;
-    },
-    setAutoShowEditTools(v: boolean) {
-      autoShowEditToolsTouched = true;
-      autoShowEditTools = v;
-      persistAutoShowEditTools();
-    },
     // ── Remote detailed refs + remotes (Phase 6) ──────────────────────────────
     get refsDetailed() {
       return refsDetailed;
@@ -1592,6 +1586,12 @@ function makeState() {
     // Switch active to an already-open repo.
     setActiveRepo(path: string) {
       if (path && path !== repo) this.repo = path;
+    },
+
+    // The repo that was active at last quit (persisted) — used to restore it on
+    // launch. Empty on a first run / before the async store hydrate resolves.
+    get lastActiveRepo() {
+      return lastActiveRepo;
     },
 
     // Close a tab; if it was active, fall back to a neighbor (or empty).

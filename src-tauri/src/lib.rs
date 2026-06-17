@@ -1,4 +1,5 @@
 mod commands;
+mod fswatch;
 mod git_ops;
 mod graph;
 mod ops;
@@ -49,6 +50,9 @@ pub fn run() {
         // Manage Arc<RemoteState> so pull/push/cancel_remote commands can share it
         // across async spawn_blocking boundaries (State<'_> is not 'static).
         .manage(std::sync::Arc::new(ops_remote::RemoteState::default()))
+        // Manage the filesystem watcher so the active repo's worktree can be
+        // watched for live "Local Changes" updates (see fswatch.rs).
+        .manage(fswatch::WatchState::default())
         .invoke_handler(tauri::generate_handler![
             commands::check_prerequisites,
             commands::is_git_repo,
@@ -115,6 +119,8 @@ pub fn run() {
             commands::pull,
             commands::push,
             commands::cancel_remote,
+            fswatch::start_watch,
+            fswatch::stop_watch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

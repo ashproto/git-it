@@ -2,27 +2,53 @@
   import { appState } from "../store.svelte";
   import { gitActions } from "../gitActions";
 
-  let message = $state("");
+  // Commit message is composed of a single-line summary (subject) and an optional
+  // multi-line description (body), joined as `subject\n\nbody` on commit — the git
+  // convention. Splitting them into two fields mirrors Fork / SourceTree / GitHub.
+  let title = $state("");
+  let body = $state("");
 
   // ── Amend toggle (Fork-style) ───────────────────────────────────────────────
-  // When ON, the message box is prefilled with HEAD's full message for editing and
-  // the Commit button becomes "Amend" (folds the staged changes into HEAD via
-  // `git commit --amend`). Turning it OFF restores the user's previous draft.
+  // When ON, the fields are prefilled from HEAD's message (split into summary +
+  // description) for editing, and the Commit button becomes "Amend" (folds the
+  // staged changes into HEAD via `git commit --amend`). Turning it OFF restores
+  // the user's previous draft.
   let amend = $state(false);
-  let draft = $state(""); // the user's commit draft, saved while amending
+  let draftTitle = $state(""); // the user's draft, saved while amending
+  let draftBody = $state("");
 
   // HEAD commit (the one to amend). null in an empty repo → amend is disabled.
   const headCommit = $derived(
     appState.graphCommits.find((c) => c.refs.some((r) => r.is_head)) ?? null,
   );
 
-  // Prefill the message from a squash-merge suggestion exactly once (only when
-  // the user hasn't typed anything yet), then clear the suggestion so it won't
-  // re-seed on a subsequent open of the working-copy view.
+  // Split a full commit message into summary (first line) + description (the rest,
+  // with the conventional blank separator line trimmed). Joining is the inverse.
+  function splitMessage(full: string): { title: string; body: string } {
+    const nl = full.indexOf("\n");
+    if (nl === -1) return { title: full, body: "" };
+    return { title: full.slice(0, nl), body: full.slice(nl + 1).replace(/^\n+/, "") };
+  }
+  // Strip leading blank lines + trailing whitespace, but NOT leading spaces on the
+  // first content line — so an indented body (e.g. a pasted code block) round-trips
+  // through amend without losing its indentation. `\s`-only bodies normalize to "".
+  function normalizeBody(s: string): string {
+    return s.replace(/^\n+/, "").replace(/\s+$/, "");
+  }
+  function combinedMessage(): string {
+    const t = title.trim();
+    const b = normalizeBody(body);
+    return b ? `${t}\n\n${b}` : t;
+  }
+
+  // Prefill from a squash-merge suggestion exactly once (only when both fields are
+  // empty), then clear the suggestion so it won't re-seed on a later view open.
   $effect(() => {
     const s = appState.suggestedCommitMessage;
-    if (s && message.trim() === "") {
-      message = s;
+    if (s && title.trim() === "" && body.trim() === "") {
+      const parts = splitMessage(s);
+      title = parts.title;
+      body = parts.body;
       appState.clearSuggestedCommitMessage();
     }
   });
@@ -30,9 +56,9 @@
   // Count staged files reactively.
   const stagedCount = $derived(appState.workingChanges.filter((f) => f.staged).length);
   // Amend can edit just the message (no staged files required); a normal commit
-  // needs both a message and at least one staged file.
+  // needs both a summary and at least one staged file.
   const canCommit = $derived(
-    amend ? message.trim().length > 0 : message.trim().length > 0 && stagedCount > 0,
+    amend ? title.trim().length > 0 : title.trim().length > 0 && stagedCount > 0,
   );
 
   // ── Push-immediately toggle (SourceTree-style) ──────────────────────────────
@@ -51,40 +77,60 @@
     const token = ++amendToken;
     amend = on;
     if (on) {
-      draft = message;
+      draftTitle = title;
+      draftBody = body;
       const head = headCommit;
       try {
         const loaded = head ? await gitActions.getCommitMessage(head.sha) : "";
-        if (token === amendToken && amend) message = loaded;
+        if (token === amendToken && amend) {
+          const parts = splitMessage(loaded);
+          title = parts.title;
+          body = parts.body;
+        }
       } catch {
         // Couldn't read HEAD's message — back out of amend cleanly.
         if (token === amendToken) {
           amend = false;
-          message = draft;
-          draft = "";
+          title = draftTitle;
+          body = draftBody;
+          draftTitle = "";
+          draftBody = "";
         }
       }
     } else {
-      message = draft;
-      draft = "";
+      title = draftTitle;
+      body = draftBody;
+      draftTitle = "";
+      draftBody = "";
     }
   }
 
   async function doCommit() {
     if (!canCommit) return;
+    const msg = combinedMessage();
     const ok = amend
-      ? await gitActions.amendCommit(message.trim())
-      : await gitActions.commitChanges(message.trim());
+      ? await gitActions.amendCommit(msg)
+      : await gitActions.commitChanges(msg);
     // Only clear the composer on success — a failed commit keeps the typed message.
     if (!ok) return;
-    message = "";
+    title = "";
+    body = "";
     amend = false;
-    draft = "";
+    draftTitle = "";
+    draftBody = "";
     // "Push immediately": push the current branch after a successful commit/amend.
     // A normal push (no force); if it's an amend of an already-pushed commit the
     // push is rejected and reported, leaving the user to force-push deliberately.
     if (appState.pushAfterCommit && hasRemotes) {
       await gitActions.push();
+    }
+  }
+
+  // ⌘Enter / Ctrl+Enter commits from either field.
+  function onFieldKeydown(e: KeyboardEvent) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      doCommit();
     }
   }
 </script>
@@ -93,18 +139,19 @@
   <div class="staged-badge">
     {stagedCount} staged {stagedCount === 1 ? "file" : "files"}
   </div>
+  <input
+    class="title-box"
+    type="text"
+    placeholder="Summary (required)"
+    bind:value={title}
+    onkeydown={onFieldKeydown}
+  />
   <textarea
     class="msg-box"
-    placeholder="Commit message…"
-    bind:value={message}
+    placeholder="Description (optional)"
+    bind:value={body}
     rows={3}
-    onkeydown={(e) => {
-      // ⌘Enter / Ctrl+Enter to commit
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        doCommit();
-      }
-    }}
+    onkeydown={onFieldKeydown}
   ></textarea>
   <div class="actions">
     <label class="signoff-label" class:disabled={!headCommit}>
@@ -137,10 +184,10 @@
       onclick={doCommit}
       title={!canCommit
         ? amend
-          ? "Enter a commit message"
+          ? "Enter a summary"
           : stagedCount === 0
             ? "Stage at least one file first"
-            : "Enter a commit message"
+            : "Enter a summary"
         : amend
           ? pushAndEnabled
             ? "Amend the last commit and push (⌘↵)"
@@ -172,6 +219,28 @@
   .staged-badge {
     font-size: 11px;
     color: var(--text-muted);
+  }
+
+  .title-box {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .title-box:focus {
+    border-color: var(--accent);
+  }
+  .title-box::placeholder {
+    color: var(--text-muted);
+    font-weight: 400;
   }
 
   .msg-box {

@@ -5,12 +5,35 @@
   import CommitFilesDiff from "./CommitFilesDiff.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import RefIcon from "./RefIcon.svelte";
+  import CommitMessageEdit from "./CommitMessageEdit.svelte";
+  import EditTabs from "./EditTabs.svelte";
+  import ApplyPanel from "./ApplyPanel.svelte";
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   }
 
   const c = $derived(appState.selectedCommit);
+
+  // Edit mode: the panel flips between read-only details and the inline edit tools
+  // (message reword + date editing). The date editor (EditTabs) targets
+  // appState.selected, so this covers single- AND multi-commit edits. Exit edit
+  // mode whenever the focused commit changes (i.e. selecting another row).
+  let editing = $state(false);
+  const selCount = $derived(appState.selected.size);
+  // Exit edit mode when navigating to a DIFFERENT commit as a fresh single
+  // selection (a plain click). Growing a multi-selection (cmd/shift-click → size
+  // > 1) while editing stays in edit mode, so a set can be built up and edited
+  // together. prevSha is a plain (non-reactive) cursor of the last focused sha.
+  let prevSha: string | null = null;
+  $effect(() => {
+    const sha = appState.currentSha;
+    const multi = appState.selected.size > 1;
+    if (sha !== prevSha) {
+      prevSha = sha;
+      if (!multi) editing = false;
+    }
+  });
 
   function fmt(iso: string): string {
     const d = parseISO(iso);
@@ -59,8 +82,30 @@
   });
 </script>
 
-<CollapsiblePanel title="Commit">
+<CollapsiblePanel title={editing ? "Edit commit(s)" : "Commit"}>
+  {#snippet headerActions()}
+    {#if c}
+      <button
+        type="button"
+        class="edit-btn"
+        class:active={editing}
+        aria-pressed={editing}
+        onclick={() => (editing = !editing)}
+        title={editing ? "Back to commit details" : "Edit this commit's message and date"}
+      >{editing ? "Done" : selCount > 1 ? `Edit ${selCount} commits` : "Edit"}</button>
+    {/if}
+  {/snippet}
   {#if c}
+    {#if editing}
+      <!-- Inline edit tools (message reword + date editing). The date editor
+           targets appState.selected, so this edits the focused commit or all
+           currently-selected commits. -->
+      <div class="inline-edit">
+        <CommitMessageEdit />
+        <EditTabs bare />
+        <ApplyPanel bare />
+      </div>
+    {:else}
     <div class="hdr">
       <div class="avatar" aria-hidden="true">{initials(c.author_name)}</div>
       <div class="ttl">
@@ -107,6 +152,7 @@
         <CommitFilesDiff patch={diffPatch} />
       {/if}
     </div>
+    {/if}
   {:else}
     <p class="empty">Select a commit to see its details.</p>
   {/if}
@@ -212,5 +258,34 @@
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11.5px;
+  }
+
+  /* Edit toggle in the panel header (Edit ⇄ Done). */
+  .edit-btn {
+    padding: 3px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .edit-btn:hover {
+    background: var(--btn-hover);
+  }
+  .edit-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  /* Inline edit body (message reword + date editing), merged from the old
+     separate "Edit commit(s)" panel. */
+  .inline-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
 </style>

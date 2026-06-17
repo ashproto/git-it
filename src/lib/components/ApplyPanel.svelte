@@ -5,7 +5,7 @@
   import type { DateMapping, RewriteOptions } from "../types";
 
   // When bare, drop the .panel card chrome so this nests cleanly inside a parent
-  // panel (InlineEditCommit).
+  // panel (the Commit panel's inline edit mode in CommitDetail).
   let { bare = false }: { bare?: boolean } = $props();
 
   let updateAuthor = $state(true);

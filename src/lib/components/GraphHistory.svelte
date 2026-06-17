@@ -8,7 +8,6 @@
   import { gitActions, loadMoreGraph } from "../gitActions";
   import { amendDialog } from "../amendDialog.svelte";
   import { rebaseEditor } from "../rebaseEditor.svelte";
-  import { timeEditDrawer } from "../timeEditDrawer.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import GraphGutter from "./GraphGutter.svelte";
   import RefIcon from "./RefIcon.svelte";
@@ -290,15 +289,6 @@
         label: "Interactive rebase from here…",
         action: () => rebaseEditor.openWith(sha),
       },
-      ...(!appState.autoShowEditTools
-        ? [
-            { separator: true },
-            {
-              label: "Edit commit(s)…",
-              action: () => timeEditDrawer.openDrawer(),
-            },
-          ]
-        : []),
       { separator: true },
       { label: "Copy SHA", action: () => navigator.clipboard?.writeText(sha) },
     ]);
@@ -402,15 +392,6 @@
     <span class="count">{appState.selected.size} selected of {commits.length}</span>
     <button type="button" onclick={selectAll}>Select all</button>
     <button type="button" onclick={clearSel}>Clear</button>
-    {#if !appState.autoShowEditTools}
-      <button
-        type="button"
-        class="edit-ts"
-        disabled={appState.selected.size === 0}
-        title={appState.selected.size === 0 ? "Select one or more commits first" : "Edit the selected commit(s)"}
-        onclick={() => timeEditDrawer.openDrawer()}
-      >Edit commit(s)…</button>
-    {/if}
   {/snippet}
 
   <div
@@ -781,14 +762,6 @@
     font-size: 11px;
     line-height: 1.6;
     white-space: nowrap;
-  }
-  button.edit-ts:not(:disabled) {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  button.edit-ts:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
   }
   .badge {
     /* Colour matches the ref's graph lane (or manual override) via --ref-color;

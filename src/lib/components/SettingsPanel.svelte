@@ -164,14 +164,6 @@
       <label class="opt">
         <input
           type="checkbox"
-          checked={appState.autoShowEditTools}
-          onchange={() => appState.setAutoShowEditTools(!appState.autoShowEditTools)}
-        />
-        <span>Show edit tools below commit details</span>
-      </label>
-      <label class="opt">
-        <input
-          type="checkbox"
           checked={appState.unifyUnstaged}
           onchange={() => appState.setUnifyUnstaged(!appState.unifyUnstaged)}
         />

@@ -8,6 +8,22 @@
   import FileTree from "./FileTree.svelte";
   import { buildFileTree } from "../fileTree";
   import type { WorkingFile } from "../types";
+  import { crossfade, fade } from "svelte/transition";
+  import { flip } from "svelte/animate";
+  import { quintOut } from "svelte/easing";
+
+  // Fork/SourceTree-style "file flies to the other section" animation: a row that
+  // leaves one section (out:send) and re-appears in another (in:receive) with the
+  // SAME key animates flying between the two; animate:flip slides the rest up/down.
+  // A send with no matching receive (e.g. a discarded/removed file) falls back to a
+  // fade. Keyed by path — the dominant full-file stage/unstage moves cleanly; a
+  // partially-staged file already living in both sections simply doesn't animate.
+  const [send, receive] = crossfade({
+    duration: 220,
+    easing: quintOut,
+    fallback: (node) => fade(node, { duration: 150 }),
+  });
+  const FLIP = { duration: 220, easing: quintOut };
 
   // Last path segment — shown as the leaf label in tree mode (full path in title).
   const basename = (p: string) => p.split("/").pop() ?? p;
@@ -114,6 +130,24 @@
     return GLYPH[f.status] ?? "M";
   }
 
+  // Colour the status glyph by what the change MEANS (not by which section it's in,
+  // which the section headers already convey): add = green, modify = yellow,
+  // remove = red. Untracked keeps its own neutral tone (it's a distinct "?" state).
+  function glyphClass(f: WorkingFile): string {
+    if (f.untracked) return "s-untracked";
+    switch (f.status) {
+      case "added":
+      case "copied":
+        return "s-add";
+      case "deleted":
+      case "conflicted":
+        return "s-del";
+      // modified / renamed / typechange / anything else → a change to existing content.
+      default:
+        return "s-mod";
+    }
+  }
+
   // ── Row click ───────────────────────────────────────────────────────────────
 
   function selectFile(path: string) {
@@ -189,7 +223,12 @@
 <!-- Tree-mode leaf rows: one snippet per section so each closes over its own
      section string for onRowContext. Each renders the SAME clickable row as flat
      mode (glyph + name + selection + context-menu), but indented and showing the
-     basename (full path in title). `ind` is the tree indent in px. -->
+     basename (full path in title). `ind` is the tree indent in px.
+     These carry the crossfade in:receive/out:send (so a file still flies between
+     sections in tree mode) but NOT animate:flip — flip only works on a direct
+     keyed-{#each} child, and tree leaves are rendered deep inside FileTree's own
+     recursive each, so flip here would be a no-op/mismatch. -->
+
 {#snippet stagedRow(f: WorkingFile, ind: number)}
   <li
     class="file-row"
@@ -197,13 +236,15 @@
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
+    in:receive={{ key: f.path }}
+    out:send={{ key: f.path }}
     onmousedown={() => selectFile(f.path)}
     oncontextmenu={(e) => onRowContext(e, f, "staged")}
     onkeydown={(e) => {
       if (e.key === "Enter" || e.key === " ") selectFile(f.path);
     }}
   >
-    <span class="glyph staged">{glyph(f)}</span>
+    <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
     <span class="path mono" title={f.path}>{basename(f.path)}</span>
   </li>
 {/snippet}
@@ -215,13 +256,15 @@
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
+    in:receive={{ key: f.path }}
+    out:send={{ key: f.path }}
     onmousedown={() => selectFile(f.path)}
     oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
     onkeydown={(e) => {
       if (e.key === "Enter" || e.key === " ") selectFile(f.path);
     }}
   >
-    <span class="glyph" class:unstaged={!f.untracked} class:untracked={f.untracked}>{glyph(f)}</span>
+    <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
     <span class="path mono" title={f.path}>{basename(f.path)}</span>
   </li>
 {/snippet}
@@ -233,13 +276,15 @@
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
+    in:receive={{ key: f.path }}
+    out:send={{ key: f.path }}
     onmousedown={() => selectFile(f.path)}
     oncontextmenu={(e) => onRowContext(e, f, "untracked")}
     onkeydown={(e) => {
       if (e.key === "Enter" || e.key === " ") selectFile(f.path);
     }}
   >
-    <span class="glyph untracked">{glyph(f)}</span>
+    <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
     <span class="path mono" title={f.path}>{basename(f.path)}</span>
   </li>
 {/snippet}
@@ -247,9 +292,9 @@
 <div class="wc-view panel">
   {#if !isTauri()}
     <p class="desktop-only">Local changes are only available in the desktop app.</p>
-  {:else if appState.workingChanges.length === 0}
-    <p class="empty">No local changes — your working copy is clean.</p>
   {:else}
+    <!-- The Staged and Unstaged sections are ALWAYS rendered (even when empty), so
+         the layout is stable and files visibly move between them (Fork/SourceTree). -->
     <div class="master-detail" style={`--files-w:${appState.localFilesWidth}px`}>
       <div class="files">
       <!-- ── View toggle (flat list ↔ folder tree) — one control for all sections ── -->
@@ -266,94 +311,110 @@
       </div>
       <!-- Scroll container for just the sections, so the toolbar above and the
            per-section sticky headers below it never overlap (the toolbar is
-           OUTSIDE this scroll; section headers stick to the top of THIS box). -->
-      <div class="files-scroll">
-      <!-- ── Staged ───────────────────────────────────────────────────────────── -->
-      {#if stagedFiles.length > 0}
-        <section class="file-section">
-          <header class="section-header">
-            <span class="section-title">Staged ({stagedFiles.length})</span>
-            <button
-              class="hdr-btn"
-              onclick={() =>
-                selectedIsStaged
-                  ? gitActions.unstage([selectedFile!])
-                  : gitActions.unstage(stagedFiles.map((f) => f.path))}
-            >{selectedIsStaged ? "Unstage" : "Unstage all"}</button>
-          </header>
-          {#if appState.fileTreeView}
-            <ul class="file-list">
-              <FileTree nodes={buildFileTree(stagedFiles, (f) => f.path)} fileRow={stagedRow} />
-            </ul>
-          {:else}
-            <ul class="file-list">
-              {#each stagedFiles as f (f.path)}
-                <li
-                  class="file-row"
-                  class:selected={selectedFile === f.path}
-                  role="row"
-                  tabindex="0"
-                  onmousedown={() => selectFile(f.path)}
-                  oncontextmenu={(e) => onRowContext(e, f, "staged")}
-                  onkeydown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") selectFile(f.path);
-                  }}
-                >
-                  <span class="glyph staged">{glyph(f)}</span>
-                  <span class="path mono" title={f.path}>{f.path}</span>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </section>
-      {/if}
+           OUTSIDE this scroll; section headers stick to the top of THIS box).
+           Clicking its empty area (below the rows — target === this container, so
+           clicks bubbling up from a file row are ignored) deselects the file. -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="files-scroll"
+        onmousedown={(e) => {
+          if (e.target === e.currentTarget) appState.setSelectedFile(null);
+        }}
+      >
+      <!-- ── Staged (always shown) ───────────────────────────────────────────── -->
+      <section class="file-section">
+        <header class="section-header">
+          <span class="section-title">Staged ({stagedFiles.length})</span>
+          <button
+            class="hdr-btn"
+            disabled={stagedFiles.length === 0}
+            onclick={() =>
+              selectedIsStaged
+                ? gitActions.unstage([selectedFile!])
+                : gitActions.unstage(stagedFiles.map((f) => f.path))}
+          >{selectedIsStaged ? "Unstage" : "Unstage all"}</button>
+        </header>
+        {#if appState.fileTreeView}
+          <ul class="file-list">
+            <FileTree nodes={buildFileTree(stagedFiles, (f) => f.path)} fileRow={stagedRow} />
+          </ul>
+        {:else}
+          <ul class="file-list">
+            {#each stagedFiles as f (f.path)}
+              <li
+                class="file-row"
+                class:selected={selectedFile === f.path}
+                role="row"
+                tabindex="0"
+                in:receive={{ key: f.path }}
+                out:send={{ key: f.path }}
+                animate:flip={FLIP}
+                onmousedown={() => selectFile(f.path)}
+                oncontextmenu={(e) => onRowContext(e, f, "staged")}
+                onkeydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+                }}
+              >
+                <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
+                <span class="path mono" title={f.path}>{f.path}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if stagedFiles.length === 0}
+          <p class="section-empty" in:fade={{ duration: 150 }}>Nothing staged</p>
+        {/if}
+      </section>
 
       <!-- ── Unstaged ─────────────────────────────────────────────────────────── -->
       <!-- When unifyUnstaged is on, unstagedDisplay also includes untracked files; each
            row branches on f.untracked for its glyph + danger action (Remove vs Discard). -->
-      {#if unstagedDisplay.length > 0}
-        <section class="file-section">
-          <header class="section-header">
-            <span class="section-title">Unstaged ({unstagedDisplay.length})</span>
-            <!-- Context-aware: when a file in THIS section is selected, stage just it
-                 (in unified mode that selection may be an untracked file too); else
-                 stage every file shown in the section. -->
-            <button
-              class="hdr-btn"
-              onclick={() =>
-                selectedInUnstagedSection
-                  ? gitActions.stage([selectedFile!])
-                  : gitActions.stage(unstagedDisplay.map((f) => f.path))}
-            >{selectedInUnstagedSection ? "Stage" : "Stage all"}</button>
-          </header>
-          {#if appState.fileTreeView}
-            <ul class="file-list">
-              <FileTree nodes={buildFileTree(unstagedDisplay, (f) => f.path)} fileRow={unstagedRow} />
-            </ul>
-          {:else}
-            <ul class="file-list">
-              {#each unstagedDisplay as f (f.path)}
-                <li
-                  class="file-row"
-                  class:selected={selectedFile === f.path}
-                  role="row"
-                  tabindex="0"
-                  onmousedown={() => selectFile(f.path)}
-                  oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
-                  onkeydown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") selectFile(f.path);
-                  }}
-                >
-                  <span class="glyph" class:unstaged={!f.untracked} class:untracked={f.untracked}
-                    >{glyph(f)}</span
-                  >
-                  <span class="path mono" title={f.path}>{f.path}</span>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </section>
-      {/if}
+      <section class="file-section">
+        <header class="section-header">
+          <span class="section-title">Unstaged ({unstagedDisplay.length})</span>
+          <!-- Context-aware: when a file in THIS section is selected, stage just it
+               (in unified mode that selection may be an untracked file too); else
+               stage every file shown in the section. -->
+          <button
+            class="hdr-btn"
+            disabled={unstagedDisplay.length === 0}
+            onclick={() =>
+              selectedInUnstagedSection
+                ? gitActions.stage([selectedFile!])
+                : gitActions.stage(unstagedDisplay.map((f) => f.path))}
+          >{selectedInUnstagedSection ? "Stage" : "Stage all"}</button>
+        </header>
+        {#if appState.fileTreeView}
+          <ul class="file-list">
+            <FileTree nodes={buildFileTree(unstagedDisplay, (f) => f.path)} fileRow={unstagedRow} />
+          </ul>
+        {:else}
+          <ul class="file-list">
+            {#each unstagedDisplay as f (f.path)}
+              <li
+                class="file-row"
+                class:selected={selectedFile === f.path}
+                role="row"
+                tabindex="0"
+                in:receive={{ key: f.path }}
+                out:send={{ key: f.path }}
+                animate:flip={FLIP}
+                onmousedown={() => selectFile(f.path)}
+                oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
+                onkeydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+                }}
+              >
+                <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
+                <span class="path mono" title={f.path}>{f.path}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if unstagedDisplay.length === 0}
+          <p class="section-empty" in:fade={{ duration: 150 }}>No unstaged changes</p>
+        {/if}
+      </section>
 
       <!-- ── Untracked ─────────────────────────────────────────────────────────── -->
       {#if !appState.unifyUnstaged && untrackedFiles.length > 0}
@@ -380,13 +441,16 @@
                   class:selected={selectedFile === f.path}
                   role="row"
                   tabindex="0"
+                  in:receive={{ key: f.path }}
+                  out:send={{ key: f.path }}
+                  animate:flip={FLIP}
                   onmousedown={() => selectFile(f.path)}
                   oncontextmenu={(e) => onRowContext(e, f, "untracked")}
                   onkeydown={(e) => {
                     if (e.key === "Enter" || e.key === " ") selectFile(f.path);
                   }}
                 >
-                  <span class="glyph untracked">{glyph(f)}</span>
+                  <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
                   <span class="path mono" title={f.path}>{f.path}</span>
                 </li>
               {/each}
@@ -454,11 +518,19 @@
     min-height: 0;
   }
 
-  .desktop-only,
-  .empty {
+  .desktop-only {
     margin: 0;
     padding: 16px 14px;
     font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  /* Placeholder shown inside an empty Staged/Unstaged section. */
+  .section-empty {
+    margin: 0;
+    padding: 10px 12px;
+    font-size: 12px;
     color: var(--text-muted);
     font-style: italic;
   }
@@ -585,8 +657,12 @@
     font-size: 11px;
     cursor: pointer;
   }
-  .hdr-btn:hover {
+  .hdr-btn:hover:not(:disabled) {
     background: var(--btn-hover);
+  }
+  .hdr-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 
   /* ── File list ──────────────────────────────────────────────────────────────── */
@@ -626,15 +702,21 @@
     border-radius: 3px;
     padding: 1px 3px;
   }
-  .glyph.staged {
-    color: var(--diff-add-fg, #2da44e);
+  /* Status-based colours: add = green, modify = yellow, remove = red. Conveys what
+     the change IS (the section header already conveys staged/unstaged). */
+  .glyph.s-add {
+    color: var(--status-add, #2da44e);
     background: rgba(46, 160, 67, 0.1);
   }
-  .glyph.unstaged {
-    color: var(--err);
-    background: rgba(180, 83, 9, 0.1);
+  .glyph.s-mod {
+    color: var(--status-mod, #bf8700);
+    background: rgba(191, 135, 0, 0.12);
   }
-  .glyph.untracked {
+  .glyph.s-del {
+    color: var(--status-del, #cf222e);
+    background: rgba(207, 34, 46, 0.1);
+  }
+  .glyph.s-untracked {
     color: var(--text-muted);
     background: var(--btn-bg);
   }

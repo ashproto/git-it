@@ -1,7 +1,6 @@
 <script lang="ts">
   import GraphHistory from "$lib/components/GraphHistory.svelte";
   import CommitDetail from "$lib/components/CommitDetail.svelte";
-  import InlineEditCommit from "$lib/components/InlineEditCommit.svelte";
   import WorkingCopyView from "$lib/components/WorkingCopyView.svelte";
   import ConflictView from "$lib/components/ConflictView.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -21,8 +20,13 @@
   import RepoTabs from "$lib/components/RepoTabs.svelte";
   import RepoList from "$lib/components/RepoList.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
-  import TimeEditDrawer from "$lib/components/TimeEditDrawer.svelte";
-  import { gitActions, reloadGraph } from "$lib/gitActions";
+  import {
+    gitActions,
+    reloadGraph,
+    startWatchingRepo,
+    stopWatchingRepo,
+    refreshLocalChanges,
+  } from "$lib/gitActions";
   import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
   import { onMount } from "svelte";
@@ -55,10 +59,44 @@
   $effect(() => {
     const r = appState.repo;
     const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-    if (inTauri && r && r !== lastLoaded) { lastLoaded = r; reloadGraph(); }
+    if (inTauri && r && r !== lastLoaded) {
+      lastLoaded = r;
+      reloadGraph();
+      // (Re)point the filesystem watcher at the new repo for live Local Changes.
+      startWatchingRepo();
+    }
     // Closing the last repo (r === "") resets the guard so re-opening the same
     // path triggers a fresh reload instead of showing a stale-empty graph.
-    else if (!r) lastLoaded = "";
+    else if (!r) {
+      lastLoaded = "";
+      stopWatchingRepo();
+    }
+  });
+
+  // ── Restore last-active repo on launch (Tauri only) ──────────────────────────
+  // The active repo isn't part of synchronous boot state — it arrives via the
+  // async store hydrate. This one-shot effect waits for that value, then (unless
+  // the user already opened a repo) validates it's still a git repo and activates
+  // it; the reload-on-switch effect above then loads it. A missing/moved repo is
+  // simply skipped (its tab still appears from the openRepos hydrate).
+  let restoreTried = false;
+  $effect(() => {
+    const last = appState.lastActiveRepo; // re-run when the hydrate resolves
+    const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+    if (!inTauri || restoreTried) return;
+    if (appState.repo) {
+      restoreTried = true; // user already opened one — nothing to restore
+      return;
+    }
+    if (!last) return; // first run, or hydrate hasn't resolved yet — wait
+    restoreTried = true;
+    (async () => {
+      try {
+        if (await api.isGitRepo(last)) appState.setActiveRepo(last);
+      } catch (e) {
+        console.warn("[gte] restore last repo failed", e);
+      }
+    })();
   });
 
   // ── Empty-state open flow ─────────────────────────────────────────────────────
@@ -82,6 +120,19 @@
     if (!inTauri && appState.graphCommits.length === 0) {
       appState.setGraphCommits(SAMPLE_GRAPH);
     }
+    // Refresh the working copy + status when the window regains focus / becomes
+    // visible — the user may have edited files in another app. Complements the
+    // filesystem watcher (which handles changes while the window is already
+    // active). refreshLocalChanges no-ops outside Tauri / with no repo open.
+    const onActivate = () => {
+      if (document.visibilityState === "visible") refreshLocalChanges();
+    };
+    window.addEventListener("focus", onActivate);
+    document.addEventListener("visibilitychange", onActivate);
+    return () => {
+      window.removeEventListener("focus", onActivate);
+      document.removeEventListener("visibilitychange", onActivate);
+    };
   });
 
   // ── Sidebar resize ────────────────────────────────────────────────────────
@@ -259,9 +310,6 @@
               <WorkingCopyView />
             {:else}
               <CommitDetail />
-              {#if appState.autoShowEditTools && appState.selectedCommit}
-                <InlineEditCommit />
-              {/if}
             {/if}
             {#if appState.showOutput}
               <LogPanel />
@@ -276,7 +324,6 @@
   <Modal />
   <AmendDialog />
   <RebaseTodo />
-  <TimeEditDrawer />
   <SettingsPanel />
   <ManageRepoModal />
   <BranchColorDialog />
@@ -303,6 +350,11 @@
     --danger: #dc2626;
     --danger-hover: #b91c1c;
     --err: #b45309;
+    /* File-status glyph colours (A/M/D…), keyed by what the change MEANS:
+       add = green, modify = yellow/amber (a legible gold on white), remove = red. */
+    --status-add: #2da44e;
+    --status-mod: #bf8700;
+    --status-del: #cf222e;
     /* tells native form controls (spinners, scrollbars, etc.) to follow light/dark */
     color-scheme: light;
     font-family:
@@ -331,6 +383,9 @@
       --danger: #ef4444;
       --danger-hover: #dc2626;
       --err: #fbbf24;
+      --status-add: #3fb950;
+      --status-mod: #e3b341;
+      --status-del: #f85149;
       color-scheme: dark;
     }
   }
@@ -584,12 +639,15 @@
     padding: 16px 18px;
     width: 100%;
     box-sizing: border-box;
-    /* Flex column that fills at least the full scroll viewport, so a view that
-       opts into flex:1 (e.g. Local Changes) can stretch to the bottom instead of
-       leaving dead space. Content taller than the viewport still scrolls. */
+    /* Fixed to the scroll viewport height (not min-height, which would grow with
+       content) so the sidebar and main column are each BOUNDED and scroll their
+       own overflow independently — a tall sidebar no longer stretches the main
+       column. A view that opts into flex:1 (Local Changes) still fills to the
+       bottom. In the narrow @media layout the columns switch to overflow:visible
+       and the whole page scrolls via .scroll-area instead. */
     display: flex;
     flex-direction: column;
-    min-height: 100%;
+    height: 100%;
   }
 
   /* Empty state — centered "Open a repository" prompt in the main column area */
@@ -639,6 +697,11 @@
     flex-direction: column;
     gap: 12px;
     min-width: 0;
+    /* Scroll the sidebar independently of the main column: min-height:0 lets it
+       shrink to the shell height (instead of forcing the shell — and thus the main
+       column — taller), and overflow-y:auto scrolls its own overflow. */
+    min-height: 0;
+    overflow: hidden auto;
   }
   /* Drag handle between sidebar and main column; doubles as the visual gutter. */
   .resize-handle {
@@ -670,6 +733,19 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    /* Scroll the main column independently of the sidebar (x stays clipped; wide
+       children like the graph/diff scroll horizontally inside their own boxes). */
+    overflow: hidden auto;
+  }
+  /* In the commit timeline view the stacked panels (graph, commit details, edit
+     tools) must keep their natural height so the main column SCROLLS — otherwise
+     the flex children shrink and squish together when several are expanded. The
+     Local Changes view's .wc-view is excluded so it still flex-fills that screen.
+     .timeline-stack is display:contents, so its promoted children (UndoBar,
+     GraphHistory) are targeted explicitly. */
+  .main-col > :global(:not(.wc-view)),
+  .main-col > .timeline-stack > :global(*) {
+    flex-shrink: 0;
   }
   @media (max-width: 900px) {
     .shell {
@@ -687,6 +763,12 @@
     .side-col {
       flex: 1 1 auto;
       width: 100%;
+    }
+    /* Stacked layout scrolls as one page (via .scroll-area), so the columns must
+       not trap their own scroll here — undo the wide-mode independent scrolling. */
+    .side-col,
+    .main-col {
+      overflow: visible;
     }
     .resize-handle {
       display: none;

@@ -5,7 +5,7 @@
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
 
   // When bare, render without the CollapsiblePanel chrome (the mode-tabs become a
-  // top row) so this nests inside a parent panel (InlineEditCommit).
+  // top row) so this nests inside a parent panel (the Commit panel's edit mode).
   let { bare = false }: { bare?: boolean } = $props();
 
   let mode = $state<EditMode>("offset");
