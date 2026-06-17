@@ -35,22 +35,21 @@
 
 <!-- Tree-mode leaf: the SAME .file button as flat mode (status badge + basename),
      indented and selecting THAT file. Selection is by index, so map the leaf item
-     back to its index by identity. -->
+     back to its index by identity. FileTree provides the wrapping <li>, so this
+     renders only the button. -->
 {#snippet commitFileRow(f: DiffFileEntry, ind: number)}
   {@const i = files.indexOf(f)}
-  <li>
-    <button
-      type="button"
-      class="file"
-      class:active={i === selectedIdx}
-      style={`padding-left:${ind}px`}
-      onclick={() => (selectedIdx = i)}
-      title={f.path}
-    >
-      <span class="status {f.status}" title={f.status}>{STATUS_LABEL[f.status]}</span>
-      <span class="fname">{basename(f.path)}</span>
-    </button>
-  </li>
+  <button
+    type="button"
+    class="file"
+    class:active={i === selectedIdx}
+    style={`padding-left:${ind}px`}
+    onclick={() => (selectedIdx = i)}
+    title={f.path}
+  >
+    <span class="status {f.status}" title={f.status}>{STATUS_LABEL[f.status]}</span>
+    <span class="fname">{basename(f.path)}</span>
+  </button>
 {/snippet}
 
 {#if files.length === 0}

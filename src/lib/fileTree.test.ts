@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildFileTree, fileFolderPaths, type FileTreeNode } from "./fileTree";
+import {
+  buildFileTree,
+  fileFolderPaths,
+  flattenFileTree,
+  type FileTreeNode,
+} from "./fileTree";
 
 // Test item type: a minimal { path } object, plus an arbitrary extra field to
 // prove the generic carries the whole item through to the leaf.
@@ -93,6 +98,58 @@ describe("buildFileTree", () => {
     const leaf = file(node);
     expect(leaf.name).toBe("e.ts");
     expect(leaf.path).toBe("a/b/c/d/e.ts");
+  });
+});
+
+describe("flattenFileTree", () => {
+  // Terse row descriptor: "<kind>:<path>@<depth>" for easy whole-list assertions.
+  const rows = (tree: FileTreeNode<Item>[], collapsed: Set<string> = new Set()) =>
+    flattenFileTree(tree, collapsed).map((r) => `${r.kind}:${r.path}@${r.depth}`);
+
+  it("returns an empty array for an empty tree", () => {
+    expect(flattenFileTree(build([]), new Set())).toEqual([]);
+  });
+
+  it("lists top-level files at depth 0 in tree order", () => {
+    // build() sorts case-insensitively, so a.ts before b.ts.
+    expect(rows(build(["b.ts", "a.ts"]))).toEqual(["file:a.ts@0", "file:b.ts@0"]);
+  });
+
+  it("emits a folder before its children, with children one level deeper", () => {
+    expect(rows(build(["src/lib/foo.ts"]))).toEqual([
+      "folder:src@0",
+      "folder:src/lib@1",
+      "file:src/lib/foo.ts@2",
+    ]);
+  });
+
+  it("carries the original item through on file rows", () => {
+    const item: Item = { path: "a.ts", tag: "keep" };
+    const flat = flattenFileTree(buildFileTree([item], (i) => i.path), new Set());
+    expect(flat).toHaveLength(1);
+    const row = flat[0];
+    if (row.kind !== "file") throw new Error("expected a file row");
+    expect(row.item).toBe(item);
+  });
+
+  it("omits the children of a collapsed folder but keeps the folder row", () => {
+    const tree = build(["src/lib/a.ts", "src/lib/b.ts", "top.ts"]);
+    // Collapsing src/lib hides a.ts and b.ts but src/lib itself still shows.
+    expect(rows(tree, new Set(["src/lib"]))).toEqual([
+      "folder:src@0",
+      "folder:src/lib@1",
+      "file:top.ts@0",
+    ]);
+  });
+
+  it("collapsing a parent hides the whole subtree (nested folders too)", () => {
+    const tree = build(["src/lib/a.ts", "src/main.ts"]);
+    expect(rows(tree, new Set(["src"]))).toEqual(["folder:src@0"]);
+  });
+
+  it("preserves folders-before-files ordering from buildFileTree", () => {
+    const tree = build(["app.ts", "zfolder/x.ts"]);
+    expect(rows(tree)).toEqual(["folder:zfolder@0", "file:zfolder/x.ts@1", "file:app.ts@0"]);
   });
 });
 

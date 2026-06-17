@@ -49,6 +49,39 @@ function sortLevel<T>(nodes: FileTreeNode<T>[]): void {
   for (const n of nodes) if (n.kind === "folder") sortLevel(n.children);
 }
 
+// A single visual row of the tree once flattened for rendering: either a folder
+// header or a file leaf, tagged with its nesting `depth` (top level = 0). Folders
+// carry a display `name`; files carry the original `item`. Flattening lets the
+// component render the whole tree as ONE keyed list, which is what makes
+// `animate:flip` work across the entire tree (a file staged out of a folder slides
+// and its neighbours close the gap, instead of the structure popping at the end).
+export type FlatFileRow<T> =
+  | { kind: "folder"; path: string; name: string; depth: number }
+  | { kind: "file"; path: string; item: T; depth: number };
+
+/**
+ * Flatten a nested file tree into the ordered list of rows to render, skipping the
+ * children of any folder whose path is in `collapsed`. Pure + deterministic.
+ */
+export function flattenFileTree<T>(
+  nodes: FileTreeNode<T>[],
+  collapsed: Set<string>,
+  depth = 0,
+  out: FlatFileRow<T>[] = [],
+): FlatFileRow<T>[] {
+  for (const node of nodes) {
+    if (node.kind === "folder") {
+      out.push({ kind: "folder", path: node.path, name: node.name, depth });
+      if (!collapsed.has(node.path)) {
+        flattenFileTree(node.children, collapsed, depth + 1, out);
+      }
+    } else {
+      out.push({ kind: "file", path: node.path, item: node.item, depth });
+    }
+  }
+  return out;
+}
+
 /** Collect every folder path in the tree (used to expand/collapse all). */
 export function fileFolderPaths<T>(nodes: FileTreeNode<T>[]): string[] {
   const out: string[] = [];

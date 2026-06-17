@@ -2,40 +2,52 @@
   import type { Snippet } from "svelte";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
+  import { flip } from "svelte/animate";
   import { quintOut } from "svelte/easing";
-  import type { FileTreeNode } from "../fileTree";
+  import type { TransitionConfig } from "svelte/transition";
+  import { flattenFileTree, type FileTreeNode, type FlatFileRow } from "../fileTree";
 
-  // Presentational folder tree. Folders are collapsible <button>s; each file leaf is
-  // rendered by the caller-supplied `fileRow` snippet, positioned at the given indent
-  // so selection / click / context-menu all live in the caller. Mirrors RefTree.svelte's
-  // visual conventions (chevron, indent = 8 + depth*14, in-memory collapsed set).
+  // A crossfade send/receive transition (from svelte's crossfade()). Passing it in lets
+  // a file leaf FLY between two FileTree instances (e.g. Unstaged → Staged) — the shared
+  // crossfade pairs send & receive by key across both trees.
+  type CrossfadeFn = (
+    node: Element,
+    params: { key: unknown },
+  ) => TransitionConfig | (() => TransitionConfig);
+
+  // Presentational folder tree, rendered as a SINGLE flat keyed list of rows (folders +
+  // file leaves) so `animate:flip` can animate the WHOLE tree: when a file is staged out
+  // of a folder, the surviving rows flip into their new positions and any emptied folder
+  // slides away — instead of the structure holding its space and popping at the end.
+  // Each file leaf's interactive markup is supplied by the caller's `fileRow` snippet
+  // (FileTree owns only the <li> wrapper that carries the flip + fly/slide transitions).
   let {
     nodes,
     fileRow,
-    // animate: slide folders in/out as they appear/empty (Fork-style), so a folder
-    // doesn't hard-pop when its last file is staged away. Opt-in — the commit file
-    // list leaves it off so switching commits doesn't churn the whole tree.
+    // animate: enable the move animation (Local Changes). Off (default) → an instant
+    // static tree (the commit file list, which shouldn't churn when you switch commits).
     animate = false,
+    // Shared crossfade pair so a file flies between sections. Omitted by the commit file
+    // list (no cross-section movement there).
+    send,
+    receive,
   }: {
     nodes: FileTreeNode<any>[];
-    fileRow: Snippet<[any, number]>; // (item, indentPx) → renders one file leaf
+    fileRow: Snippet<[any, number]>; // (item, indentPx) → renders one file leaf's inner content
     animate?: boolean;
+    send?: CrossfadeFn;
+    receive?: CrossfadeFn;
   } = $props();
 
-  // Suppress the folder INTRO on the very first render (opening the view / first data)
+  // Suppress the folder slide-INTRO on the first render (opening the view / first data)
   // so the whole tree doesn't slide in at once — only folders that appear LATER (a
-  // stage/unstage move) slide. Matches how the file rows appear instantly on load and
-  // only fly on a genuine move. The out-transition is never gated (removal only fires
-  // post-mount), so an emptied folder always collapses smoothly.
+  // stage/unstage move) slide in. flip never runs on first render (nothing repositions),
+  // and a file leaf with no crossfade partner falls back to instant, so only the folder
+  // intro needs gating. The out-transition is never gated (removal only happens later).
   let mounted = $state(false);
   onMount(() => {
     mounted = true;
   });
-  // A folder's slide height-animation also reflows the rows below it, so siblings glide
-  // up/down to follow — no animate:flip needed (and flip isn't usable here: the button
-  // lives inside an {#if}, not as the each block's immediate child).
-  const inDur = $derived(animate && mounted ? 200 : 0);
-  const outDur = $derived(animate ? 200 : 0);
 
   // Collapsed folder paths (in-memory; folders default expanded).
   let collapsed = $state<Set<string>>(new Set());
@@ -46,36 +58,57 @@
     collapsed = next;
   }
   const indent = (depth: number) => 8 + depth * 14;
+
+  // The whole tree as one ordered, keyed list of rows (collapsed folders hide children).
+  const rows = $derived(flattenFileTree(nodes, collapsed));
+
+  const FLIP = $derived(animate ? { duration: 220, easing: quintOut } : { duration: 0 });
+  const inDur = $derived(animate && mounted ? 200 : 0);
+  const outDur = $derived(animate ? 200 : 0);
+
+  // Per-row enter/leave dispatcher. Files use the shared crossfade (fly between sections)
+  // when one is provided; folders animate their height (slide) so an emptied folder
+  // collapses and a new folder expands. Wrapping the crossfade fn is safe: we return its
+  // (possibly deferred) result unchanged, so its cross-tree pairing still works.
+  function rowIn(node: Element, row: FlatFileRow<any>) {
+    if (row.kind === "folder") return slide(node, { duration: inDur, easing: quintOut });
+    if (animate && receive) return receive(node, { key: row.path });
+    return { duration: 0 };
+  }
+  function rowOut(node: Element, row: FlatFileRow<any>) {
+    if (row.kind === "folder") return slide(node, { duration: outDur, easing: quintOut });
+    if (animate && send) return send(node, { key: row.path });
+    return { duration: 0 };
+  }
 </script>
 
-{#snippet tree(items: FileTreeNode<any>[], depth: number)}
-  {#each items as node (node.kind === "folder" ? "d:" + node.path : "f:" + node.path)}
-    {#if node.kind === "folder"}
+{#each rows as row (row.kind === "folder" ? "d:" + row.path : "f:" + row.path)}
+  <li class="ft-row" animate:flip={FLIP} in:rowIn={row} out:rowOut={row}>
+    {#if row.kind === "folder"}
       <button
         type="button"
         class="folder"
-        style={`padding-left:${indent(depth)}px`}
-        in:slide={{ duration: inDur, easing: quintOut }}
-        out:slide={{ duration: outDur, easing: quintOut }}
-        onclick={() => toggle(node.path)}
-        aria-expanded={!collapsed.has(node.path)}
-        title={node.path}
+        style={`padding-left:${indent(row.depth)}px`}
+        onclick={() => toggle(row.path)}
+        aria-expanded={!collapsed.has(row.path)}
+        title={row.path}
       >
-        <span class="chev" class:open={!collapsed.has(node.path)} aria-hidden="true">▶</span>
-        <span class="fn">{node.name}</span>
+        <span class="chev" class:open={!collapsed.has(row.path)} aria-hidden="true">▶</span>
+        <span class="fn">{row.name}</span>
       </button>
-      {#if !collapsed.has(node.path)}
-        {@render tree(node.children, depth + 1)}
-      {/if}
     {:else}
-      {@render fileRow(node.item, indent(depth + 1))}
+      {@render fileRow(row.item, indent(row.depth + 1))}
     {/if}
-  {/each}
-{/snippet}
-
-{@render tree(nodes, 0)}
+  </li>
+{/each}
 
 <style>
+  /* Wrapper <li> for every row; carries the flip + enter/leave transitions. Visuals live
+     on the inner content (the folder <button> below, or the caller's file row). */
+  .ft-row {
+    list-style: none;
+    display: block;
+  }
   .folder {
     display: flex;
     align-items: center;

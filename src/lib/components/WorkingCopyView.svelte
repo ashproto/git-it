@@ -222,24 +222,22 @@
   }
 </script>
 
-<!-- Tree-mode leaf rows: one snippet per section so each closes over its own
-     section string for onRowContext. Each renders the SAME clickable row as flat
-     mode (glyph + name + selection + context-menu), but indented and showing the
-     basename (full path in title). `ind` is the tree indent in px.
-     These carry the crossfade in:receive/out:send (so a file still flies between
-     sections in tree mode) but NOT animate:flip — flip only works on a direct
-     keyed-{#each} child, and tree leaves are rendered deep inside FileTree's own
-     recursive each, so flip here would be a no-op/mismatch. -->
+<!-- Tree-mode leaf rows: one snippet per section so each closes over its own section
+     string for onRowContext. Each renders the SAME clickable row content as flat mode
+     (glyph + name + selection + context-menu), but indented and showing the basename
+     (full path in title). `ind` is the tree indent in px. FileTree wraps this content in
+     the keyed <li> that carries the flip + crossfade fly (so a file still flies between
+     sections AND the surrounding tree closes the gap), so these render only the inner
+     <div>, with no transition directives of their own. -->
 
 {#snippet stagedRow(f: WorkingFile, ind: number)}
-  <li
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div
     class="file-row"
     class:selected={selectedFile === f.path}
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
-    in:receive|global={{ key: f.path }}
-    out:send|global={{ key: f.path }}
     onmousedown={() => selectFile(f.path)}
     oncontextmenu={(e) => onRowContext(e, f, "staged")}
     onkeydown={(e) => {
@@ -248,18 +246,17 @@
   >
     <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
     <span class="path mono" title={f.path}>{basename(f.path)}</span>
-  </li>
+  </div>
 {/snippet}
 
 {#snippet unstagedRow(f: WorkingFile, ind: number)}
-  <li
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div
     class="file-row"
     class:selected={selectedFile === f.path}
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
-    in:receive|global={{ key: f.path }}
-    out:send|global={{ key: f.path }}
     onmousedown={() => selectFile(f.path)}
     oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
     onkeydown={(e) => {
@@ -268,18 +265,17 @@
   >
     <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
     <span class="path mono" title={f.path}>{basename(f.path)}</span>
-  </li>
+  </div>
 {/snippet}
 
 {#snippet untrackedRow(f: WorkingFile, ind: number)}
-  <li
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div
     class="file-row"
     class:selected={selectedFile === f.path}
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
-    in:receive|global={{ key: f.path }}
-    out:send|global={{ key: f.path }}
     onmousedown={() => selectFile(f.path)}
     oncontextmenu={(e) => onRowContext(e, f, "untracked")}
     onkeydown={(e) => {
@@ -288,7 +284,7 @@
   >
     <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
     <span class="path mono" title={f.path}>{basename(f.path)}</span>
-  </li>
+  </div>
 {/snippet}
 
 <div class="wc-view panel">
@@ -338,7 +334,13 @@
         </header>
         {#if appState.fileTreeView}
           <ul class="file-list">
-            <FileTree nodes={buildFileTree(stagedFiles, (f) => f.path)} fileRow={stagedRow} animate />
+            <FileTree
+              nodes={buildFileTree(stagedFiles, (f) => f.path)}
+              fileRow={stagedRow}
+              animate
+              {send}
+              {receive}
+            />
           </ul>
         {:else}
           <ul class="file-list">
@@ -388,7 +390,13 @@
         </header>
         {#if appState.fileTreeView}
           <ul class="file-list">
-            <FileTree nodes={buildFileTree(unstagedDisplay, (f) => f.path)} fileRow={unstagedRow} animate />
+            <FileTree
+              nodes={buildFileTree(unstagedDisplay, (f) => f.path)}
+              fileRow={unstagedRow}
+              animate
+              {send}
+              {receive}
+            />
           </ul>
         {:else}
           <ul class="file-list">
@@ -419,21 +427,34 @@
       </section>
 
       <!-- ── Untracked ─────────────────────────────────────────────────────────── -->
-      {#if !appState.unifyUnstaged && untrackedFiles.length > 0}
-        <section class="file-section">
-          <header class="section-header">
-            <span class="section-title">Untracked ({untrackedFiles.length})</span>
-            <button
-              class="hdr-btn"
-              onclick={() =>
-                selectedIsUntracked
-                  ? gitActions.stage([selectedFile!])
-                  : gitActions.stage(untrackedFiles.map((f) => f.path))}
-            >{selectedIsUntracked ? "Stage" : "Stage all"}</button>
-          </header>
+      <!-- Rendered whenever NOT unified (even at 0 files) so the FileTree stays mounted:
+           staging the LAST untracked file is then a local keyed-row removal that still
+           flies to Staged, instead of the whole section unmounting and suppressing the
+           fly. The header is hidden and the section border removed when empty, so an
+           empty Untracked section is invisible. -->
+      {#if !appState.unifyUnstaged}
+        <section class="file-section" class:is-empty={untrackedFiles.length === 0}>
+          {#if untrackedFiles.length > 0}
+            <header class="section-header">
+              <span class="section-title">Untracked ({untrackedFiles.length})</span>
+              <button
+                class="hdr-btn"
+                onclick={() =>
+                  selectedIsUntracked
+                    ? gitActions.stage([selectedFile!])
+                    : gitActions.stage(untrackedFiles.map((f) => f.path))}
+              >{selectedIsUntracked ? "Stage" : "Stage all"}</button>
+            </header>
+          {/if}
           {#if appState.fileTreeView}
             <ul class="file-list">
-              <FileTree nodes={buildFileTree(untrackedFiles, (f) => f.path)} fileRow={untrackedRow} animate />
+              <FileTree
+                nodes={buildFileTree(untrackedFiles, (f) => f.path)}
+                fileRow={untrackedRow}
+                animate
+                {send}
+                {receive}
+              />
             </ul>
           {:else}
             <ul class="file-list">
@@ -629,6 +650,11 @@
   .file-section {
     border-bottom: 1px solid var(--border-subtle);
   }
+  /* An empty (header-less) Untracked section is kept mounted so its FileTree's last-row
+     fly still works; drop its border so it's fully invisible when it has no files. */
+  .file-section.is-empty {
+    border-bottom: none;
+  }
 
   .section-header {
     display: flex;
@@ -684,7 +710,10 @@
     font-size: 12.5px;
     min-height: 28px;
   }
-  .file-row:last-child {
+  /* Only the flat-list rows are <li>s; drop the trailing separator on the last one.
+     In tree mode the row is a <div> wrapped in FileTree's <li>, so this li-scoped
+     rule doesn't match and every tree file row keeps its separator. */
+  li.file-row:last-child {
     border-bottom: none;
   }
   .file-row:hover {
