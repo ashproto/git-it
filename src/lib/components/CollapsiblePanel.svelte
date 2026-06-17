@@ -3,6 +3,7 @@
   import { tick, onDestroy } from "svelte";
   import { slide } from "svelte/transition";
   import { quintOut } from "svelte/easing";
+  import { panelAnim } from "../panelAnim.svelte";
 
   type Props = {
     title: string;
@@ -34,107 +35,118 @@
   const SLIDE_MS = 200;
   const EASE = "cubic-bezier(0.22, 1, 0.36, 1)"; // ~quintOut
 
-  // `animating` does two jobs while a collapse is in flight: (1) it keeps a fill/sized
-  // body rendered through its measured animation, and (2) +page.svelte drops the panel's
-  // frosted-glass backdrop-filter while it's set — re-blurring a resizing panel every
-  // frame is the main cause of a low-framerate collapse in the translucent Tauri build.
+  // `animating` keeps a fill/sized body mounted through its measured animation AND drives
+  // the per-panel `cp-animating` class that drops the panel's backdrop-filter blur while
+  // it resizes (re-blurring a resizing panel every frame is the main FPS cost). The shared
+  // `panelAnim` ref-count additionally tells the commit graph to FREEZE its row
+  // virtualization during ANY panel animation (its per-frame re-window + SVG rebuild is
+  // the other big cost). `animActive` keeps the begin/end pair balanced.
   let animating = $state(false);
+  let animActive = false;
   let animTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // Refs + a sequence token for the measured animation (fill/sized panels). The token
-  // lets a rapid re-toggle supersede an in-flight animation cleanly.
   let sectionEl = $state<HTMLElement>();
   let headerEl = $state<HTMLElement>();
   let animSeq = 0;
-  // Tears down the in-flight measured animation's listener + safety timer. Held so
-  // onDestroy can cancel it if the panel unmounts mid-animation (e.g. the details
-  // drawer is removed when the commit is deselected), avoiding a post-unmount leak.
-  let cancelAnim: (() => void) | undefined;
+  let currentAnim: Animation | undefined; // in-flight WAAPI height animation (measured panels)
+
+  function beginAnim() {
+    animating = true;
+    if (!animActive) {
+      animActive = true;
+      panelAnim.begin();
+    }
+  }
+  function endAnim() {
+    animating = false;
+    if (animActive) {
+      animActive = false;
+      panelAnim.end();
+    }
+  }
 
   function toggle() {
     if (animateBody) {
-      // Normal panel: declarative body slide + a transient blur-off window.
+      // Normal panel: declarative body slide. Flag the blur-off / graph-freeze window.
       collapsed = !collapsed;
-      animating = true;
+      beginAnim();
       clearTimeout(animTimer);
-      animTimer = setTimeout(() => (animating = false), SLIDE_MS + 40);
+      animTimer = setTimeout(endAnim, SLIDE_MS + 40);
     } else {
       void measuredToggle();
     }
   }
 
-  // Measure the panel's REAL height at both ends and transition the panel's own height
-  // between them, so it shrinks/grows together with its (clipped) content — no gap, no
-  // jump, works for both fill and sized panels.
+  // Fill/sized panels (commit graph / details drawer) fill the available space, not their
+  // content, so a body slide would gap or jump. Instead MEASURE the panel's real height at
+  // both ends and run a Web-Animations-API height animation between them. WAAPI is used
+  // rather than a CSS transition toggled via style writes because the latter intermittently
+  // fails to start in WebKit — the panel "snaps" open with no animation.
   async function measuredToggle() {
     const el = sectionEl;
     const hdr = headerEl;
     if (!el || !hdr) {
-      collapsed = !collapsed; // no refs (shouldn't happen) → just toggle instantly
+      collapsed = !collapsed; // no refs (shouldn't happen) → toggle instantly
       return;
     }
     const seq = ++animSeq;
     const collapsing = !collapsed;
+    // Read the CURRENT height first — for a reverse-toggle mid-animation this is the live
+    // (partway) height; WAAPI reflects it in offsetHeight. Cancel the prior animation only
+    // AFTER, otherwise cancel reverts to natural height and the new animation snaps.
     const startH = el.offsetHeight;
-    collapsed = !collapsed; // flip intent; the body stays mounted via `animating` (see {#if})
-    animating = true;
-    await tick(); // DOM is at the target layout but not yet painted (microtask)
-    if (seq !== animSeq) return; // a newer toggle superseded this one
+    currentAnim?.cancel();
+    collapsed = !collapsed; // flip intent; body stays mounted via `animating` (see {#if})
+    beginAnim();
+    await tick(); // DOM at the target layout (pre-paint microtask)
+    if (seq !== animSeq) return; // superseded by a newer toggle
 
-    el.style.height = ""; // clear any prior lock so the natural target measures correctly
+    el.style.height = ""; // ensure the natural target measures correctly
     // Collapsed target = the header alone (+ the panel's 1px top/bottom borders);
     // expanded target = the natural filled/sized height (body is mounted now).
     const endH = collapsing ? hdr.offsetHeight + 2 : el.offsetHeight;
-    if (startH === endH) {
-      void finishMeasured(el, seq);
+    if (startH === endH || typeof el.animate !== "function") {
+      finishMeasured(el, seq);
       return;
     }
-    // Lock to start, then animate to end — all synchronous, so the browser only paints
-    // once it's locked to `startH` (no flash to the natural height first).
-    el.style.height = `${startH}px`;
     el.style.overflow = "hidden";
-    void el.offsetHeight; // force reflow
-    el.style.transition = `height ${SLIDE_MS}ms ${EASE}`;
-    el.style.height = `${endH}px`;
-
-    const onEnd = (e: TransitionEvent) => {
-      if (e.target !== el || e.propertyName !== "height") return;
-      cancelAnim?.();
-      void finishMeasured(el, seq);
-    };
-    el.addEventListener("transitionend", onEnd);
+    const anim = el.animate([{ height: `${startH}px` }, { height: `${endH}px` }], {
+      duration: SLIDE_MS,
+      easing: EASE,
+      fill: "both", // hold startH before the first frame and endH after, so neither end flashes
+    });
+    currentAnim = anim;
+    anim.onfinish = () => finishMeasured(el, seq);
+    // Safety net: a backgrounded tab pauses WAAPI so onfinish never fires.
     clearTimeout(animTimer);
-    cancelAnim = () => {
-      el.removeEventListener("transitionend", onEnd);
-      clearTimeout(animTimer);
-    };
-    animTimer = setTimeout(() => {
-      cancelAnim?.();
-      void finishMeasured(el, seq);
-    }, SLIDE_MS + 120); // safety net if transitionend never fires
+    animTimer = setTimeout(() => finishMeasured(el, seq), SLIDE_MS + 200);
   }
 
-  // Settle the panel back to its natural layout AFTER the measured animation. Order
-  // matters: drop `animating` first (which unmounts a collapsed body) THEN clear the
-  // locked height, so a collapsed panel never momentarily springs back to full height.
-  async function finishMeasured(el: HTMLElement, seq: number) {
+  // Settle the panel back to its natural layout after the measured animation. Drop the
+  // body-mount flag FIRST (so a collapsed body unmounts) then, after the DOM updates,
+  // cancel the WAAPI fill so the panel lands on its natural (header / filled) height
+  // without a flash.
+  function finishMeasured(el: HTMLElement, seq: number) {
     if (seq !== animSeq) return;
-    animating = false;
-    await tick();
-    if (seq !== animSeq) return;
-    el.style.height = "";
-    el.style.overflow = "";
-    el.style.transition = "";
-    cancelAnim = undefined;
+    clearTimeout(animTimer);
+    endAnim();
+    void tick().then(() => {
+      if (seq !== animSeq) return;
+      currentAnim?.cancel();
+      currentAnim = undefined;
+      el.style.height = "";
+      el.style.overflow = "";
+    });
   }
 
   // If the panel unmounts mid-animation (e.g. the details drawer is removed when the
-  // commit is deselected), neutralize any pending callback (bump the token so a queued
-  // finishMeasured short-circuits) and tear down its listener + safety timer.
+  // commit is deselected): neutralize pending callbacks (bump the token), stop the WAAPI,
+  // clear the timer, and balance the panelAnim ref-count.
   onDestroy(() => {
     animSeq++;
     clearTimeout(animTimer);
-    cancelAnim?.();
+    currentAnim?.cancel();
+    endAnim();
   });
 </script>
 

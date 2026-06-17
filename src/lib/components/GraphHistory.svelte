@@ -6,6 +6,7 @@
   import { contextMenu } from "../contextMenu.svelte";
   import { dialogs } from "../dialogs.svelte";
   import { gitActions, loadMoreGraph } from "../gitActions";
+  import { panelAnim } from "../panelAnim.svelte";
   import { amendDialog } from "../amendDialog.svelte";
   import { rebaseEditor } from "../rebaseEditor.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
@@ -310,6 +311,11 @@
   // height, so it stays correct if the chrome changes. The wc-row offset is
   // subtracted because commit 0 starts one row down when it is present.
   function recomputeWindow() {
+    // Freeze the windowing while a panel is mid-collapse: the panel-height animation
+    // resizes wrapEl every frame (firing the ResizeObserver), and re-windowing + the lane
+    // SVG rebuild per frame is what makes the collapse choppy. The `$effect` below reads
+    // panelAnim.active, so it re-runs and recomputes once the animation clears.
+    if (panelAnim.active) return;
     if (!wrapEl || !histEl) return;
     const wrapRect = wrapEl.getBoundingClientRect();
     const histTop = histEl.getBoundingClientRect().top;
