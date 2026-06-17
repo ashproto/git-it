@@ -666,4 +666,13 @@
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
+
+  /* Stacked/narrow layout: the shell is content-sized (no full-height chain), so
+     restore a sensible floor for the master-detail (the wide-mode flex:1 fill has
+     no effect here). Mirrors the pre-round-6 clamp minimum. */
+  @media (max-width: 900px) {
+    .master-detail {
+      min-height: 320px;
+    }
+  }
 </style>

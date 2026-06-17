@@ -179,6 +179,9 @@
     box-sizing: border-box;
     resize: vertical;
     min-height: 60px;
+    /* Cap manual drag so the textarea can't be dragged taller than the (now
+       height-capped) view and clip the Commit button beneath it. */
+    max-height: 300px;
     padding: 6px 8px;
     border-radius: 6px;
     border: 1px solid var(--border);
