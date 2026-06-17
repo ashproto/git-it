@@ -42,7 +42,15 @@ export type EditMode = "offset" | "exact" | "compress";
 
 export type RefKind = "local" | "remote" | "tag" | "head";
 
-export type RefEntry = { name: string; sha: string; isHead: boolean };
+// ahead/behind are only meaningful for local branches with an upstream (from
+// list_refs); undefined elsewhere (remote/tag entries, browser-preview decorations).
+export type RefEntry = {
+  name: string;
+  sha: string;
+  isHead: boolean;
+  ahead?: number;
+  behind?: number;
+};
 
 export type RefDecoration = {
   name: string;

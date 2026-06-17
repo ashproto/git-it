@@ -264,6 +264,10 @@
           aria-pressed={appState.fileTreeView}
         >⊟ Tree</button>
       </div>
+      <!-- Scroll container for just the sections, so the toolbar above and the
+           per-section sticky headers below it never overlap (the toolbar is
+           OUTSIDE this scroll; section headers stick to the top of THIS box). -->
+      <div class="files-scroll">
       <!-- ── Staged ───────────────────────────────────────────────────────────── -->
       {#if stagedFiles.length > 0}
         <section class="file-section">
@@ -391,6 +395,7 @@
         </section>
       {/if}
       </div>
+      </div>
 
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
@@ -443,6 +448,10 @@
     border-radius: 8px;
     background: var(--panel-bg);
     overflow: hidden;
+    /* Fill the available vertical space in the main column (the parent flex chain
+       is full-height) so there's no dead space under the commit composer. */
+    flex: 1;
+    min-height: 0;
   }
 
   .desktop-only,
@@ -458,27 +467,37 @@
   /* Master-detail: file sections on the left, diff on the right. */
   .master-detail {
     display: flex;
-    height: clamp(320px, 56vh, 760px);
+    /* Grow to fill the wc-view (which fills the main column); min-height:0 lets it
+       shrink on short windows so the commit composer below is never clipped. */
+    flex: 1;
+    min-height: 0;
   }
   .files {
     flex: 0 0 var(--files-w, 300px);
     min-width: 0;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
   }
 
-  /* Toolbar above the sections: holds the one flat/tree view toggle. */
+  /* Toolbar above the sections: holds the one flat/tree view toggle. It sits
+     OUTSIDE the .files-scroll box (below), so it never overlaps the per-section
+     sticky headers when the list scrolls. */
   .files-toolbar {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 5px 10px 5px 12px;
     background: var(--header-bg);
     border-bottom: 1px solid var(--border-subtle);
-    position: sticky;
-    top: 0;
-    z-index: 2;
+  }
+
+  /* The only scrolling region of the file column: the sections. Section headers
+     stick to the top of THIS box, beneath the (non-scrolling) toolbar. */
+  .files-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
   }
   .ft-label {
     flex: 1;

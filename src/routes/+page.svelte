@@ -584,6 +584,12 @@
     padding: 16px 18px;
     width: 100%;
     box-sizing: border-box;
+    /* Flex column that fills at least the full scroll viewport, so a view that
+       opts into flex:1 (e.g. Local Changes) can stretch to the bottom instead of
+       leaving dead space. Content taller than the viewport still scrolls. */
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
   }
 
   /* Empty state — centered "Open a repository" prompt in the main column area */
@@ -619,7 +625,11 @@
     display: flex;
     /* No gap: the resize handle IS the gutter between the columns. */
     gap: 0;
-    align-items: flex-start;
+    /* Fill the scroll-inner column and let the columns stretch to full height so
+       a full-height main view (Local Changes) reaches the bottom. */
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
   }
   .side-col {
     /* Width is the persisted --sidebar-w (set inline); the @media below overrides
@@ -656,12 +666,16 @@
   .main-col {
     flex: 1;
     min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
   @media (max-width: 900px) {
     .shell {
+      /* Stacked layout: revert to content height so the sidebar and main column
+         don't split the viewport height (they stack and the page scrolls). */
+      flex: 0 1 auto;
       flex-direction: column;
       gap: 12px;
       /* Column mode: stretch children to the viewport width (not max-content) so a

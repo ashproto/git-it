@@ -2,7 +2,6 @@
   import { appState } from "../store.svelte";
   import { api } from "../api";
   import { parseISO, formatCommitDate } from "../dates";
-  import { parseDiff } from "../diff/parse";
   import CommitFilesDiff from "./CommitFilesDiff.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import RefIcon from "./RefIcon.svelte";
@@ -58,9 +57,6 @@
         diffLoading = false;
       });
   });
-
-  // Derive file count from the parsed diff
-  const fileCount = $derived(diffPatch ? parseDiff(diffPatch).files.length : 0);
 </script>
 
 <CollapsiblePanel title="Commit">
@@ -106,11 +102,8 @@
       {:else if diffError}
         <p class="note err">Could not load diff: {diffError}</p>
       {:else}
-        {#if fileCount > 0}
-          <div class="diff-summary">
-            <span class="files-changed">{fileCount} file{fileCount === 1 ? "" : "s"} changed</span>
-          </div>
-        {/if}
+        <!-- The file-count ("N files changed") is shown by CommitFilesDiff's own
+             toolbar (next to the tree-view toggle), so it isn't repeated here. -->
         <CommitFilesDiff patch={diffPatch} />
       {/if}
     </div>
@@ -206,14 +199,6 @@
   .diff-section {
     margin-top: 14px;
     border-top: 1px solid var(--border-subtle);
-  }
-  .diff-summary {
-    padding: 6px 0 4px 0;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-  .files-changed {
-    font-weight: 500;
   }
   .err {
     color: var(--err, #c0392b);

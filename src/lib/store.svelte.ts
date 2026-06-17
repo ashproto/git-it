@@ -375,6 +375,7 @@ function loadSyncLocalFilesWidth(): number {
 // showOutput / fileTreeView: localStorage-only boolean UI prefs.
 const SHOW_OUTPUT_KEY = "gitit.showOutput.v1";
 const FILE_TREE_VIEW_KEY = "gitit.fileTreeView.v1";
+const PUSH_AFTER_COMMIT_KEY = "gitit.pushAfterCommit.v1";
 function loadSyncBool(key: string, dflt: boolean): boolean {
   try {
     if (typeof localStorage === "undefined") return dflt;
@@ -477,14 +478,27 @@ function makeState() {
     const tags = new Map<string, RefEntry>();
     const head: RefEntry[] = []; // detached-HEAD decoration (RefKind "head")
     for (const r of refsDetailed) {
-      const entry: RefEntry = { name: r.name, sha: r.target_sha, isHead: false };
+      // Carry ahead/behind for local branches (used by the sidebar's ↑/↓ badges).
+      const entry: RefEntry =
+        r.kind === "local"
+          ? { name: r.name, sha: r.target_sha, isHead: false, ahead: r.ahead, behind: r.behind }
+          : { name: r.name, sha: r.target_sha, isHead: false };
       if (r.kind === "local") local.set(r.name, entry);
       else if (r.kind === "remote") remote.set(r.name, entry);
       else if (r.kind === "tag") tags.set(r.name, entry);
     }
     for (const c of graphCommits) {
       for (const r of c.refs) {
-        const entry: RefEntry = { name: r.name, sha: c.sha, isHead: r.is_head };
+        // Graph decorations are authoritative for sha + is_head but carry no
+        // ahead/behind — preserve those from the list_refs seed above (if any).
+        const prev = r.kind === "local" ? local.get(r.name) : undefined;
+        const entry: RefEntry = {
+          name: r.name,
+          sha: c.sha,
+          isHead: r.is_head,
+          ahead: prev?.ahead,
+          behind: prev?.behind,
+        };
         if (r.kind === "local") local.set(r.name, entry);
         else if (r.kind === "remote") remote.set(r.name, entry);
         else if (r.kind === "tag") tags.set(r.name, entry);
@@ -831,6 +845,15 @@ function makeState() {
         localStorage.setItem(FILE_TREE_VIEW_KEY, String(fileTreeView));
     } catch (e) {
       console.warn("[gte] could not persist fileTreeView", e);
+    }
+  }
+  let pushAfterCommit = $state<boolean>(loadSyncBool(PUSH_AFTER_COMMIT_KEY, false));
+  function persistPushAfterCommit() {
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem(PUSH_AFTER_COMMIT_KEY, String(pushAfterCommit));
+    } catch (e) {
+      console.warn("[gte] could not persist pushAfterCommit", e);
     }
   }
   let commitColWidths = $state<CommitColWidths>(loadSyncCommitColWidths());
@@ -1410,6 +1433,16 @@ function makeState() {
     setFileTreeView(v: boolean) {
       fileTreeView = v;
       persistFileTreeView();
+    },
+    // pushAfterCommit: SourceTree-style "push immediately" — after a successful
+    // commit/amend in the composer, push the current branch. Composer toggle,
+    // persisted (localStorage-only) so it's remembered across sessions.
+    get pushAfterCommit() {
+      return pushAfterCommit;
+    },
+    setPushAfterCommit(v: boolean) {
+      pushAfterCommit = v;
+      persistPushAfterCommit();
     },
     // commitColWidths: per-column fixed widths for the author/date/sha columns.
     get commitColWidths() {

@@ -61,6 +61,17 @@
           <RefIcon {kind} size={13} />
         </span>
         <span class="rn">{node.name}</span>
+        <!-- Per-branch ahead/behind vs upstream (local branches only), like
+             Fork/SourceTree: ↑ commits to push, ↓ commits to pull. -->
+        {#if kind === "local" && ((node.ref.ahead ?? 0) > 0 || (node.ref.behind ?? 0) > 0)}
+          <span
+            class="track"
+            aria-label={`${node.ref.ahead ?? 0} ahead, ${node.ref.behind ?? 0} behind upstream`}
+          >
+            {#if (node.ref.ahead ?? 0) > 0}<span class="ahead">↑{node.ref.ahead}</span>{/if}
+            {#if (node.ref.behind ?? 0) > 0}<span class="behind">↓{node.ref.behind}</span>{/if}
+          </span>
+        {/if}
       </button>
     {/if}
   {/each}
@@ -117,9 +128,27 @@
     color: var(--text-muted);
   }
   .rn {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* Ahead/behind counts, right-aligned at the end of the row. */
+  .track {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+  }
+  .track .ahead {
+    color: var(--accent);
+  }
+  .track .behind {
+    color: var(--text-muted);
   }
   .ref-ic {
     display: inline-flex;

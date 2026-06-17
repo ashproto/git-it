@@ -6,6 +6,7 @@ import { api } from "./api";
 import { SAMPLE_GRAPH } from "./graph/sample";
 import type { GraphCommit, OpOutcome, RemoteOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot } from "./types";
 import { dialogs } from "./dialogs.svelte";
+import { graphView } from "./graphView.svelte";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -105,6 +106,48 @@ export async function loadMoreGraph(): Promise<void> {
     console.warn("[gte] load more failed", e);
   } finally {
     appState.setGraphLoadingMore(false);
+  }
+}
+
+// Jump to a commit by SHA, paging in more history first if it isn't loaded yet.
+// A sidebar ref (tag/branch) can point at a commit far below the currently-loaded
+// graph window; without this the scroll target wouldn't exist and the click would
+// silently do nothing. We load page by page until the SHA appears, history is
+// exhausted, or we stop making progress, then scroll the graph to it.
+export async function jumpToRefWithLoad(targetSha: string): Promise<void> {
+  // Browser preview (no Tauri): best-effort scroll within the sample graph.
+  if (!isTauri() || !appState.repo) {
+    graphView.scrollToCommit(targetSha);
+    return;
+  }
+  const has = () => appState.graphCommits.some((c) => c.sha === targetSha);
+  if (has()) {
+    graphView.scrollToCommit(targetSha);
+    return;
+  }
+  const repo = appState.repo; // bail if the user switches repos mid-load
+  appState.status = "Loading history to that commit…";
+  // stalls guards against an in-flight concurrent load (loadMoreGraph no-ops while
+  // one is running) or a failing page (which leaves graphHasMore true) — either way
+  // the commit count won't grow, so we back off briefly and cap the retries.
+  let stalls = 0;
+  while (appState.repo === repo && appState.graphHasMore && !has()) {
+    const before = appState.graphCommits.length;
+    await loadMoreGraph();
+    if (appState.repo !== repo) return;
+    if (appState.graphCommits.length === before) {
+      if (++stalls > 40) break;
+      await new Promise((r) => setTimeout(r, 50));
+    } else {
+      stalls = 0;
+    }
+  }
+  if (appState.repo !== repo) return;
+  if (has()) {
+    graphView.scrollToCommit(targetSha);
+    appState.status = "";
+  } else {
+    appState.status = "Couldn't locate that commit in this repository's history.";
   }
 }
 

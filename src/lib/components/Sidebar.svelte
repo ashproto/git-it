@@ -2,8 +2,7 @@
   import { appState } from "../store.svelte";
   import { contextMenu, type MenuItem } from "../contextMenu.svelte";
   import { dialogs } from "../dialogs.svelte";
-  import { gitActions } from "../gitActions";
-  import { graphView } from "../graphView.svelte";
+  import { gitActions, jumpToRefWithLoad } from "../gitActions";
   import { branchColorDialog } from "../branchColorDialog.svelte";
   import { buildRefTree } from "../refTree";
   import type { RefEntry } from "../types";
@@ -39,9 +38,10 @@
   function jumpTo(sha: string) {
     appState.setCurrent(sha);
     appState.selected = new Set([sha]);
-    // The graph virtualizes rows, so the target may not be in the DOM — ask the
-    // graph view to resolve it by index and scroll (instead of getElementById).
-    graphView.scrollToCommit(sha);
+    // The graph virtualizes rows AND pages history lazily, so the target may not
+    // be loaded yet (e.g. a tag far down). jumpToRefWithLoad pages in more history
+    // until the commit is present, then scrolls the graph to it.
+    jumpToRefWithLoad(sha);
   }
 
   async function confirmDeleteBranch(name: string) {

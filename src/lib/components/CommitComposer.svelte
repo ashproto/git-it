@@ -35,6 +35,12 @@
     amend ? message.trim().length > 0 : message.trim().length > 0 && stagedCount > 0,
   );
 
+  // ── Push-immediately toggle (SourceTree-style) ──────────────────────────────
+  // When ON (and a remote exists), the branch is pushed right after a successful
+  // commit/amend. Disabled with no remote. The setting is persisted in the store.
+  const hasRemotes = $derived(appState.remotes.length > 0);
+  const pushAndEnabled = $derived(appState.pushAfterCommit && hasRemotes);
+
   // Monotonic token so a slow message-load can't clobber a later toggle (e.g. the
   // user toggles ON then OFF — or ON twice — before HEAD's message resolves).
   let amendToken = 0;
@@ -66,14 +72,20 @@
 
   async function doCommit() {
     if (!canCommit) return;
-    if (amend) {
-      await gitActions.amendCommit(message.trim());
-    } else {
-      await gitActions.commitChanges(message.trim());
-    }
+    const ok = amend
+      ? await gitActions.amendCommit(message.trim())
+      : await gitActions.commitChanges(message.trim());
+    // Only clear the composer on success — a failed commit keeps the typed message.
+    if (!ok) return;
     message = "";
     amend = false;
     draft = "";
+    // "Push immediately": push the current branch after a successful commit/amend.
+    // A normal push (no force); if it's an amend of an already-pushed commit the
+    // push is rejected and reported, leaving the user to force-push deliberately.
+    if (appState.pushAfterCommit && hasRemotes) {
+      await gitActions.push();
+    }
   }
 </script>
 
@@ -104,6 +116,21 @@
       />
       Amend last commit
     </label>
+    <label
+      class="signoff-label"
+      class:disabled={!hasRemotes}
+      title={hasRemotes
+        ? "Push to the remote right after committing"
+        : "No remote configured for this repository"}
+    >
+      <input
+        type="checkbox"
+        checked={appState.pushAfterCommit}
+        disabled={!hasRemotes}
+        onchange={() => appState.setPushAfterCommit(!appState.pushAfterCommit)}
+      />
+      Push immediately
+    </label>
     <button
       class="commit-btn"
       disabled={!canCommit}
@@ -115,10 +142,16 @@
             ? "Stage at least one file first"
             : "Enter a commit message"
         : amend
-          ? "Amend the last commit (⌘↵)"
-          : "Commit staged changes (⌘↵)"}
+          ? pushAndEnabled
+            ? "Amend the last commit and push (⌘↵)"
+            : "Amend the last commit (⌘↵)"
+          : pushAndEnabled
+            ? "Commit staged changes and push (⌘↵)"
+            : "Commit staged changes (⌘↵)"}
     >
-      {#if amend}Amend{:else}Commit {stagedCount > 0 ? `(${stagedCount})` : ""}{/if}
+      {#if amend}{pushAndEnabled ? "Amend & Push" : "Amend"}{:else}{pushAndEnabled
+          ? "Commit & Push"
+          : "Commit"} {stagedCount > 0 ? `(${stagedCount})` : ""}{/if}
     </button>
   </div>
 </div>
@@ -131,6 +164,9 @@
     padding: 10px 12px;
     border-top: 1px solid var(--border);
     background: var(--panel-bg);
+    /* Never shrink: the master-detail above (flex:1) yields space first, so the
+       composer keeps its full height and is never clipped on short windows. */
+    flex-shrink: 0;
   }
 
   .staged-badge {
