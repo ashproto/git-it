@@ -294,27 +294,6 @@ function loadSyncSidebarWidth(): number {
   }
 }
 
-// commitsHeight: localStorage-only (mirrors sidebarWidth) so the commits panel can
-// be vertically resized. DEFAULT 0 means "unset" — the CSS clamp height applies and
-// the panel sizes to the viewport; any positive value pins an explicit pixel height.
-const COMMITS_HEIGHT_KEY = "gitit.commitsHeight.v1";
-const COMMITS_HEIGHT_MIN = 220;
-const COMMITS_HEIGHT_MAX = 1400;
-const COMMITS_HEIGHT_DEFAULT = 0;
-function clampCommitsHeight(n: number): number {
-  if (!Number.isFinite(n) || n <= 0) return COMMITS_HEIGHT_DEFAULT;
-  return Math.min(COMMITS_HEIGHT_MAX, Math.max(COMMITS_HEIGHT_MIN, Math.round(n)));
-}
-function loadSyncCommitsHeight(): number {
-  try {
-    if (typeof localStorage === "undefined") return COMMITS_HEIGHT_DEFAULT;
-    const raw = localStorage.getItem(COMMITS_HEIGHT_KEY);
-    return raw === null ? COMMITS_HEIGHT_DEFAULT : clampCommitsHeight(Number(raw));
-  } catch {
-    return COMMITS_HEIGHT_DEFAULT;
-  }
-}
-
 // detailsHeight: localStorage-only. The commit-details panel slides up below the
 // (now full-height) graph; this is the max height it occupies (it scrolls inside,
 // and shrinks to its header when collapsed). DEFAULT 320px.
@@ -838,17 +817,6 @@ function makeState() {
     }
   }
 
-  // commitsHeight / commitColWidths: localStorage-persisted layout dimensions for
-  // the commits panel (see loaders above). 0 = unset (CSS clamp applies).
-  let commitsHeight = $state<number>(loadSyncCommitsHeight());
-  function persistCommitsHeight() {
-    try {
-      if (typeof localStorage !== "undefined")
-        localStorage.setItem(COMMITS_HEIGHT_KEY, String(commitsHeight));
-    } catch (e) {
-      console.warn("[gte] could not persist commitsHeight", e);
-    }
-  }
   let detailsHeight = $state<number>(loadSyncDetailsHeight());
   function persistDetailsHeight() {
     try {
@@ -1430,14 +1398,6 @@ function makeState() {
     setSidebarWidth(v: number) {
       sidebarWidth = clampSidebarWidth(v);
       persistSidebarWidth();
-    },
-    // commitsHeight: 0 ⇒ unset (use the CSS clamp); >0 ⇒ explicit pixel height.
-    get commitsHeight() {
-      return commitsHeight;
-    },
-    setCommitsHeight(v: number) {
-      commitsHeight = clampCommitsHeight(v);
-      persistCommitsHeight();
     },
     // detailsHeight: max height of the slide-up commit-details panel (px).
     get detailsHeight() {
