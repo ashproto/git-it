@@ -558,6 +558,14 @@
     backdrop-filter: blur(20px) saturate(140%);
     -webkit-backdrop-filter: blur(20px) saturate(140%);
   }
+  /* While a panel's body is mid-collapse, drop its blur: re-computing a blur over the OS
+     vibrancy every frame of the height animation is what makes the collapse look low-FPS.
+     The blur returns the instant the slide ends. (.cp-animating beats the rule above on
+     specificity, so no !important needed.) */
+  :global(:root[data-tauri="true"] .panel.cp-animating) {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 
   /* Left zone (title + branch chip) absorbs all the variable width, so the
      Fetch/Pull/Push group and the gear stay anchored on the right and never shift

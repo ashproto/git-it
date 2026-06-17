@@ -29,9 +29,21 @@
   // correctly — and the graph's fill body drives a ResizeObserver virtualization that
   // would thrash every frame of the animation — so those collapse instantly instead.
   const animateBody = $derived(!fill && height == null);
+  const SLIDE_MS = 200;
 
+  // While the body is mid-slide, drop the panel's frosted-glass backdrop-filter (in the
+  // translucent Tauri build): re-blurring the resizing panel every frame is the main
+  // cause of the low-framerate collapse animation. `animating` flips on for the slide
+  // duration; the CSS that drops the blur lives in +page.svelte next to the blur rule.
+  let animating = $state(false);
+  let animTimer: ReturnType<typeof setTimeout> | undefined;
   function toggle() {
     collapsed = !collapsed;
+    if (animateBody) {
+      animating = true;
+      clearTimeout(animTimer);
+      animTimer = setTimeout(() => (animating = false), SLIDE_MS + 40);
+    }
   }
 </script>
 
@@ -43,6 +55,7 @@
     class:collapsed
     class:fill={fill && !collapsed}
     class:sized
+    class:cp-animating={animating}
     style={sized ? `height:${height}px` : undefined}
   >
     <header class="panel-header">
@@ -59,7 +72,7 @@
            chevron toggles `collapsed` (the panel stays mounted), but is suppressed when
            the whole panel unmounts (e.g. a view switch) so nothing lingers. Instant
            (duration 0) for fill/sized panels — see animateBody above. -->
-      <div class="body" transition:slide={{ duration: animateBody ? 200 : 0, easing: quintOut }}>
+      <div class="body" transition:slide={{ duration: animateBody ? SLIDE_MS : 0, easing: quintOut }}>
         {@render children()}
       </div>
     {/if}
