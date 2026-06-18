@@ -4,6 +4,7 @@
   import { parseISO, formatCommitDate } from "../../dates";
   import type { IssueStateFilter } from "../../types";
   import { githubActions } from "../../githubActions.svelte";
+  import GithubDetail from "./GithubDetail.svelte";
 
   const FILTERS: IssueStateFilter[] = ["open", "closed", "all"];
 
@@ -15,12 +16,18 @@
   });
 
   const panel = $derived(githubState.issues);
+  const detailNumber = $derived(
+    githubState.selectedItem?.kind === "issue" ? githubState.selectedItem.number : null,
+  );
   function rel(iso: string): string {
     const d = parseISO(iso);
     return d ? formatCommitDate(d, appState.dateFormat, appState.relativeDates) : iso;
   }
 </script>
 
+{#if detailNumber !== null}
+  <GithubDetail kind="issue" number={detailNumber} />
+{:else}
 <div class="filters">
   {#each FILTERS as f (f)}
     <button class="chip" class:active={githubState.issueState === f} type="button" onclick={() => githubState.setIssueState(f)}>{f}</button>
@@ -38,9 +45,10 @@
   <ul class="list">
     {#each panel.data as it (it.number)}
       <li class="row">
-        <a class="title" href={it.url} target="_blank" rel="noreferrer">
+        <button class="title" type="button" onclick={() => githubState.openItem("issue", it.number)}>
           <span class="num">#{it.number}</span>{it.title}
-        </a>
+        </button>
+        <a class="ext" href={it.url} target="_blank" rel="noreferrer" title="Open on github.com">↗</a>
         <div class="meta">
           <span>{it.author}</span>
           {#if it.assignees.length}<span>→ {it.assignees.join(", ")}</span>{/if}
@@ -65,6 +73,7 @@
   {#if panel.data.length >= 50}
     <p class="more">Showing the 50 most recent — open the repo on github.com for the full list.</p>
   {/if}
+{/if}
 {/if}
 
 <style>
@@ -134,12 +143,22 @@
     gap: 4px;
   }
   .title {
+    background: none;
+    border: none;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
     color: var(--text);
-    text-decoration: none;
     font-weight: 500;
     font-size: 13.5px;
   }
-  .title:hover {
+  .ext {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 12px;
+    margin-left: 6px;
+  }
+  .ext:hover {
     color: var(--accent);
   }
   .num {
