@@ -1,4 +1,5 @@
 use crate::git_ops;
+use crate::github;
 use crate::graph;
 use crate::ops;
 use crate::ops_merge;
@@ -464,4 +465,16 @@ pub async fn push(
 #[tauri::command]
 pub fn cancel_remote(state: State<'_, Arc<ops_remote::RemoteState>>) {
     ops_remote::cancel(state.inner());
+}
+
+// ── GitHub integration ────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn github_availability(repo: String) -> github::GhAvailability {
+    github::availability(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn github_repo_stats(repo: String) -> Result<github::GhRepoStats, github::GithubError> {
+    github::repo_stats(&PathBuf::from(repo))
 }

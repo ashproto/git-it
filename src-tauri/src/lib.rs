@@ -1,6 +1,7 @@
 mod commands;
 mod fswatch;
 mod git_ops;
+mod github;
 mod graph;
 mod ops;
 mod ops_merge;
@@ -119,6 +120,8 @@ pub fn run() {
             commands::pull,
             commands::push,
             commands::cancel_remote,
+            commands::github_availability,
+            commands::github_repo_stats,
             fswatch::start_watch,
             fswatch::stop_watch,
         ])
