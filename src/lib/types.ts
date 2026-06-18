@@ -256,3 +256,23 @@ export type GhMilestone = {
 };
 
 export type MergeMethod = "merge" | "squash" | "rebase";
+
+export type GhCheck = { name: string; bucket: "pass" | "fail" | "pending" | "neutral"; url: string };
+export type GhComment = { author: string; body: string; createdAt: string };
+export type GhReview = { author: string; state: string; body: string; submittedAt: string };
+export type GhFile = { path: string; additions: number; deletions: number };
+
+export type GhPullDetail = {
+  number: number; title: string; body: string; author: string; state: string; isDraft: boolean;
+  labels: GhLabel[]; assignees: string[]; milestone: string | null;
+  baseRefName: string; headRefName: string;
+  reviewDecision: string; mergeable: string; mergeStateStatus: string;
+  additions: number; deletions: number; changedFiles: number;
+  files: GhFile[]; reviews: GhReview[]; checks: GhCheck[]; comments: GhComment[];
+  createdAt: string; updatedAt: string; url: string;
+};
+export type GhIssueDetail = {
+  number: number; title: string; body: string; author: string; state: string; stateReason: string | null;
+  labels: GhLabel[]; assignees: string[]; milestone: string | null;
+  comments: GhComment[]; createdAt: string; updatedAt: string; url: string;
+};

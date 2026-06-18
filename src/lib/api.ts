@@ -19,6 +19,8 @@ import type {
   MergeMethod,
   PullStateFilter,
   IssueStateFilter,
+  GhPullDetail,
+  GhIssueDetail,
   GraphCommit,
   OpOutcome,
   PrerequisiteCheck,
@@ -175,6 +177,10 @@ export const api = {
     invoke<void>("github_pr_merge", { repo, number, method }),
   githubIssueCreate: (repo: string, title: string, body: string) =>
     invoke<string>("github_issue_create", { repo, title, body }),
+  githubPrDetail: (repo: string, number: number) =>
+    invoke<GhPullDetail>("github_pr_detail", { repo, number }),
+  githubIssueDetail: (repo: string, number: number) =>
+    invoke<GhIssueDetail>("github_issue_detail", { repo, number }),
   remoteAdd: (repo: string, name: string, url: string) =>
     invoke<void>("remote_add", { repo, name, url }),
   remoteRemove: (repo: string, name: string) => invoke<void>("remote_remove", { repo, name }),

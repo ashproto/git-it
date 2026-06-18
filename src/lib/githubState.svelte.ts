@@ -16,6 +16,8 @@ import type {
   GhLabel,
   PullStateFilter,
   IssueStateFilter,
+  GhPullDetail,
+  GhIssueDetail,
 } from "./types";
 
 export type GithubTab = "overview" | "pulls" | "issues" | "releases" | "actions" | "insights";
@@ -92,6 +94,17 @@ function makeGithubState() {
   const milestones = makePanel<GhMilestone[]>();
   const labels = makePanel<GhLabel[]>();
 
+  const prDetail = makePanel<GhPullDetail>();
+  const issueDetail = makePanel<GhIssueDetail>();
+  let selectedItem = $state<{ kind: "pr" | "issue"; number: number } | null>(null);
+
+  function loadPrDetail(repo: string, number: number) {
+    return prDetail.load(`${repo}|${number}|${reloadNonce}`, () => api.githubPrDetail(repo, number));
+  }
+  function loadIssueDetail(repo: string, number: number) {
+    return issueDetail.load(`${repo}|${number}|${reloadNonce}`, () => api.githubIssueDetail(repo, number));
+  }
+
   function loadTraffic(repo: string) {
     return traffic.load(`${repo}|${reloadNonce}`, () => api.githubTraffic(repo));
   }
@@ -160,6 +173,9 @@ function makeGithubState() {
     activity.reset();
     milestones.reset();
     labels.reset();
+    selectedItem = null;
+    prDetail.reset();
+    issueDetail.reset();
     availability = null;
     stats = null;
     statsError = null;
@@ -201,6 +217,7 @@ function makeGithubState() {
     },
     setActiveTab(t: GithubTab) {
       activeTab = t;
+      selectedItem = null;
     },
     get pulls() {
       return pulls;
@@ -254,6 +271,23 @@ function makeGithubState() {
     loadActivity,
     loadMilestones,
     loadLabels,
+    get selectedItem() {
+      return selectedItem;
+    },
+    openItem(kind: "pr" | "issue", number: number) {
+      selectedItem = { kind, number };
+    },
+    closeItem() {
+      selectedItem = null;
+    },
+    get prDetail() {
+      return prDetail;
+    },
+    get issueDetail() {
+      return issueDetail;
+    },
+    loadPrDetail,
+    loadIssueDetail,
     ensure,
     refresh(repo: string) {
       loadedRepo = null;
