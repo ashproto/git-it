@@ -299,6 +299,12 @@ function makeGithubState() {
       return selectedItem;
     },
     openItem(kind: "pr" | "issue", number: number) {
+      // The detail panels are single shared caches, so they still hold the
+      // previously-opened item. Clear the matching one so the skeleton shows
+      // for the new item instead of flashing the old one. (Refresh-in-detail
+      // keeps its data — it doesn't go through openItem.)
+      if (kind === "pr") prDetail.reset();
+      else issueDetail.reset();
       selectedItem = { kind, number };
     },
     closeItem() {
