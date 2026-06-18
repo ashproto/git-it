@@ -102,7 +102,10 @@ pub fn load_graph(repo: &Path, count: u32, skip: u32) -> Result<Vec<GraphCommit>
     }
     let ref_map = build_ref_decorations(repo)?;
 
-    let fmt = "%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%cn%x1f%cI%x1f%s%x1e";
+    // Body (%b) is the LAST field so its embedded newlines can't be mistaken for a
+    // field separator (\x1f); records are split on \x1e. The record-level newline trim
+    // below then strips %b's trailing blank line.
+    let fmt = "%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%cn%x1f%cI%x1f%s%x1f%b%x1e";
     let mut cmd = Command::new("git");
     cmd.current_dir(repo)
         .args(["-c", "log.showSignature=false", "log", "--all", "--topo-order", "--date-order"])
@@ -135,6 +138,9 @@ pub fn load_graph(repo: &Path, count: u32, skip: u32) -> Result<Vec<GraphCommit>
             committer_date: f[6].to_string(),
             refs,
             subject: f[7].to_string(),
+            // f[8] is %b; absent only on a malformed record. trim() drops the blank
+            // line git leaves between subject and body plus any trailing newline.
+            body: f.get(8).map(|s| s.trim().to_string()).unwrap_or_default(),
         });
     }
     Ok(commits)

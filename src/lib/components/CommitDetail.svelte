@@ -2,6 +2,7 @@
   import { appState } from "../store.svelte";
   import { api } from "../api";
   import { parseISO, formatCommitDate } from "../dates";
+  import { reflowCommitBody } from "../commitBody";
   import CommitFilesDiff from "./CommitFilesDiff.svelte";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import RefIcon from "./RefIcon.svelte";
@@ -25,6 +26,9 @@
   }: { height?: number; fill?: boolean; collapsed?: boolean } = $props();
 
   const c = $derived(appState.selectedCommit);
+  // Reflow the hard-wrapped commit body into paragraph blocks so it fills the width
+  // instead of keeping the author's ~72-col line breaks (see commitBody.ts).
+  const bodyBlocks = $derived(c?.body ? reflowCommitBody(c.body) : []);
 
   // Edit mode: the panel flips between read-only details and the inline edit tools
   // (message reword + date editing). The date editor (EditTabs) targets
@@ -126,7 +130,10 @@
       <span class="sha mono">{c.sha.slice(0, 10)}</span>
     </div>
 
-    <div class="grid">
+    <!-- Metadata grid + description side by side so the body uses the empty space to
+         the right of the short key/value rows; it drops below on a narrow panel. -->
+    <div class="meta-row">
+      <div class="grid">
       <span class="k">Author</span>
       <span class="v">{c.author_name} &lt;{c.author_email}&gt;</span>
       <span class="k">Authored</span>
@@ -146,6 +153,17 @@
             ><RefIcon kind={r.kind} />{r.name}</span>
           {/each}
         </span>
+      {/if}
+      </div>
+
+      <!-- Body sits beside the grid (see .meta-row). Reflowed into paragraph blocks so it
+           fills the width; blank-line breaks, list items and trailers are preserved. -->
+      {#if bodyBlocks.length}
+        <div class="body-msg">
+          {#each bodyBlocks as blk, i}
+            <p class="para" class:tight={blk.tight} class:first={i === 0}>{blk.text}</p>
+          {/each}
+        </div>
       {/if}
     </div>
 
@@ -212,11 +230,25 @@
     border: 1px solid var(--border);
     border-radius: 6px;
   }
+  /* Metadata grid + description side by side. flex-wrap drops the body below the grid
+     when the panel is too narrow to fit both; align-items:flex-start keeps the grid
+     pinned to the top so a tall body doesn't vertically center the metadata. */
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px 24px;
+  }
   .grid {
     display: grid;
     grid-template-columns: auto 1fr;
     gap: 4px 14px;
     font-size: 12.5px;
+    /* Keep the metadata column compact so the description gets the remaining width.
+       max-width is wide enough that the longest value (a date) never truncates. */
+    flex: 0 1 auto;
+    min-width: 200px;
+    max-width: 340px;
   }
   .k {
     color: var(--text-muted);
@@ -252,6 +284,31 @@
     font-size: 11px;
     color: var(--text-muted);
     font-style: italic;
+  }
+  /* Commit message body, beside the grid in .meta-row (so no top margin — the row gap
+     spaces it, including the row-gap when it wraps below on a narrow panel). flex:1 1
+     260px takes the remaining width but wraps under the grid below ~260px. Each child
+     <p> is a reflowed paragraph that wraps NORMALLY to fill the column; break-word stops
+     an over-long token from forcing horizontal scroll. */
+  .body-msg {
+    flex: 1 1 260px;
+    min-width: 0;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+  .body-msg .para {
+    margin: 0;
+  }
+  /* Paragraph gap between true paragraphs; tight blocks (consecutive list items /
+     trailers, no blank line between) sit closer. .first never gets a top margin. */
+  .body-msg .para + .para {
+    margin-top: 0.75em;
+  }
+  .body-msg .para.tight {
+    margin-top: 0.15em;
   }
   .diff-section {
     margin-top: 14px;

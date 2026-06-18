@@ -68,6 +68,8 @@ export type GraphCommit = {
   committer_date: string;
   refs: RefDecoration[];
   subject: string;
+  // Commit message body (everything after the subject), trimmed; "" when none.
+  body: string;
 };
 
 export type Ref = {

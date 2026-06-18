@@ -59,6 +59,9 @@ pub struct GraphCommit {
     pub committer_date: String,
     pub refs: Vec<RefDecoration>,
     pub subject: String,
+    /// The commit message body (everything after the subject line), trimmed.
+    /// Empty when the commit has only a subject. Shown in the commit-details pane.
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

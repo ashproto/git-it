@@ -35,12 +35,12 @@
   const SLIDE_MS = 200;
   const EASE = "cubic-bezier(0.22, 1, 0.36, 1)"; // ~quintOut
 
-  // `animating` keeps a fill/sized body mounted through its measured animation AND drives
-  // the per-panel `cp-animating` class that drops the panel's backdrop-filter blur while
-  // it resizes (re-blurring a resizing panel every frame is the main FPS cost). The shared
-  // `panelAnim` ref-count additionally tells the commit graph to FREEZE its row
-  // virtualization during ANY panel animation (its per-frame re-window + SVG rebuild is
-  // the other big cost). `animActive` keeps the begin/end pair balanced.
+  // `animating` keeps a fill/sized body mounted through its measured height animation, so
+  // its content stays visible while the panel resizes. The shared `panelAnim` ref-count
+  // additionally tells the commit graph to FREEZE its row virtualization during ANY panel
+  // animation (its per-frame re-window + SVG rebuild would otherwise make the resize
+  // choppy). `animActive` keeps the begin/end pair balanced. (Panels no longer carry a CSS
+  // backdrop-filter, so there's no per-frame blur to drop here anymore — see +page.svelte.)
   let animating = $state(false);
   let animActive = false;
   let animTimer: ReturnType<typeof setTimeout> | undefined;
@@ -79,9 +79,15 @@
 
   // Fill/sized panels (commit graph / details drawer) fill the available space, not their
   // content, so a body slide would gap or jump. Instead MEASURE the panel's real height at
-  // both ends and run a Web-Animations-API height animation between them. WAAPI is used
-  // rather than a CSS transition toggled via style writes because the latter intermittently
-  // fails to start in WebKit — the panel "snaps" open with no animation.
+  // both ends and run a Web-Animations-API height animation between them.
+  //
+  // CRITICAL: a `fill` panel is `flex: 1` (grow:1, basis:0%) inside its flex column, which
+  // means the flexbox algorithm — NOT the `height` property — decides its used height. Any
+  // height we animate is simply ignored and the panel SNAPS to its flex-filled size. (This,
+  // not CSS-vs-WAAPI, was the real cause of the snap.) So for the duration of the animation
+  // we pin `flex: 0 0 auto`, which makes the animated `height` authoritative; the panel's
+  // flex class is restored in finishMeasured. The non-fill sidebar panels never hit this
+  // path — they animate via the declarative body slide above.
   async function measuredToggle() {
     const el = sectionEl;
     const hdr = headerEl;
@@ -101,15 +107,22 @@
     await tick(); // DOM at the target layout (pre-paint microtask)
     if (seq !== animSeq) return; // superseded by a newer toggle
 
-    el.style.height = ""; // ensure the natural target measures correctly
-    // Collapsed target = the header alone (+ the panel's 1px top/bottom borders);
-    // expanded target = the natural filled/sized height (body is mounted now).
+    // Measure the natural target with the panel's REAL flex sizing in effect (clear any
+    // leftover inline overrides first): expanding a fill panel → its flex-filled height;
+    // collapsing → the header alone (+ the panel's 1px top/bottom borders).
+    el.style.height = "";
+    el.style.flex = "";
     const endH = collapsing ? hdr.offsetHeight + 2 : el.offsetHeight;
     if (startH === endH || typeof el.animate !== "function") {
       finishMeasured(el, seq);
       return;
     }
+    // Pin flex so the height animation isn't overridden by flex-grow, and set the start
+    // height synchronously (before the browser can paint) so there's no one-frame flash at
+    // the flex-filled size before the animation's fill takes hold.
+    el.style.flex = "0 0 auto";
     el.style.overflow = "hidden";
+    el.style.height = `${startH}px`;
     const anim = el.animate([{ height: `${startH}px` }, { height: `${endH}px` }], {
       duration: SLIDE_MS,
       easing: EASE,
@@ -124,8 +137,8 @@
 
   // Settle the panel back to its natural layout after the measured animation. Drop the
   // body-mount flag FIRST (so a collapsed body unmounts) then, after the DOM updates,
-  // cancel the WAAPI fill so the panel lands on its natural (header / filled) height
-  // without a flash.
+  // cancel the WAAPI fill and clear the inline overrides (including the pinned flex) so the
+  // panel lands on its natural (header / flex-filled) height without a flash.
   function finishMeasured(el: HTMLElement, seq: number) {
     if (seq !== animSeq) return;
     clearTimeout(animTimer);
@@ -136,6 +149,7 @@
       currentAnim = undefined;
       el.style.height = "";
       el.style.overflow = "";
+      el.style.flex = "";
     });
   }
 
@@ -159,7 +173,6 @@
     class:collapsed
     class:fill={fill && !collapsed}
     class:sized
-    class:cp-animating={animating}
     style={height != null ? `--cp-h:${height}px` : undefined}
   >
     <header bind:this={headerEl} class="panel-header">
@@ -200,6 +213,15 @@
   }
   .panel.collapsed .panel-header {
     border-bottom: none;
+  }
+  /* A collapsed panel is exactly its header and must NEVER shrink. Because .panel sets
+     overflow:hidden, a flex item's automatic min-size collapses to 0, so without this a
+     collapsed panel competing for height in a flex column (e.g. the collapsed commit
+     graph next to a tall details pane holding a diff) gets squished below its header and
+     clips its title/buttons. flex:none (0 0 auto) pins it to its content height; the
+     sibling fill/sized panels absorb any deficit (they scroll internally). */
+  .panel.collapsed {
+    flex: none;
   }
   .panel:not(.collapsed) .panel-header {
     border-bottom: 1px solid var(--border-subtle);
@@ -259,6 +281,13 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    /* Scroll internally when the content exceeds the panel (matches .panel.sized .body).
+       Without this, a fill panel holding tall content — e.g. the commit-details pane in
+       fill mode (graph collapsed) showing a real diff — would overflow and push a height
+       deficit up the flex column, squishing the collapsed sibling panel's header. The
+       graph's own fill body wraps a flex:1 .wrap that already self-scrolls, so this is a
+       harmless no-op there. */
+    overflow: auto;
   }
   /* sized mode: a FIXED-height panel (height set inline) whose body is the scroll
      region. Keeps the slide-up details pane a stable height while its diff loads.

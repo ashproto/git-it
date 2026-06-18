@@ -590,10 +590,10 @@
     z-index: 2;
     /* Use the more-opaque popover token (≈0.85–0.88 alpha in glass mode) instead
        of the translucent --header-bg so the column titles stay clearly legible as
-       commit rows scroll underneath; the blur is a no-op where it's opaque. */
+       commit rows scroll underneath. No backdrop-filter: this sticky header is an
+       always-on surface, and (being nearly opaque) it needs no blur — keeping one
+       here would re-blur the whole header every frame of any animation. */
     background: var(--popover-bg, var(--header-bg));
-    backdrop-filter: blur(16px) saturate(150%);
-    -webkit-backdrop-filter: blur(16px) saturate(150%);
     border-bottom: 1px solid var(--border);
     font-size: 11px;
     color: var(--text-muted);

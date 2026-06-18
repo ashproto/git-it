@@ -29,7 +29,7 @@
   } from "$lib/gitActions";
   import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { slide } from "svelte/transition";
   import { appState } from "$lib/store.svelte";
   import { SAMPLE_GRAPH } from "$lib/graph/sample";
@@ -138,6 +138,43 @@
       prevDetailsSha = sha;
       if (sha) detailsCollapsed = false;
     }
+  });
+
+  // ── Screen / repo switch animation ───────────────────────────────────────────
+  // A quick zoom-and-fade-in played on the main content whenever the active screen
+  // changes (Commit Timeline ⇄ Local Changes) or the active repository switches. It
+  // animates ONLY opacity + transform (the two GPU-composited properties), so it stays
+  // smooth, and it runs imperatively via the Web Animations API on a wrapper element —
+  // nothing remounts. That matters: the commit graph must stay mounted across screen
+  // switches (jump-to-ref) and the repo swap is deliberately flicker-free (old data is
+  // kept until the new graph loads); a keyed remount would break both.
+  let viewSwapEl = $state<HTMLElement>();
+  let prevView = appState.activeView;
+  let prevRepo = appState.repo;
+  let firstSwap = true;
+  $effect(() => {
+    const view = appState.activeView; // tracked
+    const repo = appState.repo; // tracked
+    untrack(() => {
+      const changed = view !== prevView || repo !== prevRepo;
+      prevView = view;
+      prevRepo = repo;
+      if (firstSwap) {
+        firstSwap = false; // don't animate the initial render
+        return;
+      }
+      if (!changed) return;
+      const el = viewSwapEl;
+      if (!el || typeof el.animate !== "function") return;
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+      el.animate(
+        [
+          { opacity: 0, transform: "scale(0.985)" },
+          { opacity: 1, transform: "scale(1)" },
+        ],
+        { duration: 260, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+      );
+    });
   });
 
   // ── Commit-details panel resize (drag the boundary between the graph and the
@@ -352,6 +389,10 @@
           </div>
         {:else}
           <div class="main-col">
+            <!-- view-swap is the element the screen/repo-switch zoom-fade ($effect above)
+                 animates; it holds everything that swaps between the timeline and Local
+                 Changes. The debug Output panel stays outside it. -->
+            <div class="view-swap" bind:this={viewSwapEl}>
             <!-- Timeline stays MOUNTED (just hidden) in Local Changes view so the
                  graph's scroll-to-commit keeps working when a sidebar ref is clicked
                  from the changes screen. display:contents → no layout box when shown. -->
@@ -390,6 +431,7 @@
                 />
               </div>
             {/if}
+            </div>
             {#if appState.showOutput}
               <LogPanel />
             {/if}
@@ -551,21 +593,15 @@
     padding-bottom: 6px;
     min-height: 28px;
   }
-  /* Light frosted-glass on top of OS NSVisualEffect vibrancy. Kept light on the
-     blur side so the wallpaper detail comes through clearly — the OS material
-     already provides plenty of blur underneath. */
-  :global(:root[data-tauri="true"] .panel) {
-    backdrop-filter: blur(20px) saturate(140%);
-    -webkit-backdrop-filter: blur(20px) saturate(140%);
-  }
-  /* While a panel's body is mid-collapse, drop its blur: re-computing a blur over the OS
-     vibrancy every frame of the height animation is what makes the collapse look low-FPS.
-     The blur returns the instant the slide ends. (.cp-animating beats the rule above on
-     specificity, so no !important needed.) */
-  :global(:root[data-tauri="true"] .panel.cp-animating) {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
+  /* Panels are deliberately NOT given a CSS backdrop-filter blur. The window already
+     carries a NATIVE macOS NSVisualEffect material (tauri.conf windowEffects → "popover")
+     that blurs the wallpaper behind it. A second, CSS-level blur on every always-on panel
+     duplicated that work AND — because backdrop-filter is not GPU-composited and forces a
+     full repaint + re-blur of its area every frame over a transparent WKWebView — it capped
+     the whole app's animation framerate (every animation re-blurred ~12 large surfaces per
+     frame). Panels are now plain translucent tints (var(--panel-bg)) layered over the native
+     material. Only transient overlays (modals, menus, popovers) keep a CSS blur: they overlap
+     opaque content, are short-lived, and aren't part of the steady-state per-frame cost. */
 
   /* Left zone (title + branch chip) absorbs all the variable width, so the
      Fetch/Pull/Push group and the gear stay anchored on the right and never shift
@@ -812,6 +848,19 @@
   .resize-handle:hover::before {
     background: var(--accent);
     width: 2px;
+  }
+  /* Wrapper around the swappable views (timeline / Local Changes). Reproduces the main
+     column's flex context so the graph still fills and the details pane still pins, while
+     giving the screen/repo-switch zoom-fade a single element to transform. The transform
+     is only applied for ~260ms by the WAAPI pulse, so it doesn't affect resting layout. */
+  .view-swap {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transform-origin: center top;
   }
   .main-col {
     flex: 1;
