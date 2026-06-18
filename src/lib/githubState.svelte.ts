@@ -9,6 +9,11 @@ import type {
   GhIssue,
   GhRelease,
   GhRun,
+  GhTraffic,
+  GhContributor,
+  GhActivity,
+  GhMilestone,
+  GhLabel,
   PullStateFilter,
   IssueStateFilter,
 } from "./types";
@@ -81,6 +86,37 @@ function makeGithubState() {
   let issueState = $state<IssueStateFilter>("open");
   let reloadNonce = $state(0);
 
+  const traffic = makePanel<GhTraffic>();
+  const contributors = makePanel<GhContributor[]>();
+  const activity = makePanel<GhActivity>();
+  const milestones = makePanel<GhMilestone[]>();
+  const labels = makePanel<GhLabel[]>();
+
+  function loadTraffic(repo: string) {
+    return traffic.load(`${repo}|${reloadNonce}`, () => api.githubTraffic(repo));
+  }
+  function loadContributors(repo: string) {
+    return contributors.load(`${repo}|${reloadNonce}`, () => api.githubContributors(repo, 12));
+  }
+  function loadActivity(repo: string) {
+    return activity.load(`${repo}|${reloadNonce}`, async () => {
+      // /stats/commit_activity returns 202 + empty body while GitHub computes;
+      // retry a few times before giving up and showing the "computing" state.
+      let a = await api.githubActivity(repo);
+      for (let tries = 0; a.computing && tries < 3; tries++) {
+        await new Promise((r) => setTimeout(r, 1800));
+        a = await api.githubActivity(repo);
+      }
+      return a;
+    });
+  }
+  function loadMilestones(repo: string) {
+    return milestones.load(`${repo}|${reloadNonce}`, () => api.githubMilestones(repo));
+  }
+  function loadLabels(repo: string) {
+    return labels.load(`${repo}|${reloadNonce}`, () => api.githubLabels(repo));
+  }
+
   function loadPulls(repo: string) {
     return pulls.load(`${repo}|${pullState}|${reloadNonce}`, () =>
       api.githubPulls(repo, pullState, 50),
@@ -119,6 +155,11 @@ function makeGithubState() {
     issues.reset();
     releases.reset();
     runs.reset();
+    traffic.reset();
+    contributors.reset();
+    activity.reset();
+    milestones.reset();
+    labels.reset();
     availability = null;
     stats = null;
     statsError = null;
@@ -193,6 +234,26 @@ function makeGithubState() {
     loadIssues,
     loadReleases,
     loadRuns,
+    get traffic() {
+      return traffic;
+    },
+    get contributors() {
+      return contributors;
+    },
+    get activity() {
+      return activity;
+    },
+    get milestones() {
+      return milestones;
+    },
+    get labels() {
+      return labels;
+    },
+    loadTraffic,
+    loadContributors,
+    loadActivity,
+    loadMilestones,
+    loadLabels,
     ensure,
     refresh(repo: string) {
       loadedRepo = null;

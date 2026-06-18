@@ -221,3 +221,36 @@ export type GhRun = {
   updatedAt: string;
   url: string;
 };
+
+export type GhTrafficPoint = { timestamp: string; count: number; uniques: number };
+export type GhSeries = { count: number; uniques: number; points: GhTrafficPoint[] };
+export type GhPopularPath = { path: string; title: string; count: number; uniques: number };
+export type GhReferrer = { referrer: string; count: number; uniques: number };
+export type GhTraffic = {
+  views: GhSeries;
+  clones: GhSeries;
+  paths: GhPopularPath[];
+  referrers: GhReferrer[];
+};
+
+export type GhContributor = {
+  login: string;
+  contributions: number;
+  avatarUrl: string;
+  htmlUrl: string;
+  isBot: boolean;
+};
+
+export type GhWeek = { week: number; total: number; days: number[] };
+export type GhActivity = { computing: boolean; weeks: GhWeek[] };
+
+export type GhMilestone = {
+  title: string;
+  number: number;
+  state: string;
+  openIssues: number;
+  closedIssues: number;
+  dueOn: string | null;
+  description: string | null;
+  htmlUrl: string;
+};
