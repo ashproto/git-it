@@ -5,6 +5,10 @@
   import GithubTabs from "./GithubTabs.svelte";
   import GithubOverview from "./GithubOverview.svelte";
   import GithubSetupCard from "./GithubSetupCard.svelte";
+  import GithubPulls from "./GithubPulls.svelte";
+  import GithubIssues from "./GithubIssues.svelte";
+  import GithubReleases from "./GithubReleases.svelte";
+  import GithubActions from "./GithubActions.svelte";
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -42,6 +46,14 @@
       {:else if githubState.stats}
         <GithubOverview stats={githubState.stats} />
       {/if}
+    {:else if githubState.activeTab === "pulls"}
+      <GithubPulls />
+    {:else if githubState.activeTab === "issues"}
+      <GithubIssues />
+    {:else if githubState.activeTab === "releases"}
+      <GithubReleases />
+    {:else if githubState.activeTab === "actions"}
+      <GithubActions />
     {/if}
   {:else if avail}
     <GithubSetupCard availability={avail} onretry={() => appState.repo && githubState.refresh(appState.repo)} />

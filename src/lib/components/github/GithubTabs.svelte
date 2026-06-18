@@ -1,8 +1,13 @@
 <script lang="ts">
   import { githubState, type GithubTab } from "../../githubState.svelte";
 
-  // Phase 1 ships only Overview; later phases push more entries here.
-  const TABS: { id: GithubTab; label: string }[] = [{ id: "overview", label: "Overview" }];
+  const TABS: { id: GithubTab; label: string }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "pulls", label: "Pull Requests" },
+    { id: "issues", label: "Issues" },
+    { id: "releases", label: "Releases" },
+    { id: "actions", label: "Actions" },
+  ];
 </script>
 
 <nav class="tabs" aria-label="GitHub sections">
