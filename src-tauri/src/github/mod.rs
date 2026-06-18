@@ -9,8 +9,16 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 /// True for a single `owner` or `repo` path segment we will hand to `gh`.
+/// Beyond the charset, reject the degenerate/traversal cases — `.`/`..` (which
+/// `gh api repos/{o}/{r}` would path-normalize into a different endpoint) and any
+/// leading `-` (which later phases pass positionally to `gh`, where it would read
+/// as a flag). GitHub owner/repo names never legitimately hit these, so nothing
+/// real is rejected.
 fn is_valid_segment(s: &str) -> bool {
     !s.is_empty()
+        && s != "."
+        && s != ".."
+        && !s.starts_with('-')
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
@@ -135,14 +143,19 @@ pub enum GhAvailability {
 /// Probe, in order: is `gh` installed? authenticated? does this repo have a
 /// github.com remote? Returns the first failing state, else `Ok` with owner/repo.
 pub fn availability(repo: &Path) -> GhAvailability {
-    match run_gh(&["--version"], None) {
-        Ok(_) => {}
-        Err(GithubError::NotInstalled) => return GhAvailability::NotInstalled,
-        Err(_) => return GhAvailability::NotInstalled,
+    // `gh --version` is offline; any failure means gh is unusable (missing, or
+    // present-but-not-executable) — point the user at install instructions either way.
+    if run_gh(&["--version"], None).is_err() {
+        return GhAvailability::NotInstalled;
     }
-    // `gh auth status` exits 0 when authed (writes to stderr even then), 1 otherwise.
-    if run_gh(&["auth", "status"], None).is_err() {
-        return GhAvailability::NotAuthed;
+    // `gh auth status` exits 0 when authed (writes to stderr even then). Only treat
+    // it as NotAuthed when gh actually reports being logged out — a transient
+    // network failure with a valid token must NOT block with a sign-in card; fall
+    // through and let the data calls surface any real error instead.
+    match run_gh(&["auth", "status"], None) {
+        Ok(_) => {}
+        Err(GithubError::NotAuthed) => return GhAvailability::NotAuthed,
+        Err(_) => {}
     }
     match resolve_owner_repo(repo) {
         Some((owner, repo)) => GhAvailability::Ok { owner, repo },
@@ -300,6 +313,12 @@ mod tests {
         assert_eq!(parse_github_remote("https://github.com/cli/cli/extra.git"), None);
         assert_eq!(parse_github_remote("https://github.com/cli/c li"), None);
         assert_eq!(parse_github_remote(""), None);
+        // Path-traversal / leading-dash segments must be rejected: `repos/../user`
+        // would normalize to a different endpoint, and a leading `-` reads as a flag.
+        assert_eq!(parse_github_remote("https://github.com/../user"), None);
+        assert_eq!(parse_github_remote("https://github.com/./x"), None);
+        assert_eq!(parse_github_remote("https://github.com/-rf/x"), None);
+        assert_eq!(parse_github_remote("https://github.com/x/-rf"), None);
     }
 
     #[test]

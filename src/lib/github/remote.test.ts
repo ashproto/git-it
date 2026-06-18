@@ -19,4 +19,11 @@ describe("parseGithubRemote", () => {
     expect(parseGithubRemote("https://github.com/cli/cli/extra")).toBeNull();
     expect(parseGithubRemote("")).toBeNull();
   });
+
+  it("rejects path-traversal and leading-dash segments", () => {
+    expect(parseGithubRemote("https://github.com/../user")).toBeNull();
+    expect(parseGithubRemote("https://github.com/./x")).toBeNull();
+    expect(parseGithubRemote("https://github.com/-rf/x")).toBeNull();
+    expect(parseGithubRemote("https://github.com/x/-rf")).toBeNull();
+  });
 });
