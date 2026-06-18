@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { mount } from "svelte";
+import { mount, type Component } from "svelte";
 import Skeleton from "./Skeleton.svelte";
 import GithubSkeleton from "./GithubSkeleton.svelte";
 
-function render(Component: unknown, props: Record<string, unknown> = {}) {
+function render<Props extends Record<string, unknown>>(Comp: Component<Props>, props: Props) {
   const target = document.createElement("div");
   document.body.appendChild(target);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  mount(Component as any, { target, props });
+  mount(Comp, { target, props });
   return target;
 }
 
@@ -40,10 +39,13 @@ describe("GithubSkeleton", () => {
   ] as const;
 
   for (const variant of variants) {
-    it(`renders the ${variant} variant with a loading role and shimmer blocks`, () => {
+    it(`renders the ${variant} variant with shimmer blocks`, () => {
       const target = render(GithubSkeleton, { variant });
-      expect(target.querySelector("[role='status']")).not.toBeNull();
       expect(target.querySelectorAll(".sk").length).toBeGreaterThan(0);
+      // Single-instance variants announce loading; the `card` variant is
+      // rendered in multiples (Insights), so it stays decorative.
+      const hasStatus = target.querySelector("[role='status']") !== null;
+      expect(hasStatus).toBe(variant !== "card");
     });
   }
 

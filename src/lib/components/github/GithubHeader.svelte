@@ -28,7 +28,7 @@
       <StatTile label="Open Issues" value={stats.openIssues} onclick={() => githubState.setActiveTab("issues")} />
     {:else}
       {#each Array.from({ length: 5 }) as _, i (i)}
-        <Skeleton w="78px" h="44px" radius="8px" />
+        <Skeleton w="80px" h="46px" radius="8px" />
       {/each}
     {/if}
     <button class="refresh" type="button" title="Refresh" onclick={onrefresh}>↻</button>

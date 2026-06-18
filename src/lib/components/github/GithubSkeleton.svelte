@@ -9,16 +9,21 @@
     rows?: number;
   } = $props();
 
-  const rowArr = $derived(Array.from({ length: Math.max(1, rows) }));
+  const rowArr = $derived(Array.from({ length: Math.min(40, Math.max(1, rows)) }));
   const listW = ["72%", "60%", "80%", "55%", "68%", "64%"];
   const metaW = ["44%", "52%", "38%", "46%", "40%", "50%"];
   // Stagger rows in; capped so long lists don't drift too far.
   const delay = (i: number) => `${Math.min(i, 7) * 70}ms`;
 </script>
 
-<div class="gh-skel {variant}" role="status" aria-label="Loading">
-  <span class="sr-only">Loading…</span>
-
+<!-- The `card` variant is rendered multiple times per tab (one per Insights
+     card), so it stays decorative; the single-instance variants announce one
+     polite "Loading" via role=status + aria-label. -->
+<div
+  class="gh-skel {variant}"
+  role={variant === "card" ? undefined : "status"}
+  aria-label={variant === "card" ? undefined : "Loading"}
+>
   {#if variant === "header"}
     <div class="rise-in hd">
       <Skeleton w="180px" h="18px" />
@@ -26,7 +31,12 @@
     </div>
     <div class="rise-in tiles" style="animation-delay:70ms">
       {#each Array.from({ length: 5 }) as _, i (i)}
-        <Skeleton w="66px" h="38px" radius="8px" />
+        <Skeleton w="80px" h="46px" radius="8px" />
+      {/each}
+    </div>
+    <div class="rise-in tabs-row" style="animation-delay:140ms">
+      {#each ["Overview", "Pull Requests", "Issues", "Releases", "Actions", "Insights"] as t (t)}
+        <Skeleton w="{t.length * 7 + 10}px" h="13px" />
       {/each}
     </div>
   {:else if variant === "overview"}
@@ -40,6 +50,9 @@
       {#each Array.from({ length: 3 }) as _, i (i)}
         <Skeleton w="62px" h="18px" radius="999px" />
       {/each}
+    </div>
+    <div class="rise-in" style="animation-delay:{delay(6)}">
+      <Skeleton w="60%" h="11px" />
     </div>
   {:else if variant === "list"}
     {#each rowArr as _, i (i)}
@@ -118,17 +131,6 @@
   .gh-skel.card {
     gap: 8px;
   }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
   .hd {
     display: flex;
     flex-direction: column;
@@ -138,6 +140,13 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+  }
+  .tabs-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-subtle, var(--border));
   }
   .meta-row {
     display: grid;

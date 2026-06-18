@@ -147,16 +147,32 @@ function makeGithubState() {
     return runs.load(`${repo}|${reloadNonce}`, () => api.githubRuns(repo, 30));
   }
 
-  async function loadStats(repo: string) {
+  async function loadStats(repo: string, keepStale = false) {
     statsLoading = true;
     statsError = null;
-    stats = null;
+    // On a soft refresh keep the prior numbers visible so the header tiles
+    // don't blink to skeletons; only blank them on a fresh repo load.
+    if (!keepStale) stats = null;
     try {
       stats = await api.githubRepoStats(repo);
     } catch (e) {
       statsError = e as GithubError;
     } finally {
       statsLoading = false;
+    }
+  }
+
+  // Re-fetch availability + stats in place without blanking them, so a Refresh
+  // of the already-loaded repo doesn't flash the header/tabs. The caller bumps
+  // reloadNonce, which re-runs each tab's load-effect; makePanel.load retains
+  // prior panel data while re-fetching (no skeleton, no re-played reveal).
+  async function softRefresh(repo: string) {
+    try {
+      const a = await api.githubAvailability(repo);
+      availability = a;
+      if (a.kind === "Ok") void loadStats(repo, true);
+    } catch {
+      /* keep showing the prior availability on a transient failure */
     }
   }
 
@@ -290,9 +306,16 @@ function makeGithubState() {
     loadIssueDetail,
     ensure,
     refresh(repo: string) {
-      loadedRepo = null;
+      if (!isTauri()) return;
+      // A different (or never-loaded) repo gets a full reload with reset.
+      if (loadedRepo !== repo || !availability) {
+        loadedRepo = null;
+        reloadNonce++;
+        return ensure(repo);
+      }
+      // Same repo: soft refresh — keep stale data on screen while re-fetching.
       reloadNonce++;
-      return ensure(repo);
+      void softRefresh(repo);
     },
     /** Force the active tab's load-effect to re-fetch (used after a write action). */
     bumpReload() {
