@@ -103,6 +103,7 @@
             <a href={c.htmlUrl} target="_blank" rel="noreferrer">
               <span class="av" aria-hidden="true">{initials(c.login)}</span>
               <span class="login">{c.login}</span>
+              {#if c.isBot}<span class="bot">bot</span>{/if}
             </a>
             <span class="count">{formatCompact(c.contributions)}</span>
           </li>
@@ -128,11 +129,15 @@
         </ul>
       {:else if milestones.status === "ok"}
         <p class="note">No open milestones.</p>
+      {:else if milestones.status === "error"}
+        <p class="note err">Milestones failed to load.</p>
       {/if}
       {#if labels.data && labels.data.length}
         <div class="labels">
           {#each labels.data as l (l.name)}<span class="label" style={`--lc:#${l.color || "888"}`}>{l.name}</span>{/each}
         </div>
+      {:else if labels.status === "error"}
+        <p class="note err">Labels failed to load.</p>
       {/if}
     {:else if milestones.status === "error" || labels.status === "error"}
       <p class="note err">Could not load milestones/labels.</p>
@@ -247,6 +252,14 @@
   }
   .login {
     font-size: 12.5px;
+  }
+  .bot {
+    font-size: 9px;
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    text-transform: uppercase;
   }
   .count {
     font-size: 12px;
