@@ -126,6 +126,11 @@ pub fn run() {
             commands::github_issues,
             commands::github_releases,
             commands::github_runs,
+            commands::github_traffic,
+            commands::github_contributors,
+            commands::github_activity,
+            commands::github_milestones,
+            commands::github_labels,
             fswatch::start_watch,
             fswatch::stop_watch,
         ])

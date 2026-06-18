@@ -506,3 +506,31 @@ pub fn github_releases(repo: String) -> Result<Vec<github::GhRelease>, github::G
 pub fn github_runs(repo: String, limit: u32) -> Result<Vec<github::GhRun>, github::GithubError> {
     github::runs(&PathBuf::from(repo), limit)
 }
+
+#[tauri::command]
+pub fn github_traffic(repo: String) -> Result<github::GhTraffic, github::GithubError> {
+    github::traffic(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn github_contributors(
+    repo: String,
+    limit: u32,
+) -> Result<Vec<github::GhContributor>, github::GithubError> {
+    github::contributors(&PathBuf::from(repo), limit)
+}
+
+#[tauri::command]
+pub fn github_activity(repo: String) -> Result<github::GhActivity, github::GithubError> {
+    github::commit_activity(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn github_milestones(repo: String) -> Result<Vec<github::GhMilestone>, github::GithubError> {
+    github::milestones(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn github_labels(repo: String) -> Result<Vec<github::GhLabel>, github::GithubError> {
+    github::labels(&PathBuf::from(repo))
+}

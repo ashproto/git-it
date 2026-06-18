@@ -576,6 +576,285 @@ fn map_run(r: RawRun) -> GhRun {
     }
 }
 
+// ── Insight commands ─────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct RawTrafficPoint {
+    timestamp: String,
+    count: u64,
+    uniques: u64,
+}
+#[derive(Deserialize)]
+struct RawViews {
+    count: u64,
+    uniques: u64,
+    #[serde(default)]
+    views: Vec<RawTrafficPoint>,
+}
+#[derive(Deserialize)]
+struct RawClones {
+    count: u64,
+    uniques: u64,
+    #[serde(default)]
+    clones: Vec<RawTrafficPoint>,
+}
+#[derive(Deserialize)]
+struct RawPopularPath {
+    path: String,
+    title: String,
+    count: u64,
+    uniques: u64,
+}
+#[derive(Deserialize)]
+struct RawReferrer {
+    referrer: String,
+    count: u64,
+    uniques: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhTrafficPoint {
+    pub timestamp: String,
+    pub count: u64,
+    pub uniques: u64,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhSeries {
+    pub count: u64,
+    pub uniques: u64,
+    pub points: Vec<GhTrafficPoint>,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhPopularPath {
+    pub path: String,
+    pub title: String,
+    pub count: u64,
+    pub uniques: u64,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhReferrer {
+    pub referrer: String,
+    pub count: u64,
+    pub uniques: u64,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhTraffic {
+    pub views: GhSeries,
+    pub clones: GhSeries,
+    pub paths: Vec<GhPopularPath>,
+    pub referrers: Vec<GhReferrer>,
+}
+
+fn point(p: RawTrafficPoint) -> GhTrafficPoint {
+    GhTrafficPoint { timestamp: p.timestamp, count: p.count, uniques: p.uniques }
+}
+
+fn map_traffic(
+    v: RawViews,
+    c: RawClones,
+    paths: Vec<RawPopularPath>,
+    refs: Vec<RawReferrer>,
+) -> GhTraffic {
+    GhTraffic {
+        views: GhSeries {
+            count: v.count,
+            uniques: v.uniques,
+            points: v.views.into_iter().map(point).collect(),
+        },
+        clones: GhSeries {
+            count: c.count,
+            uniques: c.uniques,
+            points: c.clones.into_iter().map(point).collect(),
+        },
+        paths: paths
+            .into_iter()
+            .map(|p| GhPopularPath { path: p.path, title: p.title, count: p.count, uniques: p.uniques })
+            .collect(),
+        referrers: refs
+            .into_iter()
+            .map(|r| GhReferrer { referrer: r.referrer, count: r.count, uniques: r.uniques })
+            .collect(),
+    }
+}
+
+/// Repository traffic (owner-only). The first call (views) decides access: a 403
+/// surfaces as `GithubError::Forbidden`, which the UI renders as "needs push
+/// access". A 200 with `count: 0` is the distinct no-traffic case.
+pub fn traffic(repo: &Path) -> Result<GhTraffic, GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let base = format!("repos/{owner}/{name}");
+    let v: RawViews = serde_json::from_str(&run_gh(&["api", &format!("{base}/traffic/views")], None)?)
+        .map_err(|e| GithubError::Other(format!("parse views: {e}")))?;
+    let c: RawClones =
+        serde_json::from_str(&run_gh(&["api", &format!("{base}/traffic/clones")], None)?)
+            .map_err(|e| GithubError::Other(format!("parse clones: {e}")))?;
+    let paths: Vec<RawPopularPath> =
+        serde_json::from_str(&run_gh(&["api", &format!("{base}/traffic/popular/paths")], None)?)
+            .map_err(|e| GithubError::Other(format!("parse paths: {e}")))?;
+    let refs: Vec<RawReferrer> =
+        serde_json::from_str(&run_gh(&["api", &format!("{base}/traffic/popular/referrers")], None)?)
+            .map_err(|e| GithubError::Other(format!("parse referrers: {e}")))?;
+    Ok(map_traffic(v, c, paths, refs))
+}
+
+#[derive(Deserialize)]
+struct RawContributor {
+    login: String,
+    contributions: u64,
+    #[serde(default)]
+    avatar_url: String,
+    #[serde(default)]
+    html_url: String,
+    #[serde(rename = "type", default)]
+    kind: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhContributor {
+    pub login: String,
+    pub contributions: u64,
+    pub avatar_url: String,
+    pub html_url: String,
+    pub is_bot: bool,
+}
+
+fn map_contributor(c: RawContributor) -> GhContributor {
+    GhContributor {
+        login: c.login,
+        contributions: c.contributions,
+        avatar_url: c.avatar_url,
+        html_url: c.html_url,
+        is_bot: c.kind == "Bot",
+    }
+}
+
+/// Top contributors (pre-sorted desc by GitHub). An empty repo can return a 204
+/// with an empty body — treat that as an empty list.
+pub fn contributors(repo: &Path, limit: u32) -> Result<Vec<GhContributor>, GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let per = limit.clamp(1, 100).to_string();
+    let json = run_gh(
+        &["api", &format!("repos/{owner}/{name}/contributors?per_page={per}")],
+        None,
+    )?;
+    if json.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let raw: Vec<RawContributor> = serde_json::from_str(&json)
+        .map_err(|e| GithubError::Other(format!("parse contributors: {e}")))?;
+    Ok(raw.into_iter().map(map_contributor).collect())
+}
+
+#[derive(Deserialize)]
+struct RawWeek {
+    week: i64,
+    total: u64,
+    #[serde(default)]
+    days: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhWeek {
+    pub week: i64, // unix SECONDS
+    pub total: u64,
+    pub days: Vec<u64>,
+}
+
+/// 52 weeks of commit activity. GitHub returns HTTP 202 with an EMPTY body the
+/// first time while it computes the stats; we surface that as `computing: true`
+/// so the client can retry.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhActivity {
+    pub computing: bool,
+    pub weeks: Vec<GhWeek>,
+}
+
+pub fn commit_activity(repo: &Path) -> Result<GhActivity, GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let json = run_gh(&["api", &format!("repos/{owner}/{name}/stats/commit_activity")], None)?;
+    if json.trim().is_empty() {
+        // 202 Accepted with empty body → still computing.
+        return Ok(GhActivity { computing: true, weeks: Vec::new() });
+    }
+    let raw: Vec<RawWeek> = serde_json::from_str(&json)
+        .map_err(|e| GithubError::Other(format!("parse activity: {e}")))?;
+    Ok(GhActivity {
+        computing: false,
+        weeks: raw
+            .into_iter()
+            .map(|w| GhWeek { week: w.week, total: w.total, days: w.days })
+            .collect(),
+    })
+}
+
+#[derive(Deserialize)]
+struct RawMilestone {
+    title: String,
+    number: u64,
+    state: String,
+    open_issues: u64,
+    closed_issues: u64,
+    due_on: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    html_url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhMilestone {
+    pub title: String,
+    pub number: u64,
+    pub state: String,
+    pub open_issues: u64,
+    pub closed_issues: u64,
+    pub due_on: Option<String>,
+    pub description: Option<String>,
+    pub html_url: String,
+}
+
+fn map_milestone(m: RawMilestone) -> GhMilestone {
+    GhMilestone {
+        title: m.title,
+        number: m.number,
+        state: m.state,
+        open_issues: m.open_issues,
+        closed_issues: m.closed_issues,
+        due_on: m.due_on,
+        description: m.description,
+        html_url: m.html_url,
+    }
+}
+
+/// Open milestones (issue subsystem). Empty `[]` when the repo uses none.
+pub fn milestones(repo: &Path) -> Result<Vec<GhMilestone>, GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let json = run_gh(
+        &["api", &format!("repos/{owner}/{name}/milestones?state=open&per_page=50")],
+        None,
+    )?;
+    let raw: Vec<RawMilestone> = serde_json::from_str(&json)
+        .map_err(|e| GithubError::Other(format!("parse milestones: {e}")))?;
+    Ok(raw.into_iter().map(map_milestone).collect())
+}
+
+/// The repo's label catalog. Reuses `RawLabel`/`map_label` + the `GhLabel` type.
+pub fn labels(repo: &Path) -> Result<Vec<GhLabel>, GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let json = run_gh(&["api", &format!("repos/{owner}/{name}/labels?per_page=100")], None)?;
+    let raw: Vec<RawLabel> = serde_json::from_str(&json)
+        .map_err(|e| GithubError::Other(format!("parse labels: {e}")))?;
+    Ok(raw.into_iter().map(map_label).collect())
+}
+
 /// List recent workflow runs via `gh run list` (newest first).
 pub fn runs(repo: &Path, limit: u32) -> Result<Vec<GhRun>, GithubError> {
     let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
@@ -842,5 +1121,70 @@ mod tests {
         let r = &raw.into_iter().map(map_run).collect::<Vec<_>>()[0];
         assert_eq!(r.status, "in_progress");
         assert_eq!(r.conclusion, "");
+    }
+
+    #[test]
+    fn map_traffic_shapes_series_and_lists() {
+        let v: RawViews = serde_json::from_str(
+            r#"{"count":1450,"uniques":300,"views":[{"timestamp":"2026-06-01T00:00:00Z","count":50,"uniques":12}]}"#,
+        )
+        .unwrap();
+        let c: RawClones =
+            serde_json::from_str(r#"{"count":42,"uniques":20,"clones":[]}"#).unwrap();
+        let paths: Vec<RawPopularPath> = serde_json::from_str(
+            r#"[{"path":"/cli/cli","title":"cli/cli","count":300,"uniques":120}]"#,
+        )
+        .unwrap();
+        let refs: Vec<RawReferrer> =
+            serde_json::from_str(r#"[{"referrer":"google.com","count":80,"uniques":40}]"#).unwrap();
+        let t = map_traffic(v, c, paths, refs);
+        assert_eq!(t.views.count, 1450);
+        assert_eq!(t.views.points.len(), 1);
+        assert_eq!(t.views.points[0].uniques, 12);
+        assert!(t.clones.points.is_empty());
+        assert_eq!(t.paths[0].path, "/cli/cli");
+        assert_eq!(t.referrers[0].referrer, "google.com");
+    }
+
+    #[test]
+    fn map_contributor_flags_bots() {
+        let json = r#"[
+            {"login":"mislav","contributions":2061,"avatar_url":"a","html_url":"h","type":"User"},
+            {"login":"dependabot[bot]","contributions":5,"type":"Bot"}
+        ]"#;
+        let raw: Vec<RawContributor> = serde_json::from_str(json).unwrap();
+        let out: Vec<GhContributor> = raw.into_iter().map(map_contributor).collect();
+        assert_eq!(out[0].login, "mislav");
+        assert_eq!(out[0].contributions, 2061);
+        assert!(!out[0].is_bot);
+        assert!(out[1].is_bot);
+    }
+
+    #[test]
+    fn commit_activity_parses_weeks() {
+        let json = r#"[{"week":1750550400,"total":23,"days":[1,11,10,0,0,1,0]}]"#;
+        let raw: Vec<RawWeek> = serde_json::from_str(json).unwrap();
+        let weeks: Vec<GhWeek> = raw
+            .into_iter()
+            .map(|w| GhWeek { week: w.week, total: w.total, days: w.days })
+            .collect();
+        assert_eq!(weeks.len(), 1);
+        assert_eq!(weeks[0].week, 1750550400);
+        assert_eq!(weeks[0].total, 23);
+        assert_eq!(weeks[0].days.len(), 7);
+    }
+
+    #[test]
+    fn map_milestone_progress_fields() {
+        let json = r#"[{
+            "title":"next-candidate","number":17,"state":"open","open_issues":17,
+            "closed_issues":606,"due_on":null,"description":"Candidates","html_url":"u"
+        }]"#;
+        let raw: Vec<RawMilestone> = serde_json::from_str(json).unwrap();
+        let m = &raw.into_iter().map(map_milestone).collect::<Vec<_>>()[0];
+        assert_eq!(m.title, "next-candidate");
+        assert_eq!(m.open_issues, 17);
+        assert_eq!(m.closed_issues, 606);
+        assert_eq!(m.due_on, None);
     }
 }
