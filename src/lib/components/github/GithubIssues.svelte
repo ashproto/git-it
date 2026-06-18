@@ -52,9 +52,18 @@
       </li>
     {/each}
   </ul>
+  {#if panel.data.length >= 50}
+    <p class="more">Showing the 50 most recent — open the repo on github.com for the full list.</p>
+  {/if}
 {/if}
 
 <style>
+  .more {
+    margin: 10px 2px 2px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
   .filters {
     display: flex;
     gap: 6px;
