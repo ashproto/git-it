@@ -260,6 +260,10 @@ function makeGithubState() {
       reloadNonce++;
       return ensure(repo);
     },
+    /** Force the active tab's load-effect to re-fetch (used after a write action). */
+    bumpReload() {
+      reloadNonce++;
+    },
   };
 }
 

@@ -16,6 +16,7 @@ import type {
   GhActivity,
   GhMilestone,
   GhLabel,
+  MergeMethod,
   PullStateFilter,
   IssueStateFilter,
   GraphCommit,
@@ -164,6 +165,16 @@ export const api = {
   githubActivity: (repo: string) => invoke<GhActivity>("github_activity", { repo }),
   githubMilestones: (repo: string) => invoke<GhMilestone[]>("github_milestones", { repo }),
   githubLabels: (repo: string) => invoke<GhLabel[]>("github_labels", { repo }),
+  githubPrComment: (repo: string, number: number, body: string) =>
+    invoke<void>("github_pr_comment", { repo, number, body }),
+  githubIssueComment: (repo: string, number: number, body: string) =>
+    invoke<void>("github_issue_comment", { repo, number, body }),
+  githubIssueSetState: (repo: string, number: number, state: "open" | "closed") =>
+    invoke<void>("github_issue_set_state", { repo, number, state }),
+  githubPrMerge: (repo: string, number: number, method: MergeMethod) =>
+    invoke<void>("github_pr_merge", { repo, number, method }),
+  githubIssueCreate: (repo: string, title: string, body: string) =>
+    invoke<string>("github_issue_create", { repo, title, body }),
   remoteAdd: (repo: string, name: string, url: string) =>
     invoke<void>("remote_add", { repo, name, url }),
   remoteRemove: (repo: string, name: string) => invoke<void>("remote_remove", { repo, name }),

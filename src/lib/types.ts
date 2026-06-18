@@ -254,3 +254,5 @@ export type GhMilestone = {
   description: string | null;
   htmlUrl: string;
 };
+
+export type MergeMethod = "merge" | "squash" | "rebase";
