@@ -3,6 +3,7 @@
   import { githubState } from "../../githubState.svelte";
   import { parseISO, formatCommitDate } from "../../dates";
   import type { PullStateFilter } from "../../types";
+  import { githubActions } from "../../githubActions.svelte";
 
   const FILTERS: PullStateFilter[] = ["open", "closed", "merged", "all"];
 
@@ -47,6 +48,12 @@
           {#if pr.reviewDecision}<span class="rev {pr.reviewDecision}">{pr.reviewDecision.replace(/_/g, " ").toLowerCase()}</span>{/if}
           <span class="when">{rel(pr.updatedAt)}</span>
         </div>
+        <div class="row-actions">
+          {#if pr.state === "OPEN"}
+            <button type="button" onclick={() => githubActions.open({ kind: "merge", number: pr.number, title: pr.title })}>Merge</button>
+          {/if}
+          <button type="button" onclick={() => githubActions.open({ kind: "comment", target: "pr", number: pr.number, title: pr.title })}>Comment</button>
+        </div>
         {#if pr.labels.length}
           <div class="labels">
             {#each pr.labels as l (l.name)}<span class="label" style={`--lc:#${l.color || "888"}`}>{l.name}</span>{/each}
@@ -66,6 +73,23 @@
     font-size: 11.5px;
     color: var(--text-muted);
     font-style: italic;
+  }
+  .row-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+  }
+  .row-actions button {
+    padding: 2px 10px;
+    font-size: 11.5px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--btn-bg);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .row-actions button:hover {
+    border-color: var(--accent);
   }
   .filters {
     display: flex;

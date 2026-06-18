@@ -3,6 +3,7 @@
   import { githubState } from "../../githubState.svelte";
   import { parseISO, formatCommitDate } from "../../dates";
   import type { IssueStateFilter } from "../../types";
+  import { githubActions } from "../../githubActions.svelte";
 
   const FILTERS: IssueStateFilter[] = ["open", "closed", "all"];
 
@@ -24,6 +25,7 @@
   {#each FILTERS as f (f)}
     <button class="chip" class:active={githubState.issueState === f} type="button" onclick={() => githubState.setIssueState(f)}>{f}</button>
   {/each}
+  <button class="new-issue" type="button" onclick={() => githubActions.open({ kind: "create" })}>New issue</button>
 </div>
 
 {#if panel.status === "loading" && !panel.data}
@@ -44,6 +46,14 @@
           {#if it.assignees.length}<span>→ {it.assignees.join(", ")}</span>{/if}
           <span class="when">{rel(it.updatedAt)}</span>
         </div>
+        <div class="row-actions">
+          <button type="button" onclick={() => githubActions.open({ kind: "comment", target: "issue", number: it.number, title: it.title })}>Comment</button>
+          {#if it.state === "OPEN"}
+            <button type="button" onclick={() => githubActions.open({ kind: "setState", number: it.number, title: it.title, to: "closed" })}>Close</button>
+          {:else}
+            <button type="button" onclick={() => githubActions.open({ kind: "setState", number: it.number, title: it.title, to: "open" })}>Reopen</button>
+          {/if}
+        </div>
         {#if it.labels.length}
           <div class="labels">
             {#each it.labels as l (l.name)}<span class="label" style={`--lc:#${l.color || "888"}`}>{l.name}</span>{/each}
@@ -63,6 +73,33 @@
     font-size: 11.5px;
     color: var(--text-muted);
     font-style: italic;
+  }
+  .new-issue {
+    margin-left: auto;
+    padding: 3px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .row-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+  }
+  .row-actions button {
+    padding: 2px 10px;
+    font-size: 11.5px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--btn-bg);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .row-actions button:hover {
+    border-color: var(--accent);
   }
   .filters {
     display: flex;
