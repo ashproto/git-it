@@ -49,7 +49,7 @@
           <span class="when">{rel(pr.updatedAt)}</span>
         </div>
         <div class="row-actions">
-          {#if pr.state === "OPEN"}
+          {#if pr.state === "OPEN" && !pr.isDraft}
             <button type="button" onclick={() => githubActions.open({ kind: "merge", number: pr.number, title: pr.title })}>Merge</button>
           {/if}
           <button type="button" onclick={() => githubActions.open({ kind: "comment", target: "pr", number: pr.number, title: pr.title })}>Comment</button>
