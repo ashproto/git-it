@@ -559,3 +559,13 @@ pub fn github_pr_merge(repo: String, number: u64, method: String) -> Result<(), 
 pub fn github_issue_create(repo: String, title: String, body: String) -> Result<String, github::GithubError> {
     github::issue_create(&PathBuf::from(repo), &title, &body)
 }
+
+#[tauri::command]
+pub fn github_pr_detail(repo: String, number: u64) -> Result<github::GhPullDetail, github::GithubError> {
+    github::pr_detail(&PathBuf::from(repo), number)
+}
+
+#[tauri::command]
+pub fn github_issue_detail(repo: String, number: u64) -> Result<github::GhIssueDetail, github::GithubError> {
+    github::issue_detail(&PathBuf::from(repo), number)
+}

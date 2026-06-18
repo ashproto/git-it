@@ -921,6 +921,317 @@ pub fn issue_create(repo: &Path, title: &str, body: &str) -> Result<String, Gith
     Ok(out.trim().to_string())
 }
 
+// ---- statusCheckRollup normalization (CheckRun + StatusContext leaves) ----
+#[derive(Deserialize)]
+struct RawCheck {
+    #[serde(rename = "__typename", default)]
+    typename: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    conclusion: String,
+    #[serde(rename = "detailsUrl", default)]
+    details_url: String,
+    #[serde(default)]
+    context: String,
+    #[serde(default)]
+    state: String,
+    #[serde(rename = "targetUrl", default)]
+    target_url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhCheck {
+    pub name: String,
+    pub bucket: String, // pass | fail | pending | neutral
+    pub url: String,
+}
+
+fn map_check(c: RawCheck) -> GhCheck {
+    if c.typename == "StatusContext" {
+        let bucket = match c.state.as_str() {
+            "SUCCESS" => "pass",
+            "FAILURE" | "ERROR" => "fail",
+            "PENDING" | "EXPECTED" => "pending",
+            _ => "neutral",
+        };
+        GhCheck { name: c.context, bucket: bucket.to_string(), url: c.target_url }
+    } else {
+        // CheckRun: pass/fail only once completed; otherwise pending.
+        let bucket = match (c.status.as_str(), c.conclusion.as_str()) {
+            ("COMPLETED", "SUCCESS") => "pass",
+            ("COMPLETED", "FAILURE") | ("COMPLETED", "TIMED_OUT") => "fail",
+            ("COMPLETED", _) => "neutral",
+            _ => "pending",
+        };
+        GhCheck { name: c.name, bucket: bucket.to_string(), url: c.details_url }
+    }
+}
+
+// ---- shared detail sub-DTOs ----
+#[derive(Deserialize)]
+struct RawMilestoneRef {
+    title: String,
+}
+#[derive(Deserialize)]
+struct RawComment {
+    author: Option<RawUser>,
+    #[serde(default)]
+    body: String,
+    #[serde(rename = "createdAt", default)]
+    created_at: String,
+}
+#[derive(Deserialize)]
+struct RawReview {
+    author: Option<RawUser>,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    body: String,
+    #[serde(rename = "submittedAt", default)]
+    submitted_at: String,
+}
+#[derive(Deserialize)]
+struct RawFile {
+    path: String,
+    #[serde(default)]
+    additions: u64,
+    #[serde(default)]
+    deletions: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhComment {
+    pub author: String,
+    pub body: String,
+    pub created_at: String,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhReview {
+    pub author: String,
+    pub state: String,
+    pub body: String,
+    pub submitted_at: String,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhFile {
+    pub path: String,
+    pub additions: u64,
+    pub deletions: u64,
+}
+
+fn map_comment(c: RawComment) -> GhComment {
+    GhComment { author: c.author.map(|a| a.login).unwrap_or_default(), body: c.body, created_at: c.created_at }
+}
+fn map_review(r: RawReview) -> GhReview {
+    GhReview {
+        author: r.author.map(|a| a.login).unwrap_or_default(),
+        state: r.state,
+        body: r.body,
+        submitted_at: r.submitted_at,
+    }
+}
+
+// ---- PR detail ----
+#[derive(Deserialize)]
+struct RawPullDetail {
+    number: u64,
+    title: String,
+    #[serde(default)]
+    body: String,
+    author: Option<RawUser>,
+    state: String,
+    #[serde(rename = "isDraft", default)]
+    is_draft: bool,
+    #[serde(default)]
+    labels: Vec<RawLabel>,
+    #[serde(default)]
+    assignees: Vec<RawUser>,
+    milestone: Option<RawMilestoneRef>,
+    #[serde(rename = "baseRefName", default)]
+    base_ref_name: String,
+    #[serde(rename = "headRefName", default)]
+    head_ref_name: String,
+    #[serde(rename = "reviewDecision", default)]
+    review_decision: String,
+    #[serde(default)]
+    mergeable: String,
+    #[serde(rename = "mergeStateStatus", default)]
+    merge_state_status: String,
+    #[serde(default)]
+    additions: u64,
+    #[serde(default)]
+    deletions: u64,
+    #[serde(rename = "changedFiles", default)]
+    changed_files: u64,
+    #[serde(default)]
+    files: Vec<RawFile>,
+    #[serde(default)]
+    reviews: Vec<RawReview>,
+    #[serde(rename = "statusCheckRollup", default)]
+    status_check_rollup: Vec<RawCheck>,
+    #[serde(default)]
+    comments: Vec<RawComment>,
+    #[serde(rename = "createdAt", default)]
+    created_at: String,
+    #[serde(rename = "updatedAt", default)]
+    updated_at: String,
+    url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhPullDetail {
+    pub number: u64,
+    pub title: String,
+    pub body: String,
+    pub author: String,
+    pub state: String,
+    pub is_draft: bool,
+    pub labels: Vec<GhLabel>,
+    pub assignees: Vec<String>,
+    pub milestone: Option<String>,
+    pub base_ref_name: String,
+    pub head_ref_name: String,
+    pub review_decision: String,
+    pub mergeable: String,
+    pub merge_state_status: String,
+    pub additions: u64,
+    pub deletions: u64,
+    pub changed_files: u64,
+    pub files: Vec<GhFile>,
+    pub reviews: Vec<GhReview>,
+    pub checks: Vec<GhCheck>,
+    pub comments: Vec<GhComment>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub url: String,
+}
+
+fn map_pull_detail(p: RawPullDetail) -> GhPullDetail {
+    GhPullDetail {
+        number: p.number,
+        title: p.title,
+        body: p.body,
+        author: p.author.map(|a| a.login).unwrap_or_default(),
+        state: p.state,
+        is_draft: p.is_draft,
+        labels: p.labels.into_iter().map(map_label).collect(),
+        assignees: p.assignees.into_iter().map(|a| a.login).collect(),
+        milestone: p.milestone.map(|m| m.title),
+        base_ref_name: p.base_ref_name,
+        head_ref_name: p.head_ref_name,
+        review_decision: p.review_decision,
+        mergeable: p.mergeable,
+        merge_state_status: p.merge_state_status,
+        additions: p.additions,
+        deletions: p.deletions,
+        changed_files: p.changed_files,
+        files: p.files.into_iter().map(|f| GhFile { path: f.path, additions: f.additions, deletions: f.deletions }).collect(),
+        reviews: p.reviews.into_iter().map(map_review).collect(),
+        checks: p.status_check_rollup.into_iter().map(map_check).collect(),
+        comments: p.comments.into_iter().map(map_comment).collect(),
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+        url: p.url,
+    }
+}
+
+pub fn pr_detail(repo: &Path, number: u64) -> Result<GhPullDetail, GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let slug = format!("{owner}/{name}");
+    let num = number.to_string();
+    let json = run_gh(
+        &[
+            "pr", "view", &num, "--repo", &slug, "--json",
+            "number,title,body,author,state,isDraft,labels,assignees,milestone,baseRefName,headRefName,reviewDecision,mergeable,mergeStateStatus,additions,deletions,changedFiles,files,reviews,statusCheckRollup,comments,createdAt,updatedAt,url",
+        ],
+        None,
+    )?;
+    let raw: RawPullDetail =
+        serde_json::from_str(&json).map_err(|e| GithubError::Other(format!("parse pr detail: {e}")))?;
+    Ok(map_pull_detail(raw))
+}
+
+// ---- Issue detail ----
+#[derive(Deserialize)]
+struct RawIssueDetail {
+    number: u64,
+    title: String,
+    #[serde(default)]
+    body: String,
+    author: Option<RawUser>,
+    state: String,
+    #[serde(rename = "stateReason", default)]
+    state_reason: Option<String>,
+    #[serde(default)]
+    labels: Vec<RawLabel>,
+    #[serde(default)]
+    assignees: Vec<RawUser>,
+    milestone: Option<RawMilestoneRef>,
+    #[serde(default)]
+    comments: Vec<RawComment>,
+    #[serde(rename = "createdAt", default)]
+    created_at: String,
+    #[serde(rename = "updatedAt", default)]
+    updated_at: String,
+    url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhIssueDetail {
+    pub number: u64,
+    pub title: String,
+    pub body: String,
+    pub author: String,
+    pub state: String,
+    pub state_reason: Option<String>,
+    pub labels: Vec<GhLabel>,
+    pub assignees: Vec<String>,
+    pub milestone: Option<String>,
+    pub comments: Vec<GhComment>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub url: String,
+}
+
+pub fn issue_detail(repo: &Path, number: u64) -> Result<GhIssueDetail, GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let slug = format!("{owner}/{name}");
+    let num = number.to_string();
+    let json = run_gh(
+        &[
+            "issue", "view", &num, "--repo", &slug, "--json",
+            "number,title,body,author,state,stateReason,labels,assignees,milestone,comments,createdAt,updatedAt,url",
+        ],
+        None,
+    )?;
+    let raw: RawIssueDetail =
+        serde_json::from_str(&json).map_err(|e| GithubError::Other(format!("parse issue detail: {e}")))?;
+    Ok(GhIssueDetail {
+        number: raw.number,
+        title: raw.title,
+        body: raw.body,
+        author: raw.author.map(|a| a.login).unwrap_or_default(),
+        state: raw.state,
+        state_reason: raw.state_reason,
+        labels: raw.labels.into_iter().map(map_label).collect(),
+        assignees: raw.assignees.into_iter().map(|a| a.login).collect(),
+        milestone: raw.milestone.map(|m| m.title),
+        comments: raw.comments.into_iter().map(map_comment).collect(),
+        created_at: raw.created_at,
+        updated_at: raw.updated_at,
+        url: raw.url,
+    })
+}
+
 /// List recent workflow runs via `gh run list` (newest first).
 pub fn runs(repo: &Path, limit: u32) -> Result<Vec<GhRun>, GithubError> {
     let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
@@ -1246,6 +1557,65 @@ mod tests {
         assert_eq!(weeks[0].week, 1750550400);
         assert_eq!(weeks[0].total, 23);
         assert_eq!(weeks[0].days.len(), 7);
+    }
+
+    #[test]
+    fn map_check_handles_both_typenames() {
+        let cr: RawCheck = serde_json::from_str(
+            r#"{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"u"}"#,
+        )
+        .unwrap();
+        assert_eq!(map_check(cr).bucket, "pass");
+        let cr2: RawCheck = serde_json::from_str(
+            r#"{"__typename":"CheckRun","name":"x","status":"IN_PROGRESS","conclusion":""}"#,
+        )
+        .unwrap();
+        assert_eq!(map_check(cr2).bucket, "pending");
+        let sc: RawCheck = serde_json::from_str(
+            r#"{"__typename":"StatusContext","context":"ci/circleci","state":"FAILURE","targetUrl":"t"}"#,
+        )
+        .unwrap();
+        let g = map_check(sc);
+        assert_eq!(g.name, "ci/circleci");
+        assert_eq!(g.bucket, "fail");
+        assert_eq!(g.url, "t");
+    }
+
+    #[test]
+    fn map_pull_detail_shapes_nested_arrays() {
+        let json = r#"{
+            "number":13,"title":"T","body":"hi","author":{"login":"me"},"state":"OPEN","isDraft":false,
+            "labels":[{"name":"bug","color":"f00"}],"assignees":[{"login":"you"}],"milestone":{"title":"M1"},
+            "baseRefName":"main","headRefName":"f","reviewDecision":"APPROVED","mergeable":"MERGEABLE",
+            "mergeStateStatus":"CLEAN","additions":10,"deletions":2,"changedFiles":1,
+            "files":[{"path":"a.rs","additions":10,"deletions":2}],
+            "reviews":[{"author":{"login":"rev"},"state":"APPROVED","body":"lgtm","submittedAt":"2026-01-01T00:00:00Z"}],
+            "statusCheckRollup":[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"d"}],
+            "comments":[{"author":{"login":"c"},"body":"nice","createdAt":"2026-01-02T00:00:00Z"}],
+            "createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z","url":"u"
+        }"#;
+        let d = map_pull_detail(serde_json::from_str(json).unwrap());
+        assert_eq!(d.author, "me");
+        assert_eq!(d.milestone.as_deref(), Some("M1"));
+        assert_eq!(d.assignees, vec!["you".to_string()]);
+        assert_eq!(d.files[0].path, "a.rs");
+        assert_eq!(d.reviews[0].author, "rev");
+        assert_eq!(d.checks[0].bucket, "pass");
+        assert_eq!(d.comments[0].author, "c");
+    }
+
+    #[test]
+    fn issue_detail_dtos_tolerate_nulls() {
+        // milestone null, no reviews/files; verify the issue detail struct compiles and maps.
+        let raw: RawIssueDetail = serde_json::from_str(
+            r#"{"number":1,"title":"t","body":"","author":null,"state":"CLOSED","stateReason":"completed",
+                "labels":[],"assignees":[],"milestone":null,"comments":[],
+                "createdAt":"","updatedAt":"","url":"u"}"#,
+        )
+        .unwrap();
+        assert_eq!(raw.number, 1);
+        assert_eq!(raw.state_reason.as_deref(), Some("completed"));
+        assert!(raw.milestone.is_none());
     }
 
     #[test]

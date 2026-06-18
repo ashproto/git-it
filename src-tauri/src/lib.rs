@@ -136,6 +136,8 @@ pub fn run() {
             commands::github_issue_set_state,
             commands::github_pr_merge,
             commands::github_issue_create,
+            commands::github_pr_detail,
+            commands::github_issue_detail,
             fswatch::start_watch,
             fswatch::stop_watch,
         ])
