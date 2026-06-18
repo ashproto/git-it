@@ -5,6 +5,8 @@ import type {
   Commit,
   ConflictEntry,
   DateMapping,
+  GhAvailability,
+  GhRepoStats,
   GraphCommit,
   OpOutcome,
   PrerequisiteCheck,
@@ -137,6 +139,8 @@ export const api = {
   stashPop: (repo: string, index: number) => invoke<void>("stash_pop", { repo, index }),
   stashDrop: (repo: string, index: number) => invoke<void>("stash_drop", { repo, index }),
   remotes: (repo: string) => invoke<RemoteInfo[]>("remotes", { repo }),
+  githubAvailability: (repo: string) => invoke<GhAvailability>("github_availability", { repo }),
+  githubRepoStats: (repo: string) => invoke<GhRepoStats>("github_repo_stats", { repo }),
   remoteAdd: (repo: string, name: string, url: string) =>
     invoke<void>("remote_add", { repo, name, url }),
   remoteRemove: (repo: string, name: string) => invoke<void>("remote_remove", { repo, name }),

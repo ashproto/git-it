@@ -131,3 +131,37 @@ export type RemoteOutcome = {
   conflicted: boolean;
   message: string;
 };
+
+export type GhAvailability =
+  | { kind: "Ok"; owner: string; repo: string }
+  | { kind: "NotInstalled" }
+  | { kind: "NotAuthed" }
+  | { kind: "NoRemote" };
+
+export type GhRepoStats = {
+  fullName: string;
+  description: string | null;
+  htmlUrl: string;
+  visibility: string;
+  defaultBranch: string;
+  language: string | null;
+  licenseSpdxId: string | null;
+  topics: string[];
+  stars: number;
+  watchers: number;
+  forks: number;
+  openIssues: number;
+  openPulls: number;
+  pushedAt: string;
+  archived: boolean;
+  isFork: boolean;
+};
+
+export type GithubError =
+  | { kind: "NotInstalled" }
+  | { kind: "NotAuthed" }
+  | { kind: "NoRemote" }
+  | { kind: "NotFound" }
+  | { kind: "Forbidden" }
+  | { kind: "RateLimited" }
+  | { kind: "Other"; message: string };

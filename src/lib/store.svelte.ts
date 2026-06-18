@@ -661,7 +661,7 @@ function makeState() {
   let workingChanges = $state<WorkingFile[]>([]);
   let workingChangesRev = $state(0);
   let selectedFile = $state<string | null>(null);
-  let activeView = $state<"timeline" | "changes">("timeline");
+  let activeView = $state<"timeline" | "changes" | "github">("timeline");
   // Transient (non-persisted) suggested commit message, set by squash-merge to
   // prefill the CommitComposer before the user edits/commits.
   let suggestedCommitMessage = $state("");
@@ -1335,7 +1335,7 @@ function makeState() {
     get activeView() {
       return activeView;
     },
-    setActiveView(v: "timeline" | "changes") {
+    setActiveView(v: "timeline" | "changes" | "github") {
       activeView = v;
       if (v === "changes") {
         currentSha = null;
