@@ -16,7 +16,16 @@ describe("mdToSafeHtml", () => {
     expect(html).not.toContain("javascript:");
     expect(html.toLowerCase()).not.toContain("onclick");
   });
-  it("opens links in a new tab", () => {
-    expect(mdToSafeHtml("[x](https://example.com)")).toContain('target="_blank"');
+  it("opens links in a new tab with noopener", () => {
+    const html = mdToSafeHtml("[x](https://example.com)");
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain("noopener");
+  });
+  it("strips onerror from an img", () => {
+    expect(mdToSafeHtml('<img src="x" onerror="alert(1)">').toLowerCase()).not.toContain("onerror");
+  });
+  it("drops data: image sources", () => {
+    const html = mdToSafeHtml('<img src="data:image/svg+xml,<svg onload=alert(1)>">');
+    expect(html).not.toContain("data:");
   });
 });

@@ -3,11 +3,18 @@ import DOMPurify from "dompurify";
 
 marked.setOptions({ gfm: true, breaks: true });
 
-// Open all links in a new tab + harden rel. (Global hook; added once on import.)
+// Harden links + images. (Global hook; added once on module import.)
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName === "A") {
     node.setAttribute("target", "_blank");
-    node.setAttribute("rel", "noreferrer");
+    node.setAttribute("rel", "noopener noreferrer");
+  }
+  // Defense-in-depth: DOMPurify's DATA_URI_TAGS default permits `data:` on
+  // <img src> even though ALLOWED_URI_REGEXP excludes it. We don't need data:
+  // images, so drop them outright.
+  if (node.tagName === "IMG") {
+    const src = (node.getAttribute("src") ?? "").trim().toLowerCase();
+    if (src.startsWith("data:")) node.removeAttribute("src");
   }
 });
 
