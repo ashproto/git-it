@@ -251,13 +251,21 @@ function makeGithubState() {
       return pullState;
     },
     setPullState(s: PullStateFilter) {
+      if (s === pullState) return;
       pullState = s;
+      // A filter switch is a different query, so the current list is the wrong
+      // answer — clear it so the skeleton + reveal play while the new filter
+      // loads. (Refresh keeps stale data; a filter change should not.)
+      pulls.reset();
     },
     get issueState() {
       return issueState;
     },
     setIssueState(s: IssueStateFilter) {
+      if (s === issueState) return;
       issueState = s;
+      // See setPullState: a filter switch invalidates the shown list.
+      issues.reset();
     },
     /** Read by each tab's load-effect so a Refresh re-runs them. */
     get reloadNonce() {
