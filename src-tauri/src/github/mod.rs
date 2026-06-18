@@ -855,6 +855,72 @@ pub fn labels(repo: &Path) -> Result<Vec<GhLabel>, GithubError> {
     Ok(raw.into_iter().map(map_label).collect())
 }
 
+/// Map a merge-method name to the `gh pr merge` flag. None for an unknown method.
+fn merge_flag(method: &str) -> Option<&'static str> {
+    match method {
+        "merge" => Some("--merge"),
+        "squash" => Some("--squash"),
+        "rebase" => Some("--rebase"),
+        _ => None,
+    }
+}
+
+/// Comment on a PR. Body is piped via stdin (`--body-file -`), never an arg.
+pub fn pr_comment(repo: &Path, number: u64, body: &str) -> Result<(), GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let slug = format!("{owner}/{name}");
+    let num = number.to_string();
+    run_gh(&["pr", "comment", &num, "--repo", &slug, "--body-file", "-"], Some(body))?;
+    Ok(())
+}
+
+/// Comment on an issue.
+pub fn issue_comment(repo: &Path, number: u64, body: &str) -> Result<(), GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let slug = format!("{owner}/{name}");
+    let num = number.to_string();
+    run_gh(&["issue", "comment", &num, "--repo", &slug, "--body-file", "-"], Some(body))?;
+    Ok(())
+}
+
+/// Close or reopen an issue. `state` ∈ {"closed","open"}.
+pub fn issue_set_state(repo: &Path, number: u64, state: &str) -> Result<(), GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let slug = format!("{owner}/{name}");
+    let num = number.to_string();
+    let verb = match state {
+        "closed" => "close",
+        "open" => "reopen",
+        _ => return Err(GithubError::Other(format!("invalid issue state: {state}"))),
+    };
+    run_gh(&["issue", verb, &num, "--repo", &slug], None)?;
+    Ok(())
+}
+
+/// Merge a PR with the given method ∈ {"merge","squash","rebase"}.
+pub fn pr_merge(repo: &Path, number: u64, method: &str) -> Result<(), GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let flag = merge_flag(method)
+        .ok_or_else(|| GithubError::Other(format!("invalid merge method: {method}")))?;
+    let slug = format!("{owner}/{name}");
+    let num = number.to_string();
+    run_gh(&["pr", "merge", &num, "--repo", &slug, flag], None)?;
+    Ok(())
+}
+
+/// Create an issue. Title via `--title=` (single arg, dash-safe); body via stdin.
+/// Returns the new issue's URL (gh prints it to stdout).
+pub fn issue_create(repo: &Path, title: &str, body: &str) -> Result<String, GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let slug = format!("{owner}/{name}");
+    let title_arg = format!("--title={title}");
+    let out = run_gh(
+        &["issue", "create", "--repo", &slug, &title_arg, "--body-file", "-"],
+        Some(body),
+    )?;
+    Ok(out.trim().to_string())
+}
+
 /// List recent workflow runs via `gh run list` (newest first).
 pub fn runs(repo: &Path, limit: u32) -> Result<Vec<GhRun>, GithubError> {
     let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
@@ -876,6 +942,14 @@ pub fn runs(repo: &Path, limit: u32) -> Result<Vec<GhRun>, GithubError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_flag_maps_known_methods() {
+        assert_eq!(merge_flag("merge"), Some("--merge"));
+        assert_eq!(merge_flag("squash"), Some("--squash"));
+        assert_eq!(merge_flag("rebase"), Some("--rebase"));
+        assert_eq!(merge_flag("bogus"), None);
+    }
 
     #[test]
     fn parses_all_github_url_forms() {

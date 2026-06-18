@@ -534,3 +534,28 @@ pub fn github_milestones(repo: String) -> Result<Vec<github::GhMilestone>, githu
 pub fn github_labels(repo: String) -> Result<Vec<github::GhLabel>, github::GithubError> {
     github::labels(&PathBuf::from(repo))
 }
+
+#[tauri::command]
+pub fn github_pr_comment(repo: String, number: u64, body: String) -> Result<(), github::GithubError> {
+    github::pr_comment(&PathBuf::from(repo), number, &body)
+}
+
+#[tauri::command]
+pub fn github_issue_comment(repo: String, number: u64, body: String) -> Result<(), github::GithubError> {
+    github::issue_comment(&PathBuf::from(repo), number, &body)
+}
+
+#[tauri::command]
+pub fn github_issue_set_state(repo: String, number: u64, state: String) -> Result<(), github::GithubError> {
+    github::issue_set_state(&PathBuf::from(repo), number, &state)
+}
+
+#[tauri::command]
+pub fn github_pr_merge(repo: String, number: u64, method: String) -> Result<(), github::GithubError> {
+    github::pr_merge(&PathBuf::from(repo), number, &method)
+}
+
+#[tauri::command]
+pub fn github_issue_create(repo: String, title: String, body: String) -> Result<String, github::GithubError> {
+    github::issue_create(&PathBuf::from(repo), &title, &body)
+}
