@@ -5,6 +5,8 @@
   import type { PullStateFilter } from "../../types";
   import { githubActions } from "../../githubActions.svelte";
   import GithubDetail from "./GithubDetail.svelte";
+  import GithubSkeleton from "./GithubSkeleton.svelte";
+  import { revealIn } from "../../github/motion";
 
   const FILTERS: PullStateFilter[] = ["open", "closed", "merged", "all"];
 
@@ -36,13 +38,13 @@
 </div>
 
 {#if panel.status === "loading" && !panel.data}
-  <p class="note">Loading pull requests…</p>
+  <GithubSkeleton variant="list" />
 {:else if panel.status === "error"}
   <p class="note err">Could not load pull requests ({panel.error?.kind}).</p>
 {:else if panel.data && panel.data.length === 0}
   <p class="note">No {githubState.pullState === "all" ? "" : githubState.pullState} pull requests.</p>
 {:else if panel.data}
-  <ul class="list">
+  <ul class="list" in:revealIn>
     {#each panel.data as pr (pr.number)}
       <li class="row">
         <button class="title" type="button" onclick={() => githubState.openItem("pr", pr.number)}>

@@ -2,6 +2,8 @@
   import { appState } from "../../store.svelte";
   import { githubState } from "../../githubState.svelte";
   import { parseISO, formatCommitDate } from "../../dates";
+  import GithubSkeleton from "./GithubSkeleton.svelte";
+  import { revealIn } from "../../github/motion";
 
   $effect(() => {
     const repo = appState.repo;
@@ -30,13 +32,13 @@
 </script>
 
 {#if panel.status === "loading" && !panel.data}
-  <p class="note">Loading workflow runs…</p>
+  <GithubSkeleton variant="actions" />
 {:else if panel.status === "error"}
   <p class="note err">Could not load runs ({panel.error?.kind}).</p>
 {:else if panel.data && panel.data.length === 0}
   <p class="note">No workflow runs.</p>
 {:else if panel.data}
-  <ul class="list">
+  <ul class="list" in:revealIn>
     {#each panel.data as run (run.id)}
       <li class="row">
         <span class="glyph {cls(run.status, run.conclusion)}" aria-hidden="true">{glyph(run.status, run.conclusion)}</span>

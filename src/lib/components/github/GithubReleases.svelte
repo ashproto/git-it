@@ -4,6 +4,8 @@
   import { parseISO, formatCommitDate } from "../../dates";
   import { formatCompact } from "../../github/format";
   import { aggregateDownloads } from "../../github/downloads";
+  import GithubSkeleton from "./GithubSkeleton.svelte";
+  import { revealIn } from "../../github/motion";
 
   $effect(() => {
     const repo = appState.repo;
@@ -38,12 +40,13 @@
 </script>
 
 {#if panel.status === "loading" && !panel.data}
-  <p class="note">Loading releases…</p>
+  <GithubSkeleton variant="releases" />
 {:else if panel.status === "error"}
   <p class="note err">Could not load releases ({panel.error?.kind}).</p>
 {:else if panel.data && panel.data.length === 0}
   <p class="note">No releases.</p>
 {:else if panel.data && summary}
+  <div in:revealIn>
   <!-- All-time summary -->
   <div class="metrics">
     <div class="metric"><span class="big">{formatCompact(summary.grandTotal)}</span><span class="lbl">total downloads</span></div>
@@ -131,6 +134,7 @@
         {/if}
       </section>
     {/each}
+  </div>
   </div>
 {/if}
 

@@ -5,6 +5,8 @@
   import { parseISO, formatCommitDate } from "../../dates";
   import type { GhPullDetail, GhIssueDetail } from "../../types";
   import Markdown from "./Markdown.svelte";
+  import GithubSkeleton from "./GithubSkeleton.svelte";
+  import { revealIn } from "../../github/motion";
 
   let { kind, number }: { kind: "pr" | "issue"; number: number } = $props();
 
@@ -40,11 +42,11 @@
   </div>
 
   {#if panel.status === "loading" && !d}
-    <p class="note">Loading…</p>
+    <GithubSkeleton variant="detail" />
   {:else if panel.status === "error"}
     <p class="note err">Could not load ({panel.error?.kind}).</p>
   {:else if d}
-    <header class="hd">
+    <header class="hd" in:revealIn>
       <h2><span class="num">#{d.number}</span> {d.title}</h2>
       <div class="sub">
         <span class="state {d.state.toLowerCase()}">{pr?.isDraft ? "DRAFT" : d.state}</span>

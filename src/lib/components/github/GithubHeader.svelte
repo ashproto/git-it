@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { GhRepoStats } from "../../types";
   import StatTile from "./StatTile.svelte";
+  import Skeleton from "./Skeleton.svelte";
   import { githubState } from "../../githubState.svelte";
 
   let {
@@ -25,6 +26,10 @@
       <StatTile label="Watchers" value={stats.watchers} />
       <StatTile label="Open PRs" value={stats.openPulls} onclick={() => githubState.setActiveTab("pulls")} />
       <StatTile label="Open Issues" value={stats.openIssues} onclick={() => githubState.setActiveTab("issues")} />
+    {:else}
+      {#each Array.from({ length: 5 }) as _, i (i)}
+        <Skeleton w="78px" h="44px" radius="8px" />
+      {/each}
     {/if}
     <button class="refresh" type="button" title="Refresh" onclick={onrefresh}>↻</button>
   </div>

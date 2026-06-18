@@ -3,6 +3,7 @@
   import { githubState } from "../../githubState.svelte";
   import { formatCompact } from "../../github/format";
   import { sparklinePoints } from "../../github/activity";
+  import GithubSkeleton from "./GithubSkeleton.svelte";
 
   // Load all four insight panels when the tab mounts (and on Refresh).
   $effect(() => {
@@ -36,7 +37,7 @@
   <section class="card">
     <h3>Traffic <span class="hint">last 14 days</span></h3>
     {#if traffic.status === "loading" && !traffic.data}
-      <p class="note">Loading…</p>
+      <GithubSkeleton variant="card" />
     {:else if traffic.status === "error"}
       {#if traffic.error?.kind === "Forbidden"}
         <p class="note">Traffic is only available for repositories you have push access to.</p>
@@ -74,7 +75,7 @@
   <section class="card">
     <h3>Commit activity <span class="hint">52 weeks</span></h3>
     {#if activity.status === "loading" && !activity.data}
-      <p class="note">Loading…</p>
+      <GithubSkeleton variant="card" />
     {:else if activity.status === "error"}
       <p class="note err">Could not load activity ({activity.error?.kind}).</p>
     {:else if activity.data?.computing}
@@ -91,7 +92,7 @@
   <section class="card">
     <h3>Top contributors</h3>
     {#if contributors.status === "loading" && !contributors.data}
-      <p class="note">Loading…</p>
+      <GithubSkeleton variant="card" />
     {:else if contributors.status === "error"}
       <p class="note err">Could not load contributors ({contributors.error?.kind}).</p>
     {:else if contributors.data && contributors.data.length === 0}
@@ -142,7 +143,7 @@
     {:else if milestones.status === "error" || labels.status === "error"}
       <p class="note err">Could not load milestones/labels.</p>
     {:else}
-      <p class="note">Loading…</p>
+      <GithubSkeleton variant="card" />
     {/if}
   </section>
 </div>

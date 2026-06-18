@@ -5,6 +5,8 @@
   import type { IssueStateFilter } from "../../types";
   import { githubActions } from "../../githubActions.svelte";
   import GithubDetail from "./GithubDetail.svelte";
+  import GithubSkeleton from "./GithubSkeleton.svelte";
+  import { revealIn } from "../../github/motion";
 
   const FILTERS: IssueStateFilter[] = ["open", "closed", "all"];
 
@@ -36,13 +38,13 @@
 </div>
 
 {#if panel.status === "loading" && !panel.data}
-  <p class="note">Loading issues…</p>
+  <GithubSkeleton variant="list" />
 {:else if panel.status === "error"}
   <p class="note err">Could not load issues ({panel.error?.kind}).</p>
 {:else if panel.data && panel.data.length === 0}
   <p class="note">No {githubState.issueState === "all" ? "" : githubState.issueState} issues.</p>
 {:else if panel.data}
-  <ul class="list">
+  <ul class="list" in:revealIn>
     {#each panel.data as it (it.number)}
       <li class="row">
         <button class="title" type="button" onclick={() => githubState.openItem("issue", it.number)}>

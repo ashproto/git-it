@@ -11,6 +11,8 @@
   import GithubActions from "./GithubActions.svelte";
   import GithubInsights from "./GithubInsights.svelte";
   import GithubActionModal from "./GithubActionModal.svelte";
+  import GithubSkeleton from "./GithubSkeleton.svelte";
+  import { revealIn } from "../../github/motion";
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -31,7 +33,7 @@
   {#if !isTauri()}
     <p class="note">The GitHub screen is available in the desktop app only.</p>
   {:else if githubState.availLoading && !avail}
-    <p class="note">Checking GitHub…</p>
+    <GithubSkeleton variant="header" />
   {:else if avail && avail.kind === "Ok"}
     <GithubHeader
       stats={githubState.stats}
@@ -42,11 +44,11 @@
     <GithubTabs />
     {#if githubState.activeTab === "overview"}
       {#if githubState.statsLoading && !githubState.stats}
-        <p class="note">Loading…</p>
+        <GithubSkeleton variant="overview" />
       {:else if githubState.statsError}
         <p class="note err">Could not load repository data ({githubState.statsError.kind}).</p>
       {:else if githubState.stats}
-        <GithubOverview stats={githubState.stats} />
+        <div in:revealIn><GithubOverview stats={githubState.stats} /></div>
       {/if}
     {:else if githubState.activeTab === "pulls"}
       <GithubPulls />
