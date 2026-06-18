@@ -469,17 +469,17 @@ pub fn cancel_remote(state: State<'_, Arc<ops_remote::RemoteState>>) {
 
 // ── GitHub integration ────────────────────────────────────────────────────────
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_availability(repo: String) -> github::GhAvailability {
     github::availability(&PathBuf::from(repo))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_repo_stats(repo: String) -> Result<github::GhRepoStats, github::GithubError> {
     github::repo_stats(&PathBuf::from(repo))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_pulls(
     repo: String,
     state: String,
@@ -488,7 +488,7 @@ pub fn github_pulls(
     github::pulls(&PathBuf::from(repo), &state, limit)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_issues(
     repo: String,
     state: String,
@@ -497,22 +497,22 @@ pub fn github_issues(
     github::issues(&PathBuf::from(repo), &state, limit)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_releases(repo: String) -> Result<Vec<github::GhRelease>, github::GithubError> {
     github::releases(&PathBuf::from(repo))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_runs(repo: String, limit: u32) -> Result<Vec<github::GhRun>, github::GithubError> {
     github::runs(&PathBuf::from(repo), limit)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_traffic(repo: String) -> Result<github::GhTraffic, github::GithubError> {
     github::traffic(&PathBuf::from(repo))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_contributors(
     repo: String,
     limit: u32,
@@ -520,52 +520,52 @@ pub fn github_contributors(
     github::contributors(&PathBuf::from(repo), limit)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_activity(repo: String) -> Result<github::GhActivity, github::GithubError> {
     github::commit_activity(&PathBuf::from(repo))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_milestones(repo: String) -> Result<Vec<github::GhMilestone>, github::GithubError> {
     github::milestones(&PathBuf::from(repo))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_labels(repo: String) -> Result<Vec<github::GhLabel>, github::GithubError> {
     github::labels(&PathBuf::from(repo))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_pr_comment(repo: String, number: u64, body: String) -> Result<(), github::GithubError> {
     github::pr_comment(&PathBuf::from(repo), number, &body)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_issue_comment(repo: String, number: u64, body: String) -> Result<(), github::GithubError> {
     github::issue_comment(&PathBuf::from(repo), number, &body)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_issue_set_state(repo: String, number: u64, state: String) -> Result<(), github::GithubError> {
     github::issue_set_state(&PathBuf::from(repo), number, &state)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_pr_merge(repo: String, number: u64, method: String) -> Result<(), github::GithubError> {
     github::pr_merge(&PathBuf::from(repo), number, &method)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_issue_create(repo: String, title: String, body: String) -> Result<String, github::GithubError> {
     github::issue_create(&PathBuf::from(repo), &title, &body)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_pr_detail(repo: String, number: u64) -> Result<github::GhPullDetail, github::GithubError> {
     github::pr_detail(&PathBuf::from(repo), number)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn github_issue_detail(repo: String, number: u64) -> Result<github::GhIssueDetail, github::GithubError> {
     github::issue_detail(&PathBuf::from(repo), number)
 }
