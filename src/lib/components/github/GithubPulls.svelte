@@ -7,6 +7,7 @@
   import GithubDetail from "./GithubDetail.svelte";
   import GithubSkeleton from "./GithubSkeleton.svelte";
   import { revealIn } from "../../github/motion";
+  import { pullStateBadge } from "../../github/itemState";
 
   const FILTERS: PullStateFilter[] = ["open", "closed", "merged", "all"];
 
@@ -46,12 +47,15 @@
 {:else if panel.data}
   <ul class="list" in:revealIn>
     {#each panel.data as pr (pr.number)}
-      <li class="row">
-        <button class="title" type="button" onclick={() => githubState.openItem("pr", pr.number)}>
-          <span class="num">#{pr.number}</span>{pr.title}
-          {#if pr.isDraft}<span class="badge">draft</span>{/if}
-        </button>
-        <a class="ext" href={pr.url} target="_blank" rel="noreferrer" title="Open on github.com">↗</a>
+      {@const badge = pullStateBadge(pr)}
+      <li class="row" style="--state:{badge.color}">
+        <div class="title-row">
+          <span class="state-badge">{badge.label}</span>
+          <button class="title" type="button" onclick={() => githubState.openItem("pr", pr.number)}>
+            <span class="num">#{pr.number}</span>{pr.title}
+          </button>
+          <a class="ext" href={pr.url} target="_blank" rel="noreferrer" title="Open on github.com">↗</a>
+        </div>
         <div class="meta">
           <span>{pr.author}</span>
           <span class="mono">{pr.headRefName} → {pr.baseRefName}</span>
@@ -128,13 +132,32 @@
     padding: 0;
   }
   .row {
-    padding: 10px 4px;
+    padding: 10px 10px 10px 11px;
+    border-left: 3px solid var(--state);
     border-bottom: 1px solid var(--border-subtle, var(--border));
+    background: color-mix(in srgb, var(--state) 20%, transparent);
     display: flex;
     flex-direction: column;
     gap: 4px;
   }
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .state-badge {
+    flex: none;
+    background: var(--state);
+    color: #fff;
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 1px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
   .title {
+    flex: 1;
+    min-width: 0;
     background: none;
     border: none;
     padding: 0;
@@ -167,14 +190,6 @@
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px;
-  }
-  .badge {
-    font-size: 10px;
-    padding: 0 6px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    margin-left: 6px;
-    text-transform: uppercase;
   }
   .rev {
     text-transform: capitalize;

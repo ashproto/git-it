@@ -7,6 +7,7 @@
   import GithubDetail from "./GithubDetail.svelte";
   import GithubSkeleton from "./GithubSkeleton.svelte";
   import { revealIn } from "../../github/motion";
+  import { issueStateBadge } from "../../github/itemState";
 
   const FILTERS: IssueStateFilter[] = ["open", "closed", "all"];
 
@@ -46,11 +47,15 @@
 {:else if panel.data}
   <ul class="list" in:revealIn>
     {#each panel.data as it (it.number)}
-      <li class="row">
-        <button class="title" type="button" onclick={() => githubState.openItem("issue", it.number)}>
-          <span class="num">#{it.number}</span>{it.title}
-        </button>
-        <a class="ext" href={it.url} target="_blank" rel="noreferrer" title="Open on github.com">↗</a>
+      {@const badge = issueStateBadge(it)}
+      <li class="row" style="--state:{badge.color}">
+        <div class="title-row">
+          <span class="state-badge">{badge.label}</span>
+          <button class="title" type="button" onclick={() => githubState.openItem("issue", it.number)}>
+            <span class="num">#{it.number}</span>{it.title}
+          </button>
+          <a class="ext" href={it.url} target="_blank" rel="noreferrer" title="Open on github.com">↗</a>
+        </div>
         <div class="meta">
           <span>{it.author}</span>
           {#if it.assignees.length}<span>→ {it.assignees.join(", ")}</span>{/if}
@@ -138,13 +143,32 @@
     padding: 0;
   }
   .row {
-    padding: 10px 4px;
+    padding: 10px 10px 10px 11px;
+    border-left: 3px solid var(--state);
     border-bottom: 1px solid var(--border-subtle, var(--border));
+    background: color-mix(in srgb, var(--state) 20%, transparent);
     display: flex;
     flex-direction: column;
     gap: 4px;
   }
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .state-badge {
+    flex: none;
+    background: var(--state);
+    color: #fff;
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 1px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
   .title {
+    flex: 1;
+    min-width: 0;
     background: none;
     border: none;
     padding: 0;

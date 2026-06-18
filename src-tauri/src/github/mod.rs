@@ -399,6 +399,8 @@ struct RawIssue {
     #[serde(default)]
     assignees: Vec<RawUser>,
     state: String,
+    #[serde(rename = "stateReason", default)]
+    state_reason: Option<String>,
     #[serde(rename = "updatedAt")]
     updated_at: String,
     url: String,
@@ -413,6 +415,7 @@ pub struct GhIssue {
     pub labels: Vec<GhLabel>,
     pub assignees: Vec<String>,
     pub state: String, // OPEN | CLOSED
+    pub state_reason: Option<String>, // COMPLETED | NOT_PLANNED | null (closed reason)
     pub updated_at: String,
     pub url: String,
 }
@@ -425,6 +428,7 @@ fn map_issue(i: RawIssue) -> GhIssue {
         labels: i.labels.into_iter().map(map_label).collect(),
         assignees: i.assignees.into_iter().map(|a| a.login).collect(),
         state: i.state,
+        state_reason: i.state_reason,
         updated_at: i.updated_at,
         url: i.url,
     }
@@ -439,7 +443,7 @@ pub fn issues(repo: &Path, state: &str, limit: u32) -> Result<Vec<GhIssue>, Gith
     let json = run_gh(
         &[
             "issue", "list", "--repo", &slug, "--state", st, "--limit", &limit_s,
-            "--json", "number,title,author,labels,assignees,state,updatedAt,url",
+            "--json", "number,title,author,labels,assignees,state,stateReason,updatedAt,url",
         ],
         None,
     )?;

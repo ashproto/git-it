@@ -192,6 +192,7 @@ export type GhIssue = {
   labels: GhLabel[];
   assignees: string[];
   state: "OPEN" | "CLOSED";
+  stateReason: string | null; // COMPLETED | NOT_PLANNED | null
   updatedAt: string;
   url: string;
 };
