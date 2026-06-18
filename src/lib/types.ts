@@ -165,3 +165,59 @@ export type GithubError =
   | { kind: "Forbidden" }
   | { kind: "RateLimited" }
   | { kind: "Other"; message: string };
+
+export type GhLabel = { name: string; color: string };
+
+export type PullStateFilter = "open" | "closed" | "merged" | "all";
+export type IssueStateFilter = "open" | "closed" | "all";
+
+export type GhPull = {
+  number: number;
+  title: string;
+  author: string;
+  headRefName: string;
+  baseRefName: string;
+  labels: GhLabel[];
+  reviewDecision: "" | "REVIEW_REQUIRED" | "APPROVED" | "CHANGES_REQUESTED";
+  isDraft: boolean;
+  state: "OPEN" | "CLOSED" | "MERGED";
+  updatedAt: string;
+  url: string;
+};
+
+export type GhIssue = {
+  number: number;
+  title: string;
+  author: string;
+  labels: GhLabel[];
+  assignees: string[];
+  state: "OPEN" | "CLOSED";
+  updatedAt: string;
+  url: string;
+};
+
+export type GhAsset = { name: string; size: number; downloadCount: number; downloadUrl: string };
+
+export type GhRelease = {
+  tagName: string;
+  name: string;
+  draft: boolean;
+  prerelease: boolean;
+  publishedAt: string | null;
+  htmlUrl: string;
+  assets: GhAsset[];
+  totalDownloads: number;
+};
+
+export type GhRun = {
+  id: number;
+  title: string;
+  workflowName: string;
+  headBranch: string;
+  event: string;
+  status: string;
+  conclusion: string;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+};

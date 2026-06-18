@@ -7,6 +7,12 @@ import type {
   DateMapping,
   GhAvailability,
   GhRepoStats,
+  GhPull,
+  GhIssue,
+  GhRelease,
+  GhRun,
+  PullStateFilter,
+  IssueStateFilter,
   GraphCommit,
   OpOutcome,
   PrerequisiteCheck,
@@ -141,6 +147,12 @@ export const api = {
   remotes: (repo: string) => invoke<RemoteInfo[]>("remotes", { repo }),
   githubAvailability: (repo: string) => invoke<GhAvailability>("github_availability", { repo }),
   githubRepoStats: (repo: string) => invoke<GhRepoStats>("github_repo_stats", { repo }),
+  githubPulls: (repo: string, state: PullStateFilter, limit: number) =>
+    invoke<GhPull[]>("github_pulls", { repo, state, limit }),
+  githubIssues: (repo: string, state: IssueStateFilter, limit: number) =>
+    invoke<GhIssue[]>("github_issues", { repo, state, limit }),
+  githubReleases: (repo: string) => invoke<GhRelease[]>("github_releases", { repo }),
+  githubRuns: (repo: string, limit: number) => invoke<GhRun[]>("github_runs", { repo, limit }),
   remoteAdd: (repo: string, name: string, url: string) =>
     invoke<void>("remote_add", { repo, name, url }),
   remoteRemove: (repo: string, name: string) => invoke<void>("remote_remove", { repo, name }),
