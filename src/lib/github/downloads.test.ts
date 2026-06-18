@@ -62,9 +62,22 @@ describe("aggregateDownloads", () => {
     expect(s.topAssets).toHaveLength(3);
   });
 
-  it("excludes zero-download assets from top assets and platform totals", () => {
-    const s = aggregateDownloads([rel("v1", "One", [["a.dmg", 0], ["b.exe", 5]])]);
+  it("excludes zero-download assets and zero-total releases", () => {
+    const s = aggregateDownloads([
+      rel("v1", "One", [["a.dmg", 0], ["b.exe", 5]]),
+      rel("v0", "Zero", [["z.dmg", 0]]),
+    ]);
     expect(s.topAssets).toEqual([{ name: "b.exe", release: "v1", count: 5 }]);
     expect(s.byPlatform).toEqual([{ platform: "Windows", total: 5 }]);
+    // v0 has 0 downloads → excluded from the by-release chart (no empty bars).
+    expect(s.byRelease).toEqual([{ tag: "v1", name: "One", total: 5 }]);
+  });
+
+  it("merges duplicate tags into one by-release entry", () => {
+    const s = aggregateDownloads([
+      rel("v1", "One", [["a.exe", 5]]),
+      rel("v1", "One again", [["b.exe", 3]]),
+    ]);
+    expect(s.byRelease).toEqual([{ tag: "v1", name: "One", total: 8 }]);
   });
 });

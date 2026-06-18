@@ -86,7 +86,7 @@
       <section class="chart">
         <h4>Top assets</h4>
         <ul class="top">
-          {#each summary.topAssets as a (a.name + a.release)}
+          {#each summary.topAssets as a (a.release + " " + a.name)}
             <li>
               <span class="an" title={a.name}>{a.name}</span>
               <span class="ar mono">{a.release}</span>
