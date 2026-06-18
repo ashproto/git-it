@@ -229,9 +229,9 @@ export const api = {
   // ── Filesystem watcher (live Local Changes) ────────────────────────────────
   // Start watching `repo`'s worktree; `onChange` fires (debounced in Rust) when a
   // non-.git path changes. Replaces any existing watcher.
-  startWatch: (repo: string, onChange: () => void) => {
+  startWatch: (repo: string, onChange: (kind: string) => void) => {
     const channel = new Channel<string>();
-    channel.onmessage = () => onChange();
+    channel.onmessage = (msg) => onChange(msg);
     return invoke<void>("start_watch", { repo, onChange: channel });
   },
   stopWatch: () => invoke<void>("stop_watch", {}),

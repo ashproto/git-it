@@ -96,12 +96,34 @@ function scheduleLocalRefresh(): void {
   }, 80);
 }
 
+// Coalesced reload of the commit graph. Triggered by a "git" filesystem event
+// (a commit/branch/checkout/fetch/merge/reset made by the app OR externally) and
+// by the focus/visibility refresh. reloadGraph also refreshes refs, status and
+// the working copy, and guards against a stale repo itself.
+let graphRefreshDebounce: ReturnType<typeof setTimeout> | null = null;
+function scheduleGraphRefresh(): void {
+  if (graphRefreshDebounce) clearTimeout(graphRefreshDebounce);
+  graphRefreshDebounce = setTimeout(() => {
+    graphRefreshDebounce = null;
+    if (!isTauri() || !appState.repo) return;
+    void reloadGraph();
+  }, 120);
+}
+
+// Route a classified watcher event. A "git" ref/HEAD change reloads the graph
+// (which also covers refs/status/working copy); a "local" worktree/index change
+// does the lighter working-copy refresh.
+function onWatchEvent(kind: string): void {
+  if (kind === "git" || kind === "both") scheduleGraphRefresh();
+  else scheduleLocalRefresh();
+}
+
 // Start (or restart) the filesystem watcher for the current repo. Safe to call
 // repeatedly — the backend replaces any existing watcher.
 export async function startWatchingRepo(): Promise<void> {
   if (!isTauri() || !appState.repo) return;
   try {
-    await api.startWatch(appState.repo, scheduleLocalRefresh);
+    await api.startWatch(appState.repo, onWatchEvent);
   } catch (e) {
     console.warn("[gte] start watch failed", e);
   }
@@ -116,11 +138,13 @@ export async function stopWatchingRepo(): Promise<void> {
   }
 }
 
-// Focus/visibility refresh (the user may have edited files in another app). Routes
-// through the shared debounced path, so a window re-activation that fires BOTH the
-// focus and visibilitychange events still refreshes once, and uses the same guard.
-export function refreshLocalChanges(): void {
-  scheduleLocalRefresh();
+// Focus/visibility refresh: on returning to the window the user may have
+// committed or edited in another app while we were backgrounded. Reload the
+// graph (which also refreshes refs/status/working copy) so the timeline reflects
+// external changes on return — not only the working-copy list. Debounced, so a
+// re-activation firing BOTH focus and visibilitychange still refreshes once.
+export function refreshActiveRepo(): void {
+  scheduleGraphRefresh();
 }
 
 export async function reloadGraph(): Promise<void> {

@@ -26,7 +26,7 @@
     reloadGraph,
     startWatchingRepo,
     stopWatchingRepo,
-    refreshLocalChanges,
+    refreshActiveRepo,
   } from "$lib/gitActions";
   import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
@@ -212,12 +212,12 @@
     if (!inTauri && appState.graphCommits.length === 0) {
       appState.setGraphCommits(SAMPLE_GRAPH);
     }
-    // Refresh the working copy + status when the window regains focus / becomes
-    // visible — the user may have edited files in another app. Complements the
-    // filesystem watcher (which handles changes while the window is already
-    // active). refreshLocalChanges no-ops outside Tauri / with no repo open.
+    // Reload the graph + working copy + status when the window regains focus /
+    // becomes visible — the user may have committed or edited in another app.
+    // Complements the filesystem watcher (which handles changes while the window
+    // is already active). refreshActiveRepo no-ops outside Tauri / with no repo.
     const onActivate = () => {
-      if (document.visibilityState === "visible") refreshLocalChanges();
+      if (document.visibilityState === "visible") refreshActiveRepo();
     };
     window.addEventListener("focus", onActivate);
     document.addEventListener("visibilitychange", onActivate);
