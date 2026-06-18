@@ -7,6 +7,7 @@
     { id: "issues", label: "Issues" },
     { id: "releases", label: "Releases" },
     { id: "actions", label: "Actions" },
+    { id: "insights", label: "Insights" },
   ];
 </script>
 
