@@ -9,6 +9,7 @@
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import RefTree from "./RefTree.svelte";
   import StashPanel from "./StashPanel.svelte";
+  import { githubState } from "../githubState.svelte";
 
   const refs = $derived(appState.refsByKind);
   // Folderize slashed ref names (feature/x → feature ▸ x), Fork/SourceTree-style.
@@ -155,6 +156,18 @@
       <span class="tl-dot" aria-hidden="true"></span>
       <span class="wc-label">Commit Timeline</span>
     </button>
+    {#if githubState.hasGithubRemote}
+      <button
+        class="wc-entry"
+        class:active={appState.activeView === "github"}
+        aria-current={appState.activeView === "github" ? "page" : undefined}
+        onclick={() => appState.setActiveView("github")}
+        title="GitHub — pull requests, issues, releases and more"
+      >
+        <span class="gh-dot" aria-hidden="true"></span>
+        <span class="wc-label">GitHub</span>
+      </button>
+    {/if}
   </nav>
 
   {#if refs.head.length}
@@ -246,6 +259,14 @@
     border-radius: 50%;
     border: 1.5px solid var(--text-muted);
     box-sizing: border-box;
+    flex-shrink: 0;
+  }
+  .gh-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
     flex-shrink: 0;
   }
   /* Count shown in each ref panel's header (via CollapsiblePanel headerActions). */

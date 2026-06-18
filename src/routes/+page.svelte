@@ -1,5 +1,6 @@
 <script lang="ts">
   import GraphHistory from "$lib/components/GraphHistory.svelte";
+  import GithubView from "$lib/components/github/GithubView.svelte";
   import CommitDetail from "$lib/components/CommitDetail.svelte";
   import WorkingCopyView from "$lib/components/WorkingCopyView.svelte";
   import ConflictView from "$lib/components/ConflictView.svelte";
@@ -396,12 +397,14 @@
             <!-- Timeline stays MOUNTED (just hidden) in Local Changes view so the
                  graph's scroll-to-commit keeps working when a sidebar ref is clicked
                  from the changes screen. display:contents → no layout box when shown. -->
-            <div class="timeline-stack" class:hidden={appState.activeView === "changes"}>
+            <div class="timeline-stack" class:hidden={appState.activeView === "changes" || appState.activeView === "github"}>
               <UndoBar />
               <GraphHistory bind:collapsed={graphCollapsed} />
             </div>
             <ConflictView />
-            {#if appState.activeView === "changes"}
+            {#if appState.activeView === "github"}
+              <GithubView />
+            {:else if appState.activeView === "changes"}
               <WorkingCopyView />
             {:else if appState.selectedCommit}
               <!-- Commit details slide up below the (full-height) graph only when a
