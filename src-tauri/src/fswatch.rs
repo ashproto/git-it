@@ -38,7 +38,14 @@ fn classify(path: &Path) -> Option<Kind> {
         Some(i) => {
             let rest = &comps[i + 1..];
             let last = *rest.last()?; // the `.git` dir itself → None
-            if last.ends_with(".lock") || rest.iter().any(|c| *c == "objects") {
+            if last.ends_with(".lock") {
+                return None; // git lock-file churn (index.lock, <ref>.lock, …)
+            }
+            // The object database (`.git/objects/…`) is pure churn. Scope the drop
+            // to the database itself (the component directly under `.git`) so a ref
+            // literally named `objects` (`.git/refs/heads/objects`) still classifies
+            // as a Git change below.
+            if rest.first() == Some(&"objects") {
                 return None;
             }
             if rest.iter().any(|c| *c == "refs" || *c == "logs") {
@@ -99,6 +106,11 @@ pub fn start_watch(
     })
     .map_err(|e| format!("watch init: {e}"))?;
 
+    // NB: for a linked worktree or a submodule, `.git` is a FILE pointing at a
+    // gitdir OUTSIDE this tree (the main repo's `.git/worktrees/<name>/` or the
+    // superproject's `.git/modules/<name>/`), so ref/HEAD changes there aren't seen
+    // by this watch — those repos get a "git" refresh only via the window-focus
+    // reload (refreshActiveRepo), not live-while-focused. Acceptable for now.
     watcher
         .watch(&root, RecursiveMode::Recursive)
         .map_err(|e| format!("watch start: {e}"))?;
@@ -127,7 +139,10 @@ pub fn start_watch(
             (true, true) => "both",
             (true, false) => "git",
             (false, true) => "local",
-            (false, false) => continue, // unreachable — we only send real kinds
+            // Unreachable: `first` is always Git or Local, so one flag is set. Fail
+            // loudly if a future third Kind ever slips through rather than silently
+            // swallowing the refresh.
+            (false, false) => unreachable!("debounce window saw no classified event"),
         };
         let _ = on_change.send(payload.to_string());
     });
@@ -170,6 +185,14 @@ mod tests {
     #[test]
     fn index_change_is_local() {
         assert_eq!(classify(Path::new("/r/.git/index")), Some(Kind::Local));
+    }
+
+    #[test]
+    fn a_ref_literally_named_objects_is_still_git() {
+        // The objects-database drop is scoped to `.git/objects/…`, so a branch
+        // named `objects` is not mistaken for object churn.
+        assert_eq!(classify(Path::new("/r/.git/refs/heads/objects")), Some(Kind::Git));
+        assert_eq!(classify(Path::new("/r/.git/objects/pack/pack-1.idx")), None);
     }
 
     #[test]

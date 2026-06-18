@@ -1478,6 +1478,23 @@ function makeState() {
       // NOTE: lastUndo is intentionally NOT cleared here — a destructive op reloads the
       // graph and we want the UndoBar to remain visible after that refresh.
     },
+    // Non-destructive graph update for a LIVE refresh (filesystem watcher / window
+    // focus), as opposed to setGraphCommits (the repo-switch reset). Keeps the open
+    // commit, the multi-selection and any QUEUED time-edits — pruned to the SHAs that
+    // still exist after the reload — so a background fetch or a plain alt-tab never
+    // closes the detail pane, collapses paged history, or discards in-progress edits.
+    applyGraphRefresh(gc: GraphCommit[]) {
+      graphCommits = gc;
+      commits = gc.map(graphToCommit);
+      const live = new Set(gc.map((c) => c.sha));
+      if (currentSha && !live.has(currentSha)) currentSha = null;
+      const keptSel = [...selected].filter((s) => live.has(s));
+      if (keptSel.length !== selected.size) selected = new Set(keptSel);
+      if (newDates.size) {
+        const kept = new Map([...newDates].filter(([sha]) => live.has(sha)));
+        if (kept.size !== newDates.size) newDates = kept;
+      }
+    },
     get graphHasMore() {
       return graphHasMore;
     },

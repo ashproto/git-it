@@ -96,17 +96,43 @@ function scheduleLocalRefresh(): void {
   }, 80);
 }
 
-// Coalesced reload of the commit graph. Triggered by a "git" filesystem event
-// (a commit/branch/checkout/fetch/merge/reset made by the app OR externally) and
-// by the focus/visibility refresh. reloadGraph also refreshes refs, status and
-// the working copy, and guards against a stale repo itself.
+// A LIVE refresh of the graph for the filesystem watcher / window focus. Unlike
+// reloadGraph (the repo-switch reset, which reloads the first page and CLEARS the
+// selection/queued edits), this reloads up to the currently-loaded depth and
+// applies it NON-destructively — preserving the open commit, multi-selection,
+// queued time-edits and scroll. It also skips while a page-load is in flight so a
+// background event can't interleave into a non-contiguous graph.
+async function liveRefreshGraph(): Promise<void> {
+  if (!isTauri() || !appState.repo) return;
+  if (appState.graphLoadingMore) return; // don't fight an in-flight loadMoreGraph
+  const target = appState.repo;
+  const count = Math.max(PAGE, appState.graphCommits.length);
+  let gc: GraphCommit[];
+  try {
+    gc = await api.loadGraph(target, count, 0);
+  } catch (e) {
+    console.warn("[gte] live graph refresh failed", e);
+    return; // transient — keep the current view
+  }
+  if (appState.repo !== target) return;
+  appState.applyGraphRefresh(gc);
+  appState.setGraphHasMore(gc.length >= count);
+  await refreshStatus();
+  if (appState.repo !== target) return;
+  await refreshWorkingChanges();
+  if (appState.repo !== target) return;
+  await refreshRefs();
+}
+
+// Coalesced live refresh. Triggered by a "git" filesystem event (a commit/branch/
+// checkout/fetch/merge/reset made by the app OR externally) and by the focus/
+// visibility refresh.
 let graphRefreshDebounce: ReturnType<typeof setTimeout> | null = null;
 function scheduleGraphRefresh(): void {
   if (graphRefreshDebounce) clearTimeout(graphRefreshDebounce);
   graphRefreshDebounce = setTimeout(() => {
     graphRefreshDebounce = null;
-    if (!isTauri() || !appState.repo) return;
-    void reloadGraph();
+    void liveRefreshGraph();
   }, 120);
 }
 
@@ -197,8 +223,13 @@ export async function loadMoreGraph(): Promise<void> {
   if (!isTauri() || !appState.repo) return;
   if (!appState.graphHasMore || appState.graphLoadingMore) return;
   appState.setGraphLoadingMore(true);
+  const offset = appState.graphCommits.length;
   try {
-    const gc = await api.loadGraph(appState.repo, PAGE, appState.graphCommits.length);
+    const gc = await api.loadGraph(appState.repo, PAGE, offset);
+    // If a live/switch refresh reset the list underneath us while this page was in
+    // flight, drop the now-stale page — appending it would leave a hole and corrupt
+    // the lane geometry.
+    if (appState.graphCommits.length !== offset) return;
     appState.appendGraphCommits(gc);
     appState.setGraphHasMore(gc.length === PAGE);
   } catch (e) {

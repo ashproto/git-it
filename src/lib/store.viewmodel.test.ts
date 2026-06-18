@@ -12,6 +12,7 @@
 // selected commit doesn't stay highlighted behind the working-copy view.
 import { beforeEach, describe, expect, it } from "vitest";
 import { appState } from "./store.svelte";
+import { SAMPLE_GRAPH } from "./graph/sample";
 
 // The store is a process-wide singleton, so reset the view-model to a known
 // baseline before each test. Setting repo to "" clears any per-repo state a prior
@@ -102,6 +103,45 @@ describe("Local Changes view-model", () => {
     // And the working-copy setter round-trips through the same shim.
     appState.setWorkingCopySelected(true);
     expect(appState.workingCopySelected).toBe(true);
+  });
+
+  it("applyGraphRefresh (live refresh) preserves focus/selection/queued-edits for surviving commits", () => {
+    appState.setGraphCommits(SAMPLE_GRAPH);
+    const s0 = SAMPLE_GRAPH[0].sha;
+    const s1 = SAMPLE_GRAPH[1].sha;
+    appState.setCurrent(s0);
+    appState.selected = new Set([s0, s1]);
+    appState.setNewDate(s0, new Date("2020-01-01T00:00:00Z"));
+    appState.setNewDate("goneSha000000", new Date("2020-01-02T00:00:00Z"));
+
+    // A background/focus refresh whose history no longer contains s1.
+    appState.applyGraphRefresh(SAMPLE_GRAPH.filter((c) => c.sha !== s1));
+
+    expect(appState.currentSha).toBe(s0); // open commit still exists → preserved
+    expect(appState.selected.has(s0)).toBe(true);
+    expect(appState.selected.has(s1)).toBe(false); // pruned (no longer present)
+    expect(appState.newDates.has(s0)).toBe(true); // queued edit kept
+    expect(appState.newDates.has("goneSha000000")).toBe(false); // pruned
+  });
+
+  it("applyGraphRefresh clears the focus only when the open commit is gone", () => {
+    appState.setGraphCommits(SAMPLE_GRAPH);
+    appState.setCurrent(SAMPLE_GRAPH[0].sha);
+    appState.applyGraphRefresh(SAMPLE_GRAPH.filter((c) => c.sha !== SAMPLE_GRAPH[0].sha));
+    expect(appState.currentSha).toBeNull();
+  });
+
+  it("contrast: setGraphCommits (the repo-switch reset) still clears focus/selection/edits", () => {
+    appState.setGraphCommits(SAMPLE_GRAPH);
+    appState.setCurrent(SAMPLE_GRAPH[0].sha);
+    appState.selected = new Set([SAMPLE_GRAPH[0].sha]);
+    appState.setNewDate(SAMPLE_GRAPH[0].sha, new Date("2020-01-01T00:00:00Z"));
+
+    appState.setGraphCommits(SAMPLE_GRAPH);
+
+    expect(appState.currentSha).toBeNull();
+    expect(appState.selected.size).toBe(0);
+    expect(appState.newDates.size).toBe(0);
   });
 
   it("switching repositories resets the active view back to the timeline", () => {
