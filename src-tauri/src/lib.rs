@@ -122,6 +122,10 @@ pub fn run() {
             commands::cancel_remote,
             commands::github_availability,
             commands::github_repo_stats,
+            commands::github_pulls,
+            commands::github_issues,
+            commands::github_releases,
+            commands::github_runs,
             fswatch::start_watch,
             fswatch::stop_watch,
         ])

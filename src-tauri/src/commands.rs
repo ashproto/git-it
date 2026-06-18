@@ -478,3 +478,31 @@ pub fn github_availability(repo: String) -> github::GhAvailability {
 pub fn github_repo_stats(repo: String) -> Result<github::GhRepoStats, github::GithubError> {
     github::repo_stats(&PathBuf::from(repo))
 }
+
+#[tauri::command]
+pub fn github_pulls(
+    repo: String,
+    state: String,
+    limit: u32,
+) -> Result<Vec<github::GhPull>, github::GithubError> {
+    github::pulls(&PathBuf::from(repo), &state, limit)
+}
+
+#[tauri::command]
+pub fn github_issues(
+    repo: String,
+    state: String,
+    limit: u32,
+) -> Result<Vec<github::GhIssue>, github::GithubError> {
+    github::issues(&PathBuf::from(repo), &state, limit)
+}
+
+#[tauri::command]
+pub fn github_releases(repo: String) -> Result<Vec<github::GhRelease>, github::GithubError> {
+    github::releases(&PathBuf::from(repo))
+}
+
+#[tauri::command]
+pub fn github_runs(repo: String, limit: u32) -> Result<Vec<github::GhRun>, github::GithubError> {
+    github::runs(&PathBuf::from(repo), limit)
+}
