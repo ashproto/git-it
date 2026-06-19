@@ -3,6 +3,8 @@ node_modules
 /build
 /.svelte-kit
 /package
+# Cargo build output — now at the workspace root (was src-tauri/target/ pre-extraction)
+/target
 .env
 .env.*
 !.env.example

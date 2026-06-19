@@ -1,13 +1,13 @@
-use crate::git_ops;
-use crate::github;
-use crate::graph;
-use crate::ops;
-use crate::ops_merge;
-use crate::ops_remote;
-use crate::ops_rewrite;
-use crate::ops_worktree;
-use crate::rewrite;
-use crate::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RemoteInfo, RemoteOutcome, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile};
+use git_core::git_ops;
+use git_core::github;
+use git_core::graph;
+use git_core::ops;
+use git_core::ops_merge;
+use git_core::ops_remote;
+use git_core::ops_rewrite;
+use git_core::ops_worktree;
+use git_core::rewrite;
+use git_core::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RemoteInfo, RemoteOutcome, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::ipc::Channel;
@@ -238,7 +238,7 @@ pub fn amend(
 
 #[tauri::command]
 pub fn undo_op(repo: String, sha: String) -> Result<(), String> {
-    crate::safety::restore(&PathBuf::from(repo), &sha)
+    git_core::safety::restore(&PathBuf::from(repo), &sha)
 }
 
 #[tauri::command]

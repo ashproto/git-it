@@ -1,48 +1,9 @@
 mod commands;
 mod fswatch;
-mod git_ops;
-mod github;
-mod graph;
-mod ops;
-mod ops_merge;
-mod ops_remote;
-mod ops_rewrite;
-mod ops_worktree;
-mod rewrite;
-mod safety;
-mod types;
-
-/// When the app is launched from Finder/Dock, it inherits launchd's bare PATH
-/// (typically /usr/bin:/bin:/usr/sbin:/sbin) — not the user's shell PATH. That
-/// means `git` (in /usr/bin) is found but `git-filter-repo` (in
-/// /opt/homebrew/bin on Apple Silicon, /usr/local/bin on Intel Homebrew) is not.
-/// Prepend both Homebrew bin paths so child processes can find it.
-fn ensure_homebrew_path() {
-    let current = std::env::var("PATH").unwrap_or_default();
-    let extras = ["/opt/homebrew/bin", "/usr/local/bin"];
-    let mut to_prepend: Vec<&str> = Vec::new();
-    for p in &extras {
-        if !current.split(':').any(|seg| seg == *p) {
-            to_prepend.push(p);
-        }
-    }
-    if to_prepend.is_empty() {
-        return;
-    }
-    let prefix = to_prepend.join(":");
-    let new_path = if current.is_empty() {
-        prefix
-    } else {
-        format!("{}:{}", prefix, current)
-    };
-    // SAFETY: called once at process startup before any threads or child
-    // processes are spawned. set_var is only racy in multi-threaded contexts.
-    unsafe { std::env::set_var("PATH", new_path) };
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    ensure_homebrew_path();
+    git_core::path_setup::ensure_homebrew_path();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -50,7 +11,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         // Manage Arc<RemoteState> so pull/push/cancel_remote commands can share it
         // across async spawn_blocking boundaries (State<'_> is not 'static).
-        .manage(std::sync::Arc::new(ops_remote::RemoteState::default()))
+        .manage(std::sync::Arc::new(git_core::ops_remote::RemoteState::default()))
         // Manage the filesystem watcher so the active repo's worktree can be
         // watched for live "Local Changes" updates (see fswatch.rs).
         .manage(fswatch::WatchState::default())
