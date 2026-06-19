@@ -1,0 +1,13 @@
+[package]
+name = "git-it-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Headless Git It agent — drives git-core on this machine"
+
+[[bin]]
+name = "git-it-agent"
+path = "src/main.rs"
+
+[dependencies]
+git-core = { path = "../git-core" }
+serde_json = "1"
