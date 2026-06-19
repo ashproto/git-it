@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Headless Git It agent — drives git-core on this machine"
 
+[lib]
+name = "git_it_agent"
+path = "src/lib.rs"
+
 [[bin]]
 name = "git-it-agent"
 path = "src/main.rs"
