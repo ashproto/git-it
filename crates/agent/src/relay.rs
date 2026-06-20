@@ -64,6 +64,10 @@ fn handle(kind: &str, body: &str) -> (String, String) {
                 None => ("error".into(), json!({ "message": "missing repoPath" }).to_string()),
             }
         }
+        "listRepos" => match serde_json::to_string(&crate::repos::list_repos()) {
+            Ok(json) => ("reposResult".into(), json),
+            Err(e) => ("error".into(), json!({ "message": e.to_string() }).to_string()),
+        },
         other => ("error".into(), json!({ "message": format!("unknown kind: {other}") }).to_string()),
     }
 }
