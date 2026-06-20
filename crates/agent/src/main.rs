@@ -17,8 +17,15 @@ fn main() {
                 exit(2);
             }
         },
+        Some("relay") => {
+            let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+            if let Err(e) = rt.block_on(git_it_agent::relay::run()) {
+                eprintln!("relay error: {e}");
+                exit(1);
+            }
+        }
         _ => {
-            eprintln!("usage: git-it-agent <version|status <repo-path>>");
+            eprintln!("usage: git-it-agent <version|status <repo-path>|relay>");
             exit(2);
         }
     }
