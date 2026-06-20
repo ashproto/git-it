@@ -45,9 +45,11 @@ pub async fn run() -> anyhow::Result<()> {
             if msg_id.is_empty() || seen.contains(&msg_id) { continue; }
             seen.insert(msg_id.clone());
 
-            // when disarmed, refuse every command (read + write); the heartbeat
-            // keeps reporting so the phone shows "online but locked".
-            let (reply_kind, reply_body) = if !crate::repos::armed() {
+            // when disarmed, refuse every command (read + write) EXCEPT
+            // `setArmed` — otherwise a disarmed agent could never be re-armed
+            // from the phone (permanent lockout). The heartbeat keeps reporting
+            // so the phone shows "online but locked".
+            let (reply_kind, reply_body) = if !crate::repos::armed() && kind != "setArmed" {
                 ("error".to_string(), json!({ "message": "agent is disarmed" }).to_string())
             } else {
                 handle(&kind, &body)
@@ -88,8 +90,34 @@ fn handle(kind: &str, body: &str) -> (String, String) {
             Ok(json) => ("reposResult".into(), json),
             Err(e) => ("error".into(), json!({ "message": e.to_string() }).to_string()),
         },
+        "addRepo" => match repo_path(body) {
+            Some(p) => { crate::repos::add_repo(&p); ("reposResult".into(), repos_result()) }
+            None => ("error".into(), json!({ "message": "missing path" }).to_string()),
+        },
+        "removeRepo" => match repo_path(body) {
+            Some(p) => { crate::repos::remove_repo(&p); ("reposResult".into(), repos_result()) }
+            None => ("error".into(), json!({ "message": "missing path" }).to_string()),
+        },
+        "setArmed" => {
+            let armed = serde_json::from_str::<serde_json::Value>(body).ok()
+                .and_then(|v| v.get("armed").and_then(|a| a.as_bool()))
+                .unwrap_or(true);
+            crate::repos::set_armed(armed);
+            ("armedResult".into(), json!({ "armed": armed }).to_string())
+        }
         other => ("error".into(), json!({ "message": format!("unknown kind: {other}") }).to_string()),
     }
+}
+
+/// Extract the `"path"` string field from a command body, if present.
+fn repo_path(body: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(body).ok()
+        .and_then(|v| v.get("path").and_then(|p| p.as_str()).map(String::from))
+}
+
+/// Serialize the fresh repo list as the `reposResult` body (matches `listRepos`).
+fn repos_result() -> String {
+    serde_json::to_string(&crate::repos::list_repos()).unwrap_or_else(|_| "{}".into())
 }
 
 fn str_field(m: &BTreeMap<String, Value>, k: &str) -> String {
