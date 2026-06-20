@@ -20,6 +20,20 @@ pub async fn run() -> anyhow::Result<()> {
     let mut sub = client.subscribe("messages:inbox", inbox_args).await?;
     let mut seen: HashSet<String> = HashSet::new();
 
+    // presence heartbeat: upsert this device every 30s (fires immediately).
+    let mut hb = client.clone();
+    tokio::spawn(async move {
+        loop {
+            let mut a = BTreeMap::new();
+            a.insert("deviceId".into(), Value::String(crate::repos::device_id()));
+            a.insert("name".into(), Value::String(crate::repos::device_name()));
+            a.insert("kind".into(), Value::String("mac".into()));
+            a.insert("armed".into(), Value::Boolean(crate::repos::armed()));
+            if let Err(e) = hb.mutation("devices:heartbeat", a).await { eprintln!("heartbeat error: {e}"); }
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        }
+    });
+
     println!("agent relay: listening (slice 2 — repoStatus)…");
     while let Some(FunctionResult::Value(Value::Array(rows))) = sub.next().await {
         for row in rows {
@@ -31,7 +45,13 @@ pub async fn run() -> anyhow::Result<()> {
             if msg_id.is_empty() || seen.contains(&msg_id) { continue; }
             seen.insert(msg_id.clone());
 
-            let (reply_kind, reply_body) = handle(&kind, &body);
+            // when disarmed, refuse every command (read + write); the heartbeat
+            // keeps reporting so the phone shows "online but locked".
+            let (reply_kind, reply_body) = if !crate::repos::armed() {
+                ("error".to_string(), json!({ "message": "agent is disarmed" }).to_string())
+            } else {
+                handle(&kind, &body)
+            };
             // reply to sender
             let reply_id = format!("{msg_id}-r");
             let mut send = BTreeMap::new();

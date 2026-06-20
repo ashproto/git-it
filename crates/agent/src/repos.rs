@@ -50,7 +50,25 @@ fn summarize(path: &str) -> RepoSummary {
     }
 }
 
-fn device_name() -> String {
+/// Stable per-machine id = the macOS hardware UUID (IOPlatformUUID).
+pub fn device_id() -> String {
+    std::process::Command::new("ioreg").args(["-rd1", "-c", "IOPlatformExpertDevice"]).output().ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.lines().find(|l| l.contains("IOPlatformUUID")).map(String::from))
+        .and_then(|l| l.split('"').nth(3).map(String::from))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(device_name)
+}
+
+/// Read `"armed"` from the config; default true if absent/unparsable.
+pub fn armed() -> bool {
+    std::fs::read_to_string(config_path()).ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("armed").and_then(|a| a.as_bool()))
+        .unwrap_or(true)
+}
+
+pub fn device_name() -> String {
     // macOS friendly name ("Ash's MacBook Pro"); fall back to hostname.
     std::process::Command::new("scutil").args(["--get", "ComputerName"]).output().ok()
         .filter(|o| o.status.success())
