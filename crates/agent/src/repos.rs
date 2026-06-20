@@ -123,12 +123,14 @@ pub fn remove_repo(path: &str) {
 }
 
 /// Set the `"armed"` flag, preserving the `"repos"` list and all other fields.
-pub fn set_armed(armed: bool) {
+/// Returns the write result so callers can surface a failed persist instead of
+/// reporting a possibly-false success on this safety-critical path.
+pub fn set_armed(armed: bool) -> std::io::Result<()> {
     let mut v = read_config_value();
     if let Some(o) = v.as_object_mut() {
         o.insert("armed".into(), serde_json::json!(armed));
     }
-    let _ = write_config_value(&v);
+    write_config_value(&v)
 }
 
 pub fn device_name() -> String {
@@ -186,7 +188,7 @@ mod tests {
         assert_eq!(read_raw()["repos"], serde_json::json!(["/a", "/b"]));
 
         // set_armed flips the flag WITHOUT clobbering `repos` or `note`.
-        set_armed(true);
+        set_armed(true).unwrap();
         let v = read_raw();
         assert_eq!(v["armed"], serde_json::json!(true));
         assert_eq!(v["repos"], serde_json::json!(["/a", "/b"]));

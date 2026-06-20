@@ -99,11 +99,25 @@ fn handle(kind: &str, body: &str) -> (String, String) {
             None => ("error".into(), json!({ "message": "missing path" }).to_string()),
         },
         "setArmed" => {
-            let armed = serde_json::from_str::<serde_json::Value>(body).ok()
+            // Require an explicit boolean. Never default this security flag to
+            // the more-permissive (armed) state on a missing/garbage body — a
+            // stray or replayed message must NOT silently re-arm a disarmed
+            // agent. On parse failure, refuse and leave the current state.
+            match serde_json::from_str::<serde_json::Value>(body).ok()
                 .and_then(|v| v.get("armed").and_then(|a| a.as_bool()))
-                .unwrap_or(true);
-            crate::repos::set_armed(armed);
-            ("armedResult".into(), json!({ "armed": armed }).to_string())
+            {
+                Some(want) => match crate::repos::set_armed(want) {
+                    // Reply with the ACTUAL on-disk state (re-read), so a failed
+                    // write is never reported as success — matching how the repo
+                    // commands self-report via list_repos().
+                    Ok(()) => ("armedResult".into(),
+                        json!({ "armed": crate::repos::armed() }).to_string()),
+                    Err(e) => ("error".into(),
+                        json!({ "message": format!("failed to persist armed: {e}") }).to_string()),
+                },
+                None => ("error".into(),
+                    json!({ "message": "missing or non-boolean armed" }).to_string()),
+            }
         }
         other => ("error".into(), json!({ "message": format!("unknown kind: {other}") }).to_string()),
     }
