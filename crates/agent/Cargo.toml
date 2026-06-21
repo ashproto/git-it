@@ -21,3 +21,6 @@ tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 dotenvy = "0.15"
 anyhow = "1"
+# Agent auth: claim a pairing code + refresh the session token over HTTP.
+# rustls-tls avoids a system OpenSSL dependency (keeps the headless build clean).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

@@ -7,16 +7,22 @@ use convex::{ConvexClient, FunctionResult, Value};
 use futures::StreamExt;
 use serde_json::json;
 
-const ME: &str = "agent";
-
 pub async fn run() -> anyhow::Result<()> {
     dotenvy::from_filename(".env.local").ok();
     let url = env::var("CONVEX_URL").map_err(|_| anyhow::anyhow!("set CONVEX_URL to the deployment URL"))?;
+    // This agent's stable identity = its hardware device id, used for message
+    // routing and matched against the session token's `did` claim server-side.
+    let me = crate::repos::device_id();
+    // Authenticate: load the pairing credentials and present a session JWT the
+    // fetcher re-mints on connect + every reconnect. Refuse to start unpaired.
+    let auth = crate::auth::AgentAuth::load()
+        .ok_or_else(|| anyhow::anyhow!("not paired — run `git-it-agent pair <code>` first"))?;
     let mut client = ConvexClient::new(&url).await?;
+    client.set_auth_callback(Some(auth.make_fetcher())).await;
     let mut writer = client.clone();
 
     let mut inbox_args = BTreeMap::new();
-    inbox_args.insert("to".into(), Value::String(ME.into()));
+    inbox_args.insert("to".into(), Value::String(me.clone()));
     let mut sub = client.subscribe("messages:inbox", inbox_args).await?;
     let mut seen: HashSet<String> = HashSet::new();
 
@@ -34,7 +40,7 @@ pub async fn run() -> anyhow::Result<()> {
         }
     });
 
-    println!("agent relay: listening (slice 2 — repoStatus)…");
+    println!("agent relay: authenticated as {me}; listening…");
     while let Some(FunctionResult::Value(Value::Array(rows))) = sub.next().await {
         for row in rows {
             let Value::Object(m) = row else { continue };
@@ -58,7 +64,7 @@ pub async fn run() -> anyhow::Result<()> {
             let reply_id = format!("{msg_id}-r");
             let mut send = BTreeMap::new();
             send.insert("msgId".into(), Value::String(reply_id));
-            send.insert("from".into(), Value::String(ME.into()));
+            send.insert("from".into(), Value::String(me.clone()));
             send.insert("to".into(), Value::String(from));
             send.insert("kind".into(), Value::String(reply_kind));
             send.insert("body".into(), Value::String(reply_body));

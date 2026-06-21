@@ -133,6 +133,43 @@ pub fn set_armed(armed: bool) -> std::io::Result<()> {
     write_config_value(&v)
 }
 
+// --- Pairing credentials (Phase 2a auth) ---
+// Stored under an `"auth"` object in agent.json: { refreshToken, account }. The
+// refresh token is the durable secret (rotated on every /auth/refresh); the
+// session JWT is never persisted (always re-minted from the refresh token).
+
+/// The persisted refresh token, or None if this agent isn't paired yet.
+pub fn load_refresh_token() -> Option<String> {
+    read_config_value()
+        .get("auth")?
+        .get("refreshToken")?
+        .as_str()
+        .map(String::from)
+}
+
+/// The account this agent is paired to (empty string if unknown).
+pub fn load_account() -> String {
+    read_config_value()
+        .get("auth")
+        .and_then(|a| a.get("account"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Persist the pairing credentials, preserving `repos`/`armed`/other fields.
+/// Used both at pairing and on every refresh-token rotation.
+pub fn save_auth(refresh_token: &str, account: &str) -> std::io::Result<()> {
+    let mut v = read_config_value();
+    if let Some(o) = v.as_object_mut() {
+        o.insert(
+            "auth".into(),
+            serde_json::json!({ "refreshToken": refresh_token, "account": account }),
+        );
+    }
+    write_config_value(&v)
+}
+
 pub fn device_name() -> String {
     // macOS friendly name ("Ash's MacBook Pro"); fall back to hostname.
     std::process::Command::new("scutil").args(["--get", "ComputerName"]).output().ok()
@@ -226,6 +263,42 @@ mod tests {
         let v = read_raw();
         assert!(v.is_object(), "config recovered to an object: {v}");
         assert_eq!(v["repos"], serde_json::json!(["/fresh"]));
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn auth_creds_roundtrip_and_preserve_repos_armed() {
+        let _guard = HOME_GUARD.lock().unwrap();
+        let home = std::env::temp_dir().join(format!("gitit-repos-test3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        std::env::set_var("HOME", &home);
+
+        let cfg = config_path();
+        std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+        std::fs::write(&cfg, r#"{"armed": false, "repos": ["/a"]}"#).unwrap();
+
+        // Unpaired agent: no refresh token yet.
+        assert_eq!(load_refresh_token(), None);
+
+        // save_auth persists creds WITHOUT clobbering repos/armed.
+        save_auth("rt1", "acct_x").unwrap();
+        assert_eq!(load_refresh_token().as_deref(), Some("rt1"));
+        assert_eq!(load_account(), "acct_x");
+        let v = read_raw();
+        assert_eq!(v["repos"], serde_json::json!(["/a"]));
+        assert_eq!(v["armed"], serde_json::json!(false));
+
+        // Rotation: a new refresh token replaces the old; account + repos intact.
+        save_auth("rt2", "acct_x").unwrap();
+        assert_eq!(load_refresh_token().as_deref(), Some("rt2"));
+        assert_eq!(read_raw()["repos"], serde_json::json!(["/a"]));
+
+        // set_armed after pairing preserves the auth object.
+        set_armed(true).unwrap();
+        assert_eq!(load_refresh_token().as_deref(), Some("rt2"));
+        assert!(armed());
 
         let _ = std::fs::remove_dir_all(&home);
     }
