@@ -8,11 +8,12 @@ use futures::StreamExt;
 use serde_json::json;
 
 pub async fn run() -> anyhow::Result<()> {
-    dotenvy::from_filename(".env.local").ok();
+    dotenvy::from_path(crate::repos::env_path()).ok();
     let url = env::var("CONVEX_URL").map_err(|_| anyhow::anyhow!("set CONVEX_URL to the deployment URL"))?;
-    // This agent's stable identity = its hardware device id, used for message
-    // routing and matched against the session token's `did` claim server-side.
-    let me = crate::repos::device_id();
+    // This agent's stable identity = the device id captured at pairing (falling
+    // back to a fresh hardware-UUID read), matched against the session token's
+    // `did` claim server-side and used for message routing.
+    let me = crate::repos::load_device_id().unwrap_or_else(crate::repos::device_id);
     // Authenticate: load the pairing credentials and present a session JWT the
     // fetcher re-mints on connect + every reconnect. Refuse to start unpaired.
     let auth = crate::auth::AgentAuth::load()
@@ -28,10 +29,11 @@ pub async fn run() -> anyhow::Result<()> {
 
     // presence heartbeat: upsert this device every 30s (fires immediately).
     let mut hb = client.clone();
+    let hb_me = me.clone();
     tokio::spawn(async move {
         loop {
             let mut a = BTreeMap::new();
-            a.insert("deviceId".into(), Value::String(crate::repos::device_id()));
+            a.insert("deviceId".into(), Value::String(hb_me.clone()));
             a.insert("name".into(), Value::String(crate::repos::device_name()));
             a.insert("kind".into(), Value::String("mac".into()));
             a.insert("armed".into(), Value::Boolean(crate::repos::armed()));
@@ -40,8 +42,25 @@ pub async fn run() -> anyhow::Result<()> {
         }
     });
 
+    // Observe credential revocation (a 401 from /auth/refresh after unpair) so a
+    // revoked agent exits cleanly instead of reconnect-spinning on a dead token.
+    let revoked = auth.revoked_flag();
     println!("agent relay: authenticated as {me}; listening…");
-    while let Some(FunctionResult::Value(Value::Array(rows))) = sub.next().await {
+    loop {
+        let rows = tokio::select! {
+            maybe = sub.next() => match maybe {
+                Some(FunctionResult::Value(Value::Array(rows))) => rows,
+                Some(_) => continue,   // ignore non-array results
+                None => break,         // subscription ended
+            },
+            _ = async {
+                while !revoked.load(std::sync::atomic::Ordering::Relaxed) {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+            } => {
+                anyhow::bail!("agent credential revoked (unpaired) — re-pair with `git-it-agent pair`");
+            }
+        };
         for row in rows {
             let Value::Object(m) = row else { continue };
             let msg_id = str_field(&m, "msgId");

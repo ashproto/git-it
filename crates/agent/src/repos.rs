@@ -60,12 +60,17 @@ pub fn device_id() -> String {
         .unwrap_or_else(device_name)
 }
 
-/// Read `"armed"` from the config; default true if absent/unparsable.
+/// Read `"armed"` from the config. If the key is present, honor it. If it's
+/// absent but the agent is PAIRED (an `auth` object exists), default to DISARMED
+/// — a paired-but-not-explicitly-armed agent must be gated (fail-safe), matching
+/// the provisioned-disarmed device row. An unpaired/standalone config (no auth)
+/// defaults armed (legacy; the relay refuses to run unpaired anyway).
 pub fn armed() -> bool {
-    std::fs::read_to_string(config_path()).ok()
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v.get("armed").and_then(|a| a.as_bool()))
-        .unwrap_or(true)
+    let v = read_config_value();
+    if let Some(b) = v.get("armed").and_then(|a| a.as_bool()) {
+        return b;
+    }
+    v.get("auth").is_none()
 }
 
 /// Read the config as a JSON **object**. If the file is absent, empty, an
@@ -85,13 +90,44 @@ fn read_config_value() -> serde_json::Value {
 /// over the real path (an atomic replace on the same filesystem). This avoids
 /// leaving a half-written `agent.json` if the process is killed mid-write.
 fn write_config_value(v: &serde_json::Value) -> std::io::Result<()> {
+    use std::io::Write;
     let path = config_path();
-    if let Some(dir) = path.parent() { std::fs::create_dir_all(dir)?; }
+    if let Some(dir) = path.parent() {
+        if !dir.exists() {
+            std::fs::create_dir_all(dir)?;
+            // Owner-only config dir — it holds the durable refresh token.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+            }
+        }
+    }
     let tmp = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec_pretty(v)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, &path) // atomic replace
+    // Create the temp file owner-only (0600) so the refresh token is never
+    // world-readable; fsync before the atomic rename so a crash can't leave a
+    // truncated single-copy secret.
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(&tmp)?;
+    f.write_all(&bytes)?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&tmp, &path) // atomic replace (preserves the 0600 temp mode)
+}
+
+/// Path to the agent's env file (`~/.config/git-it/.env`) — a FIXED location, so
+/// the refresh-target URLs are never read from a CWD-relative dotfile an attacker
+/// could plant. Production launches set these via the launchd plist instead.
+pub fn env_path() -> std::path::PathBuf {
+    config_path().with_file_name(".env")
 }
 
 /// Register a repo path, preserving all other config fields. Dedups so the same
@@ -157,17 +193,42 @@ pub fn load_account() -> String {
         .to_string()
 }
 
-/// Persist the pairing credentials, preserving `repos`/`armed`/other fields.
-/// Used both at pairing and on every refresh-token rotation.
-pub fn save_auth(refresh_token: &str, account: &str) -> std::io::Result<()> {
+/// The device id captured at pairing (stable across later ioreg flakiness).
+pub fn load_device_id() -> Option<String> {
+    read_config_value()
+        .get("auth")?
+        .get("deviceId")?
+        .as_str()
+        .map(String::from)
+}
+
+/// At pairing: persist creds (refresh token + account + the pairing-time device
+/// id) AND the local disarmed flag in ONE atomic write — so there is never a
+/// window where auth exists without the disarm gate engaged.
+pub fn complete_pairing(refresh_token: &str, account: &str, device_id: &str) -> std::io::Result<()> {
     let mut v = read_config_value();
     if let Some(o) = v.as_object_mut() {
         o.insert(
             "auth".into(),
-            serde_json::json!({ "refreshToken": refresh_token, "account": account }),
+            serde_json::json!({ "refreshToken": refresh_token, "account": account, "deviceId": device_id }),
         );
+        o.insert("armed".into(), serde_json::json!(false));
     }
     write_config_value(&v)
+}
+
+/// On rotation: update ONLY the refresh token, preserving account/deviceId/armed.
+/// Errors if there is no `auth` object (not paired) so a lost rotation fails loud.
+pub fn update_refresh_token(refresh_token: &str) -> std::io::Result<()> {
+    let mut v = read_config_value();
+    if let Some(auth) = v.get_mut("auth").and_then(|a| a.as_object_mut()) {
+        auth.insert("refreshToken".into(), serde_json::json!(refresh_token));
+        return write_config_value(&v);
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "no auth object to update — agent is not paired",
+    ))
 }
 
 pub fn device_name() -> String {
@@ -277,28 +338,45 @@ mod tests {
 
         let cfg = config_path();
         std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
-        std::fs::write(&cfg, r#"{"armed": false, "repos": ["/a"]}"#).unwrap();
+        std::fs::write(&cfg, r#"{"repos": ["/a"]}"#).unwrap();
 
-        // Unpaired agent: no refresh token yet.
+        // Unpaired agent: no refresh token, and armed() defaults TRUE (no auth).
         assert_eq!(load_refresh_token(), None);
+        assert!(armed());
 
-        // save_auth persists creds WITHOUT clobbering repos/armed.
-        save_auth("rt1", "acct_x").unwrap();
+        // complete_pairing writes creds + deviceId + armed:false in one go,
+        // preserving repos.
+        complete_pairing("rt1", "acct_x", "dev-123").unwrap();
         assert_eq!(load_refresh_token().as_deref(), Some("rt1"));
         assert_eq!(load_account(), "acct_x");
-        let v = read_raw();
-        assert_eq!(v["repos"], serde_json::json!(["/a"]));
-        assert_eq!(v["armed"], serde_json::json!(false));
+        assert_eq!(load_device_id().as_deref(), Some("dev-123"));
+        assert_eq!(read_raw()["repos"], serde_json::json!(["/a"]));
+        assert!(!armed(), "freshly paired agent is disarmed");
 
-        // Rotation: a new refresh token replaces the old; account + repos intact.
-        save_auth("rt2", "acct_x").unwrap();
+        // Rotation updates only the refresh token; account/deviceId/repos intact.
+        update_refresh_token("rt2").unwrap();
         assert_eq!(load_refresh_token().as_deref(), Some("rt2"));
+        assert_eq!(load_account(), "acct_x");
+        assert_eq!(load_device_id().as_deref(), Some("dev-123"));
         assert_eq!(read_raw()["repos"], serde_json::json!(["/a"]));
 
-        // set_armed after pairing preserves the auth object.
+        // Arming preserves the auth object.
         set_armed(true).unwrap();
         assert_eq!(load_refresh_token().as_deref(), Some("rt2"));
         assert!(armed());
+
+        // Paired but armed key removed -> fail-safe DISARMED (not the old true).
+        std::fs::write(&cfg, r#"{"auth": {"refreshToken": "rt2", "account": "acct_x"}}"#).unwrap();
+        assert!(!armed(), "paired-without-armed-key defaults disarmed");
+
+        // The persisted file is owner-only (0600) on unix.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            complete_pairing("rt3", "acct_x", "dev-123").unwrap();
+            let mode = std::fs::metadata(&cfg).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "agent.json must be owner-only");
+        }
 
         let _ = std::fs::remove_dir_all(&home);
     }
