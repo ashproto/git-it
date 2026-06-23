@@ -5,5 +5,6 @@
 
 pub mod envelope;
 pub mod keys;
+pub mod message;
 pub mod replay;
 pub mod roster;
