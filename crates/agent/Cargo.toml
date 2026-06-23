@@ -24,3 +24,12 @@ anyhow = "1"
 # Agent auth: claim a pairing code + refresh the session token over HTTP.
 # rustls-tls avoids a system OpenSSL dependency (keeps the headless build clean).
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Phase 2b E2E crypto: HPKE base mode (DHKEM-X25519/HKDF-SHA256/ChaCha20-Poly1305)
+# + Ed25519 sender signatures + deterministic CBOR envelope. Keeps 0 Tauri deps.
+hpke = { version = "0.13", default-features = false, features = ["x25519", "alloc"] }
+ed25519-dalek = "2"
+ciborium = "0.2"
+base64 = "0.22"
+# Must be the SAME rand_core major that hpke 0.13 re-exports (0.9) so its OsRng
+# satisfies hpke's `CryptoRng + RngCore` bound; `os_rng` provides OsRng.
+rand_core = { version = "0.9", features = ["os_rng"] }

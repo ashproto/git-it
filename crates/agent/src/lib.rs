@@ -2,6 +2,7 @@
 //! Phase 1a exposes a single `status_json` entry the CLI calls.
 
 pub mod auth;
+pub mod crypto;
 pub mod relay;
 pub mod repos;
 
