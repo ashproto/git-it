@@ -30,6 +30,8 @@ hpke = { version = "0.13", default-features = false, features = ["x25519", "allo
 ed25519-dalek = "2"
 ciborium = "0.2"
 base64 = "0.22"
+# SHA-256 for the signed device roster's hash chain (S2).
+sha2 = "0.10"
 # Must be the SAME rand_core major that hpke 0.13 re-exports (0.9) so its OsRng
 # satisfies hpke's `CryptoRng + RngCore` bound; `os_rng` provides OsRng.
 rand_core = { version = "0.9", features = ["os_rng"] }

@@ -4,3 +4,4 @@
 //! KAT vectors (tests/vectors/kat_v1.json) prove byte-interop in both directions.
 
 pub mod envelope;
+pub mod roster;
