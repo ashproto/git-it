@@ -33,3 +33,7 @@ base64 = "0.22"
 # Must be the SAME rand_core major that hpke 0.13 re-exports (0.9) so its OsRng
 # satisfies hpke's `CryptoRng + RngCore` bound; `os_rng` provides OsRng.
 rand_core = { version = "0.9", features = ["os_rng"] }
+
+[dev-dependencies]
+# KAT vector (hex) encode/decode for the Swift↔Rust interop harness.
+hex = "0.4"

@@ -1663,6 +1663,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "git-core",
+ "hex",
  "hpke",
  "rand_core 0.9.5",
  "reqwest 0.12.28",

@@ -187,6 +187,22 @@ pub fn ed25519_public(seed: &[u8; 32]) -> [u8; 32] {
     SigningKey::from_bytes(seed).verifying_key().to_bytes()
 }
 
+/// Sign `msg` with a raw 32-byte Ed25519 seed (RFC 8032 deterministic, so the
+/// signature is byte-exact and the KAT pins agreement with CryptoKit). Reused by
+/// the signed device roster (S2) and the sender signature path.
+pub fn ed25519_sign(seed: &[u8; 32], msg: &[u8]) -> [u8; 64] {
+    SigningKey::from_bytes(seed).sign(msg).to_bytes()
+}
+
+/// Verify a raw 64-byte Ed25519 signature over `msg` against a raw 32-byte
+/// public key. Returns false on any malformed key/signature (fail closed).
+pub fn ed25519_verify(public: &[u8; 32], msg: &[u8], sig: &[u8; 64]) -> bool {
+    let Ok(vk) = VerifyingKey::from_bytes(public) else {
+        return false;
+    };
+    vk.verify_strict(msg, &Signature::from_bytes(sig)).is_ok()
+}
+
 // ---------------------------------------------------------------------------
 // Inner plaintext CBOR: `{0: kind (text), 1: body (bytes), 2: pad (bytes)}`.
 // The real application `kind` + body live INSIDE the ciphertext, so the relay
