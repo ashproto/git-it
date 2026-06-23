@@ -76,8 +76,10 @@ pub fn armed() -> bool {
 /// Read the config as a JSON **object**. If the file is absent, empty, an
 /// array, or otherwise not a JSON object, return an empty object `{}` so the
 /// mutations below always have a place to insert/update keys (never a silent
-/// no-op against a non-object value).
-fn read_config_value() -> serde_json::Value {
+/// no-op against a non-object value). `pub(crate)` so the crypto modules
+/// (`crypto::keys`) can read-modify-write the same `agent.json` preserving
+/// sibling fields.
+pub(crate) fn read_config_value() -> serde_json::Value {
     let parsed = std::fs::read_to_string(config_path()).ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok());
     match parsed {
@@ -86,12 +88,25 @@ fn read_config_value() -> serde_json::Value {
     }
 }
 
-/// Persist the config atomically: write to a sibling temp file, then rename
-/// over the real path (an atomic replace on the same filesystem). This avoids
-/// leaving a half-written `agent.json` if the process is killed mid-write.
-fn write_config_value(v: &serde_json::Value) -> std::io::Result<()> {
+/// Persist the config atomically (see [`write_json_atomic`]). `pub(crate)` so the
+/// crypto modules can persist a `keys` object into the same `agent.json`.
+pub(crate) fn write_config_value(v: &serde_json::Value) -> std::io::Result<()> {
+    write_json_atomic(&config_path(), v)
+}
+
+/// Path to the agent's anti-replay store (`~/.config/git-it/replay.json`) — a
+/// dedicated 0600 file so the per-message replay write never rewrites (or races)
+/// the credential-bearing `agent.json`.
+pub fn replay_path() -> PathBuf {
+    config_path().with_file_name("replay.json")
+}
+
+/// Atomically write a JSON value to `path` as an owner-only (0600) file: write a
+/// sibling temp file, fsync, then rename over the real path (an atomic replace on
+/// the same filesystem). Avoids leaving a half-written / world-readable file if
+/// the process is killed mid-write. Used for both `agent.json` and `replay.json`.
+pub(crate) fn write_json_atomic(path: &Path, v: &serde_json::Value) -> std::io::Result<()> {
     use std::io::Write;
-    let path = config_path();
     if let Some(dir) = path.parent() {
         if !dir.exists() {
             std::fs::create_dir_all(dir)?;
@@ -243,16 +258,15 @@ pub fn device_name() -> String {
         .unwrap_or_else(|| "Mac".into())
 }
 
+/// Serializes every test that points `$HOME` at a temp dir (the config helpers
+/// resolve HOME at call time). Shared ACROSS modules (`repos` + `crypto::keys`)
+/// so their HOME mutations can't race each other under the parallel test runner.
+#[cfg(test)]
+pub(crate) static TEST_HOME_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    // The config helpers resolve `$HOME` at call time, so the tests that point
-    // HOME at a temp dir must not run concurrently with each other. A single
-    // combined test holding this guard keeps the env mutation serialized; the
-    // guard also protects against any future HOME-touching tests in this file.
-    static HOME_GUARD: Mutex<()> = Mutex::new(());
 
     fn read_raw() -> serde_json::Value {
         let text = std::fs::read_to_string(config_path()).unwrap();
@@ -261,7 +275,7 @@ mod tests {
 
     #[test]
     fn config_mutations_preserve_fields_and_dedup_and_write_atomically() {
-        let _guard = HOME_GUARD.lock().unwrap();
+        let _guard = TEST_HOME_GUARD.lock().unwrap();
         let home = std::env::temp_dir().join(format!("gitit-repos-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
@@ -308,7 +322,7 @@ mod tests {
 
     #[test]
     fn mutations_on_a_non_object_config_recover_to_an_object() {
-        let _guard = HOME_GUARD.lock().unwrap();
+        let _guard = TEST_HOME_GUARD.lock().unwrap();
         let home = std::env::temp_dir().join(format!("gitit-repos-test2-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
@@ -330,7 +344,7 @@ mod tests {
 
     #[test]
     fn auth_creds_roundtrip_and_preserve_repos_armed() {
-        let _guard = HOME_GUARD.lock().unwrap();
+        let _guard = TEST_HOME_GUARD.lock().unwrap();
         let home = std::env::temp_dir().join(format!("gitit-repos-test3-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();

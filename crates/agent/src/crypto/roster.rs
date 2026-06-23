@@ -128,7 +128,7 @@ impl Entry {
             x => bail!("bad roster op {x}"),
         };
         let epoch = u32::from_be_bytes(take(&mut p, 4)?.try_into().unwrap());
-        let mut read_str = |p: &mut usize| -> Result<String> {
+        let read_str = |p: &mut usize| -> Result<String> {
             let len = u16::from_be_bytes(take(p, 2)?.try_into().unwrap()) as usize;
             Ok(String::from_utf8(take(p, len)?.to_vec())?)
         };

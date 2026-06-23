@@ -193,6 +193,15 @@ pub fn ed25519_public(seed: &[u8; 32]) -> [u8; 32] {
     SigningKey::from_bytes(seed).verifying_key().to_bytes()
 }
 
+/// A fresh 32-byte secret from the OS CSPRNG (e.g. an Ed25519 signing seed or a
+/// message nonce). Uses the same infallible-adapted `OsRng` as key generation.
+pub fn random_32() -> [u8; 32] {
+    use rand_core::RngCore;
+    let mut b = [0u8; 32];
+    os_rng().fill_bytes(&mut b);
+    b
+}
+
 /// Sign `msg` with a raw 32-byte Ed25519 seed (RFC 8032 deterministic, so the
 /// signature is byte-exact and the KAT pins agreement with CryptoKit). Reused by
 /// the signed device roster (S2) and the sender signature path.
