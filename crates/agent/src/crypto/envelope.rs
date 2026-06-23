@@ -60,18 +60,24 @@ pub fn build_aad(
     msg_id: &str,
     ts: u64,
     nonce: &[u8; 16],
-) -> Vec<u8> {
+) -> Result<Vec<u8>> {
     let mut a = Vec::new();
     a.push(ver);
     a.extend_from_slice(&epoch.to_be_bytes());
-    for s in [from, to, msg_id] {
-        // u16 length prefix — callers must keep these strings < 64KiB (UUIDs).
+    for (label, s) in [("from", from), ("to", to), ("msgId", msg_id)] {
+        // u16 length prefix: these are device-id/message UUIDs in practice. Guard
+        // the cast so an over-long field fails closed instead of silently
+        // truncating (Rust) — Swift's UInt16(...) would trap — which would forge a
+        // length/value mismatch in the aad.
+        if s.len() > u16::MAX as usize {
+            bail!("aad field {label} is {} bytes — exceeds the 65535-byte limit", s.len());
+        }
         a.extend_from_slice(&(s.len() as u16).to_be_bytes());
         a.extend_from_slice(s.as_bytes());
     }
     a.extend_from_slice(&ts.to_be_bytes());
     a.extend_from_slice(nonce);
-    a
+    Ok(a)
 }
 
 /// The Ed25519 signature pre-image: `SIG_CTX ‖ aad ‖ enc ‖ ct_or_blobhash`.
@@ -244,19 +250,23 @@ fn inner_prefix(kind: &str, body: &[u8]) -> Vec<u8> {
 
 /// Encode `(kind, body)` to the padded inner-CBOR plaintext, sized EXACTLY to
 /// the smallest bucket that fits. The pad byte string always uses the 0x59
-/// (2-byte-length) header — a fixed 3-byte overhead — so total length is a
-/// continuous function of pad_len and lands precisely on the bucket. If the doc
-/// exceeds 64KB the caller takes the File-Storage path; we still emit valid CBOR.
-pub fn encode_inner(kind: &str, body: &[u8]) -> Vec<u8> {
+/// (2-byte-length) header — a fixed 3-byte overhead — so for any plaintext that
+/// fits the 64KB bucket the total length is a continuous function of pad_len and
+/// lands precisely on the bucket. A plaintext exceeding 64KB has no bucket and is
+/// REJECTED (fail closed): the caller must route it to Convex File Storage rather
+/// than send an unbucketed, size-leaking plaintext.
+pub fn encode_inner(kind: &str, body: &[u8]) -> Result<Vec<u8>> {
     let prefix = inner_prefix(kind, body);
     let base = prefix.len() + 3; // + forced pad header (0x59 hi lo) at pad_len 0
-    // pad_len fits u16 for every bucket (max ≈ 65536 − base < 65535).
-    let pad_len = bucket(base).map_or(0, |target| target - base);
+    let Some(target) = bucket(base) else {
+        bail!("inner plaintext is {base} bytes — exceeds the 64KB inline max; route to File Storage");
+    };
+    let pad_len = target - base; // fits u16: every bucket ≤ 65536 and base ≥ 13
     let mut out = prefix;
     out.push(0x59);
     out.extend_from_slice(&(pad_len as u16).to_be_bytes());
     out.resize(out.len() + pad_len, 0u8);
-    out
+    Ok(out)
 }
 
 /// Recover `(kind, body)` from an inner-CBOR plaintext, ignoring the pad.
@@ -299,7 +309,7 @@ mod tests {
     #[test]
     fn aad_layout_is_deterministic_and_length_prefixed() {
         let nonce = fixed_nonce();
-        let aad = build_aad(1, 7, "ab", "cde", "f", 0x0102, &nonce);
+        let aad = build_aad(1, 7, "ab", "cde", "f", 0x0102, &nonce).unwrap();
         // ver(1) + epoch(4) + [2+2] + [2+3] + [2+1] + ts(8) + nonce(16)
         assert_eq!(aad.len(), 1 + 4 + (2 + 2) + (2 + 3) + (2 + 1) + 8 + 16);
         assert_eq!(aad[0], 1);
@@ -308,7 +318,7 @@ mod tests {
         assert_eq!(&aad[5..7], &2u16.to_be_bytes());
         assert_eq!(&aad[7..9], b"ab");
         // recomputing yields identical bytes (no map ordering involved)
-        assert_eq!(aad, build_aad(1, 7, "ab", "cde", "f", 0x0102, &nonce));
+        assert_eq!(aad, build_aad(1, 7, "ab", "cde", "f", 0x0102, &nonce).unwrap());
     }
 
     #[test]
@@ -329,7 +339,7 @@ mod tests {
             ("setArmed", &b"{\"armed\":true}"[..]),
             ("addRepo", &vec![0xABu8; 900][..]),
         ] {
-            let pt = encode_inner(kind, body);
+            let pt = encode_inner(kind, body).unwrap();
             assert!(
                 BUCKETS.contains(&pt.len()),
                 "padded len {} for kind {kind} is not a bucket",
@@ -346,8 +356,8 @@ mod tests {
         let (recip_priv, recip_pub) = gen_x25519().unwrap();
         let sender_seed = [9u8; 32];
         let sender_pub = ed25519_public(&sender_seed);
-        let aad = build_aad(1, 1, "phone", "agent", "msg-1", 1234, &fixed_nonce());
-        let pt = encode_inner("setArmed", b"{\"armed\":false}");
+        let aad = build_aad(1, 1, "phone", "agent", "msg-1", 1234, &fixed_nonce()).unwrap();
+        let pt = encode_inner("setArmed", b"{\"armed\":false}").unwrap();
 
         let sealed = seal(&recip_pub, &sender_seed, &aad, &pt).unwrap();
         assert_eq!(sealed.enc.len(), 32);
@@ -364,7 +374,7 @@ mod tests {
         let (recip_priv, recip_pub) = gen_x25519().unwrap();
         let sender_seed = [3u8; 32];
         let sender_pub = ed25519_public(&sender_seed);
-        let aad = build_aad(1, 1, "phone", "agent", "msg-2", 9, &fixed_nonce());
+        let aad = build_aad(1, 1, "phone", "agent", "msg-2", 9, &fixed_nonce()).unwrap();
         let mut sealed = seal(&recip_pub, &sender_seed, &aad, b"hello").unwrap();
         sealed.sig[0] ^= 0xFF;
         assert!(open(&recip_priv, &sender_pub, &aad, &sealed).is_err());
@@ -375,12 +385,12 @@ mod tests {
         let (recip_priv, recip_pub) = gen_x25519().unwrap();
         let sender_seed = [4u8; 32];
         let sender_pub = ed25519_public(&sender_seed);
-        let aad = build_aad(1, 1, "phone", "agent", "msg-3", 9, &fixed_nonce());
-        let pt = encode_inner("status", b"");
+        let aad = build_aad(1, 1, "phone", "agent", "msg-3", 9, &fixed_nonce()).unwrap();
+        let pt = encode_inner("status", b"").unwrap();
         let sealed = seal(&recip_pub, &sender_seed, &aad, &pt).unwrap();
         // Different recipient in the aad ⇒ signature is over the original aad, so
         // verify-first already rejects (and the AEAD would too).
-        let evil = build_aad(1, 1, "phone", "EVIL", "msg-3", 9, &fixed_nonce());
+        let evil = build_aad(1, 1, "phone", "EVIL", "msg-3", 9, &fixed_nonce()).unwrap();
         assert!(open(&recip_priv, &sender_pub, &evil, &sealed).is_err());
     }
 
@@ -388,5 +398,18 @@ mod tests {
     fn x25519_public_matches_generated() {
         let (priv_k, pub_k) = gen_x25519().unwrap();
         assert_eq!(x25519_public(&priv_k).unwrap(), pub_k);
+    }
+
+    #[test]
+    fn encode_inner_rejects_oversized_plaintext() {
+        // A body past the 64KB bucket has no bucket — fail closed rather than emit
+        // an unbucketed (size-leaking) plaintext.
+        assert!(encode_inner("k", &vec![0u8; 70_000]).is_err());
+    }
+
+    #[test]
+    fn build_aad_rejects_overlong_field() {
+        let huge = "x".repeat(70_000);
+        assert!(build_aad(1, 1, &huge, "to", "id", 0, &fixed_nonce()).is_err());
     }
 }

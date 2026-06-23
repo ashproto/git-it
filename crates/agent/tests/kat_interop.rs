@@ -49,6 +49,7 @@ fn aad_from_case(c: &Value) -> Vec<u8> {
         c["ts"].as_u64().unwrap(),
         &arr16(&c["nonce_hex"]),
     )
+    .expect("aad fields within length limits")
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +94,7 @@ fn kat_part2_aad_and_inner_plaintext_match_vector() {
     );
 
     let rt = &v["round_trip"];
-    let inner = env::encode_inner(rt["kind"].as_str().unwrap(), &hexd(&rt["body_hex"]));
+    let inner = env::encode_inner(rt["kind"].as_str().unwrap(), &hexd(&rt["body_hex"])).unwrap();
     assert_eq!(
         hex::encode(&inner),
         rt["plaintext_inner_hex"].as_str().unwrap(),
@@ -151,10 +152,18 @@ fn kat_part4_pad_boundaries_hit_exact_buckets() {
     for case in v["pad_cases"].as_array().unwrap() {
         let kind = case["kind"].as_str().unwrap();
         let body = hexd(&case["body_hex"]);
-        let got = env::encode_inner(kind, &body).len();
+        let got = env::encode_inner(kind, &body).unwrap();
         let want = case["expected_len"].as_u64().unwrap() as usize;
-        assert_eq!(got, want, "pad case kind={kind} body_len={}", body.len());
-        assert!(env::BUCKETS.contains(&got), "len {got} is not a bucket");
+        assert_eq!(got.len(), want, "pad case kind={kind:?} body_len={}", body.len());
+        // Byte-exact: pins the CBOR length-header branch for this (kind, body) so a
+        // Swift/Rust divergence on a header boundary can't ship green.
+        assert_eq!(
+            hex::encode(&got),
+            case["inner_hex"].as_str().unwrap(),
+            "inner bytes for kind={kind:?} body_len={}",
+            body.len()
+        );
+        assert!(env::BUCKETS.contains(&got.len()), "len {} is not a bucket", got.len());
     }
 }
 
@@ -177,24 +186,38 @@ fn regenerate_kat_vectors() {
     let nonce: [u8; 16] = std::array::from_fn(|i| 0x10 + i as u8); // 10..1f
     let (ver, epoch, from, to, msg_id, ts) =
         (1u8, 7u32, "phone-1111", "agent-2222", "msg-00000001", 1_718_000_000_000u64);
-    let aad = env::build_aad(ver, epoch, from, to, msg_id, ts, &nonce);
+    let aad = env::build_aad(ver, epoch, from, to, msg_id, ts, &nonce).unwrap();
 
     // Round-trip fixture: seal the known (kind, body) for Swift to open.
     let kind = "setArmed";
     let body = b"{\"armed\":true}".to_vec();
-    let inner = env::encode_inner(kind, &body);
+    let inner = env::encode_inner(kind, &body).unwrap();
     let sealed = env::seal(&recip_pub, &sender_seed, &aad, &inner).expect("seal");
 
-    // Pad boundary cases: body lengths chosen around each bucket edge.
-    let pad_lens = [0usize, 200, 230, 240, 250, 1000, 4000, 16000];
-    let pad_cases: Vec<Value> = pad_lens
+    // Pad/kind boundary cases: vary BODY length around each bucket edge, and vary
+    // KIND to exercise the CBOR length-header branches — empty (0x60), 23-byte
+    // (0x60|23), 24-byte (0x78 + 1), and a multi-byte-UTF-8 kind whose CBOR length
+    // is byte-count not char-count.
+    let cases: Vec<(String, Vec<u8>)> = {
+        let mut c: Vec<(String, Vec<u8>)> = [0usize, 200, 230, 240, 250, 1000, 4000, 16000]
+            .iter()
+            .map(|&n| ("k".to_string(), vec![0xABu8; n]))
+            .collect();
+        c.push((String::new(), Vec::new()));
+        c.push(("k".repeat(23), Vec::new()));
+        c.push(("k".repeat(24), Vec::new()));
+        c.push(("café".to_string(), Vec::new()));
+        c
+    };
+    let pad_cases: Vec<Value> = cases
         .iter()
-        .map(|&n| {
-            let b = vec![0xABu8; n];
+        .map(|(kind, b)| {
+            let inner = env::encode_inner(kind, b).unwrap();
             serde_json::json!({
-                "kind": "k",
-                "body_hex": hex::encode(&b),
-                "expected_len": env::encode_inner("k", &b).len(),
+                "kind": kind,
+                "body_hex": hex::encode(b),
+                "expected_len": inner.len(),
+                "inner_hex": hex::encode(&inner),
             })
         })
         .collect();
