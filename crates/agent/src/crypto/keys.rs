@@ -62,7 +62,8 @@ pub fn pop_message(code: &str, device_id: &str) -> Vec<u8> {
 
 /// Decode a base64 field of `obj` into a fixed 32-byte array.
 fn field32(obj: &serde_json::Value, key: &str) -> Result<[u8; 32]> {
-    let s = obj.get(key).and_then(|x| x.as_str()).ok_or_else(|| anyhow!("keys.{key} missing"))?;
+    let v = obj.get(key).ok_or_else(|| anyhow!("keys.{key} missing"))?;
+    let s = v.as_str().ok_or_else(|| anyhow!("keys.{key} must be a base64 string"))?;
     let bytes = B64.decode(s).with_context(|| format!("keys.{key} is not base64"))?;
     bytes.as_slice().try_into().map_err(|_| anyhow!("keys.{key} is not 32 bytes"))
 }
@@ -71,6 +72,10 @@ fn field32(obj: &serde_json::Value, key: &str) -> Result<[u8; 32]> {
 /// keypair on first use (or if the stored `keys` object is absent/malformed).
 /// Idempotent after the first call: the same keys round-trip every time, so the
 /// roster pin stays valid. Persistence reuses the atomic 0600 config writer.
+///
+/// Assumes ONE agent instance per machine (the launchd-managed deployment) — two
+/// processes racing the very first `pair` could last-write-win divergent keys, but
+/// that is pre-enrollment so no roster pin is broken; the hot path uses [`load`].
 pub fn load_or_create() -> Result<DeviceKeys> {
     let cfg = crate::repos::read_config_value();
     if let Some(keys) = cfg.get("keys") {

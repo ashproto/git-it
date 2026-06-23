@@ -29,6 +29,13 @@ impl ReplayGuard {
     /// Load the persisted set from `path`, dropping entries already expired vs
     /// `now_ms` (they can never be validly replayed again).
     pub fn load(path: PathBuf, now_ms: u64) -> Self {
+        // A missing OR corrupt/truncated store is deliberately treated as empty
+        // (fail-closed): the ±5min window check independently rejects any stale
+        // message, so the worst case from a crash-corrupted file is a single
+        // window of re-acceptance — and write_json_atomic makes torn writes
+        // unlikely. The set is intrinsically bounded to one window's worth of
+        // ACCEPTED (authenticated, in-window, distinct-nonce) messages, since
+        // every expired entry is evicted on the next check_and_record / reload.
         let mut seen = HashMap::new();
         if let Ok(text) = std::fs::read_to_string(&path) {
             if let Ok(rows) = serde_json::from_str::<Vec<ReplayRow>>(&text) {

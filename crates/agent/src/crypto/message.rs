@@ -63,6 +63,8 @@ fn as_bytes(v: &Value) -> Result<Vec<u8>> {
 }
 fn as_u64(v: &Value) -> Result<u64> {
     match v {
+        // try_from fails closed on a CBOR major-type-1 (negative) integer or one
+        // beyond u64::MAX — every numeric envelope field is an unsigned quantity.
         Value::Integer(i) => u64::try_from(*i).map_err(|_| anyhow!("integer out of u64 range")),
         _ => bail!("expected integer"),
     }
