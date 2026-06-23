@@ -56,6 +56,10 @@ pub struct DeviceKeys {
 #[derive(Clone, Debug)]
 pub struct VerifiedRoster {
     pub head_epoch: u32,
+    /// Live devices at the head, keyed by deviceId. Iteration order is an
+    /// implementation detail (a BTreeMap here, a Swift Dictionary in the mirror) —
+    /// consumers MUST use keyed lookup ([`VerifiedRoster::keys_for`]) and never
+    /// depend on order, so the two languages stay observably identical.
     pub live: BTreeMap<String, DeviceKeys>,
 }
 

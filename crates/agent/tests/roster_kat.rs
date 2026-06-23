@@ -141,9 +141,15 @@ fn regenerate_roster_vectors() {
     let g = git_it_agent::crypto::roster::GENESIS_PREV;
     let c0 = sign(mk(Op::Add, 1, "phone-aaaa", "ios", 0x10, g));
     let c1 = sign(mk(Op::Revoke, 9, "mac-longer-device-id", "macos", 0x20, c0.hash()));
-    let entry_cases = vec![case_json(&c0), case_json(&c1)];
+    // Edge-case entry cases that pin the u16 length-prefix branches cross-language:
+    // empty deviceId + kind (0x0000), and a multi-byte-UTF-8 deviceId/kind whose
+    // CBOR-free length prefix is the BYTE count (not the character count).
+    let c2 = sign(mk(Op::Add, 3, "", "", 0x30, c1.hash()));
+    let c3 = sign(mk(Op::Add, 7, "📱-dev", "iòs", 0x40, c2.hash()));
+    let entry_cases = vec![case_json(&c0), case_json(&c1), case_json(&c2), case_json(&c3)];
 
-    // A valid chain: add phone, add mac, revoke mac, add ipad → live {phone, ipad}.
+    // A valid chain that exercises revoke + RE-ADD: add phone, add mac, revoke mac,
+    // add ipad, re-add mac with NEW keys → live {phone, ipad, mac(new)}.
     let mut prev = g;
     let mut entries = Vec::new();
     let mut live_keys: std::collections::BTreeMap<&str, (u8, &str)> = Default::default();
@@ -152,6 +158,7 @@ fn regenerate_roster_vectors() {
         (Op::Add, 2, "mac", "macos", 0x22),
         (Op::Revoke, 3, "mac", "macos", 0x22),
         (Op::Add, 4, "ipad", "ipados", 0x44),
+        (Op::Add, 5, "mac", "macos", 0x55),
     ] {
         let se = sign(mk(op, epoch, device, kind, tag, prev));
         prev = se.hash();
@@ -190,7 +197,7 @@ fn regenerate_roster_vectors() {
         "chain": {
             "epoch_floor": 0,
             "entries": entries,
-            "expected_head_epoch": 4,
+            "expected_head_epoch": 5,
             "expected_live": expected_live,
         }
     });
