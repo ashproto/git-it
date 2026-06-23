@@ -51,6 +51,15 @@ impl DeviceKeys {
     }
 }
 
+/// The proof-of-possession message the agent signs at pairing and the phone
+/// verifies before enrolling the agent into the signed roster: a domain-separated,
+/// NUL-delimited binding of the single-use pairing code to the hardware device id.
+/// The pairing code (fixed alphabet) and device id (UUID) contain no NUL, so the
+/// delimiters are unambiguous. The Swift phone mirrors this byte construction.
+pub fn pop_message(code: &str, device_id: &str) -> Vec<u8> {
+    format!("gitit-pair-v1\u{0}{code}\u{0}{device_id}").into_bytes()
+}
+
 /// Decode a base64 field of `obj` into a fixed 32-byte array.
 fn field32(obj: &serde_json::Value, key: &str) -> Result<[u8; 32]> {
     let s = obj.get(key).and_then(|x| x.as_str()).ok_or_else(|| anyhow!("keys.{key} missing"))?;

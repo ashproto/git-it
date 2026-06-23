@@ -176,9 +176,27 @@ pub async fn run_pairing(code: &str) -> anyhow::Result<()> {
     let site = site.trim_end_matches('/');
     let device_id = crate::repos::device_id();
     let device_name = crate::repos::device_name();
+    // Phase 2b enrollment: generate (or load) this Mac's roster identity keypairs
+    // and prove possession of the Ed25519 key by signing (code ‖ deviceId). The
+    // phone verifies this PoP before adding the agent to the signed roster, so a
+    // relay or MITM at pairing can't substitute its own key for the agent's.
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let keys = crate::crypto::keys::load_or_create()?;
+    let pop_sig = crate::crypto::envelope::ed25519_sign(
+        &keys.ed25519_seed,
+        &crate::crypto::keys::pop_message(code, &device_id),
+    );
     let resp = reqwest::Client::builder().build()?
         .post(format!("{site}/auth/agent/claim"))
-        .json(&serde_json::json!({ "code": code, "deviceId": device_id, "deviceName": device_name }))
+        .json(&serde_json::json!({
+            "code": code,
+            "deviceId": device_id,
+            "deviceName": device_name,
+            "x25519Pub": b64.encode(keys.x25519_pub),
+            "ed25519Pub": b64.encode(keys.ed25519_pub),
+            "popSig": b64.encode(pop_sig),
+        }))
         .send()
         .await?;
     let status = resp.status();
