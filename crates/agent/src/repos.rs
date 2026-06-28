@@ -119,8 +119,7 @@ pub(crate) fn write_json_atomic(path: &Path, v: &serde_json::Value) -> std::io::
         }
     }
     let tmp = path.with_extension("json.tmp");
-    let bytes = serde_json::to_vec_pretty(v)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let bytes = serde_json::to_vec_pretty(v).map_err(std::io::Error::other)?;
     // Create the temp file owner-only (0600) so the refresh token is never
     // world-readable; fsync before the atomic rename so a crash can't leave a
     // truncated single-copy secret.
@@ -135,7 +134,19 @@ pub(crate) fn write_json_atomic(path: &Path, v: &serde_json::Value) -> std::io::
     f.write_all(&bytes)?;
     f.sync_all()?;
     drop(f);
-    std::fs::rename(&tmp, &path) // atomic replace (preserves the 0600 temp mode)
+    std::fs::rename(&tmp, path)?; // atomic replace (preserves the 0600 temp mode)
+    // Durably persist the rename ITSELF: POSIX leaves a rename's durability to a
+    // directory fsync, so a crash right after the rename could otherwise lose the
+    // new directory entry (the temp file's DATA was already fsync'd above). Open
+    // the parent dir read-only and fsync it. Best-effort — a failure here doesn't
+    // un-do the rename, which is already visible to readers.
+    #[cfg(unix)]
+    if let Some(dir) = path.parent() {
+        if let Ok(d) = std::fs::File::open(dir) {
+            let _ = d.sync_all();
+        }
+    }
+    Ok(())
 }
 
 /// Path to the agent's env file (`~/.config/git-it/.env`) — a FIXED location, so
@@ -145,30 +156,68 @@ pub fn env_path() -> std::path::PathBuf {
     config_path().with_file_name(".env")
 }
 
-/// Register a repo path, preserving all other config fields. Dedups so the same
-/// path is never added twice.
+/// Lexically normalize a repo path so dedup + removal are stable across spellings
+/// (`/r`, `/r/`, `/r/.`, `/a/../r` all map to one form). Purely lexical — it does
+/// NOT touch the filesystem (no symlink resolution, no existence requirement), so a
+/// momentarily-unmounted volume still matches and `canonicalize`'s surprises are
+/// avoided. Collapses `.`/empty/`//`, resolves `..`, and strips a trailing slash;
+/// an absolute input stays absolute. (The agent is macOS-only, so `/` is the sep.)
+fn normalize_repo_path(path: &str) -> String {
+    use std::path::Component;
+    let mut stack: Vec<std::ffi::OsString> = Vec::new();
+    let mut abs = false;
+    for c in Path::new(path).components() {
+        match c {
+            Component::RootDir => abs = true,
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if stack.last().map(|s| s != "..").unwrap_or(false) {
+                    stack.pop(); // collapse `seg/..`
+                } else if !abs {
+                    stack.push("..".into()); // keep leading `..` in a relative path
+                }
+                // an absolute `..` past root is dropped (stays at root)
+            }
+            Component::Normal(s) => stack.push(s.to_os_string()),
+            Component::Prefix(_) => {} // unreachable on unix
+        }
+    }
+    let mut out = PathBuf::new();
+    if abs { out.push("/"); }
+    for s in &stack { out.push(s); }
+    let s = out.to_string_lossy().to_string();
+    if s.is_empty() { ".".into() } else { s }
+}
+
+/// Register a repo path, preserving all other config fields. The path is normalized
+/// (trailing slash / `.` / `..` collapsed) and deduped against the normalized form
+/// of existing entries, so the same repo is never registered twice under a
+/// different spelling.
 pub fn add_repo(path: &str) {
+    let norm = normalize_repo_path(path);
     let mut v = read_config_value();
     if let Some(obj) = v.as_object_mut() {
         let arr = obj.entry("repos").or_insert_with(|| serde_json::json!([]));
         if !arr.is_array() { *arr = serde_json::json!([]); }
         if let Some(a) = arr.as_array_mut() {
-            if !a.iter().any(|p| p.as_str() == Some(path)) {
-                a.push(serde_json::json!(path));
-            }
+            let exists = a.iter().any(|p| p.as_str().map(normalize_repo_path).as_deref() == Some(norm.as_str()));
+            if !exists { a.push(serde_json::json!(norm)); }
         }
     }
     let _ = write_config_value(&v);
 }
 
-/// Unregister a repo path, preserving all other config fields.
+/// Unregister a repo path, preserving all other config fields. Matches on the
+/// NORMALIZED form, so a differently-spelled path (or a legacy un-normalized stored
+/// entry) is still removed.
 pub fn remove_repo(path: &str) {
+    let norm = normalize_repo_path(path);
     let mut v = read_config_value();
     if let Some(a) = v.as_object_mut()
         .and_then(|o| o.get_mut("repos"))
         .and_then(|r| r.as_array_mut())
     {
-        a.retain(|p| p.as_str() != Some(path));
+        a.retain(|p| p.as_str().map(normalize_repo_path).as_deref() != Some(norm.as_str()));
     }
     let _ = write_config_value(&v);
 }
@@ -316,6 +365,47 @@ mod tests {
 
         // No leftover temp file after an atomic write.
         assert!(!cfg.with_extension("json.tmp").exists());
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn normalize_repo_path_collapses_spellings() {
+        assert_eq!(normalize_repo_path("/Users/me/repo/"), "/Users/me/repo");
+        assert_eq!(normalize_repo_path("/Users/me/repo"), "/Users/me/repo");
+        assert_eq!(normalize_repo_path("/Users/me/./repo"), "/Users/me/repo");
+        assert_eq!(normalize_repo_path("/Users/me//repo"), "/Users/me/repo");
+        assert_eq!(normalize_repo_path("/Users/me/x/../repo"), "/Users/me/repo");
+        assert_eq!(normalize_repo_path("/"), "/");
+        // A relative path keeps a leading `..` but still collapses the rest.
+        assert_eq!(normalize_repo_path("a/b/../c/"), "a/c");
+    }
+
+    #[test]
+    fn add_remove_dedup_and_match_across_spellings() {
+        let _guard = TEST_HOME_GUARD.lock().unwrap();
+        let home = std::env::temp_dir().join(format!("gitit-repos-norm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        std::env::set_var("HOME", &home);
+        let cfg = config_path();
+        std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+        std::fs::write(&cfg, r#"{"repos": []}"#).unwrap();
+
+        // Same repo, three spellings → registered ONCE in normalized form.
+        add_repo("/Users/me/repo/");
+        add_repo("/Users/me/repo");
+        add_repo("/Users/me/./repo");
+        assert_eq!(read_raw()["repos"], serde_json::json!(["/Users/me/repo"]));
+
+        // Removal matches a differently-spelled input.
+        remove_repo("/Users/me/repo/");
+        assert_eq!(read_raw()["repos"], serde_json::json!([]));
+
+        // A legacy un-normalized stored entry is removable by its normalized form.
+        std::fs::write(&cfg, r#"{"repos": ["/x/y/"]}"#).unwrap();
+        remove_repo("/x/y");
+        assert_eq!(read_raw()["repos"], serde_json::json!([]));
 
         let _ = std::fs::remove_dir_all(&home);
     }
