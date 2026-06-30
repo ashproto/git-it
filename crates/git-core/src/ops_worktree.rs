@@ -9,7 +9,8 @@ use std::process::{Command, Stdio};
 /// `u` (unmerged), `?` (untracked). `-z` → NUL-terminated, verbatim paths.
 pub fn working_changes(repo: &Path) -> Result<Vec<WorkingFile>, String> {
     let mut c = Command::new("git");
-    c.current_dir(repo).args(["status", "--porcelain=v2", "-z"]);
+    c.current_dir(repo)
+        .args(["status", "--porcelain=v2", "-z", "--untracked-files=all"]);
     let (out, _) = git_ops::run(&mut c)?;
     let mut files = Vec::new();
     // Records are NUL-separated; a `2` (rename) record is followed by an extra NUL-
@@ -61,6 +62,11 @@ pub fn working_changes(repo: &Path) -> Result<Vec<WorkingFile>, String> {
                 status: "conflicted".into(),
             });
         } else if let Some(path) = rec.strip_prefix("? ") {
+            // -uall lists files individually, but guard anyway: never surface a
+            // blank-named or directory entry (basename of "dir/" is "").
+            if path.is_empty() || path.ends_with('/') {
+                continue;
+            }
             files.push(WorkingFile {
                 path: path.to_string(),
                 staged: false,
@@ -600,6 +606,33 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    #[test]
+    fn lists_files_inside_a_new_untracked_directory_individually() {
+        let r = TempRepo::new();
+        r.commit_file("a.txt", "1\n", "init"); // need a HEAD so status works
+        // create a brand-new directory (never been committed) with two files
+        fs::create_dir(r.path.join("newdir")).unwrap();
+        r.write("newdir/a.txt", "hello\n");
+        r.write("newdir/b.txt", "world\n");
+        let files = working_changes(&r.path).unwrap();
+        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        assert!(
+            paths.contains(&"newdir/a.txt"),
+            "newdir/a.txt should be listed individually; got {:?}",
+            paths
+        );
+        assert!(
+            paths.contains(&"newdir/b.txt"),
+            "newdir/b.txt should be listed individually; got {:?}",
+            paths
+        );
+        assert!(
+            !paths.iter().any(|p| p.is_empty() || p.ends_with('/')),
+            "no blank or trailing-slash (collapsed dir) entries: {:?}",
+            paths
+        );
     }
 
     #[test]
