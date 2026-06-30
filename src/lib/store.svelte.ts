@@ -1059,6 +1059,7 @@ function makeState() {
   // Used to block remote actions (push/pull/fetch) so they can't act on the previous
   // repo's kept-stale remote/branch during the load window.
   let repoLoading = $state<boolean>(false);
+  let navBusy = $state<boolean>(false);
   let remoteLog = $state<string[]>([]);
 
   // Derived: upstream/ahead/behind for the currently checked-out branch.
@@ -1548,6 +1549,12 @@ function makeState() {
     },
     setRepoLoading(v: boolean) {
       repoLoading = v;
+    },
+    get navBusy() {
+      return navBusy;
+    },
+    setNavBusy(v: boolean) {
+      navBusy = v;
     },
     get remoteLog() {
       return remoteLog;

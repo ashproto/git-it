@@ -18,6 +18,8 @@
   import AmendDialog from "$lib/components/AmendDialog.svelte";
   import RebaseTodo from "$lib/components/RebaseTodo.svelte";
   import RemoteProgress from "$lib/components/RemoteProgress.svelte";
+  import LoadingBar from "$lib/components/LoadingBar.svelte";
+  import GraphSkeleton from "$lib/components/GraphSkeleton.svelte";
   import RepoTabs from "$lib/components/RepoTabs.svelte";
   import RepoList from "$lib/components/RepoList.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
@@ -357,6 +359,7 @@
   {/if}
 
   <RemoteProgress />
+  <LoadingBar />
 
   <PrereqBanner />
 
@@ -399,7 +402,11 @@
                  from the changes screen. display:contents → no layout box when shown. -->
             <div class="timeline-stack" class:hidden={appState.activeView === "changes" || appState.activeView === "github"}>
               <UndoBar />
-              <GraphHistory bind:collapsed={graphCollapsed} />
+              {#if appState.repoLoading && appState.graphCommits.length === 0}
+                <GraphSkeleton />
+              {:else}
+                <GraphHistory bind:collapsed={graphCollapsed} />
+              {/if}
             </div>
             <ConflictView />
             {#if appState.activeView === "github"}

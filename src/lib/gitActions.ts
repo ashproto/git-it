@@ -291,20 +291,18 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
     appState.status = "Open a repository first.";
     return false;
   }
+  appState.setNavBusy(true);
   try {
     appState.status = `${label}…`;
     await fn();
-    // A failed graph refresh shouldn't make a successful op look failed.
-    try {
-      await reloadGraph();
-    } catch (e) {
-      console.warn("[gte] graph refresh after op failed", e);
-    }
+    try { await reloadGraph(); } catch (e) { console.warn("[gte] graph refresh after op failed", e); }
     appState.status = `${label} — done.`;
     return true;
   } catch (e) {
     appState.status = `${label} failed: ${firstLine(e)}`;
     return false;
+  } finally {
+    appState.setNavBusy(false);
   }
 }
 
