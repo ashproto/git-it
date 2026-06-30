@@ -547,8 +547,16 @@ export const gitActions = {
     run(`Create branch ${name}`, () => api.createBranch(appState.repo, name, startPoint)),
   renameBranch: (oldName: string, newName: string) =>
     run(`Rename ${oldName} → ${newName}`, () => api.renameBranch(appState.repo, oldName, newName)),
-  deleteBranch: (name: string, force: boolean) =>
-    run(`Delete branch ${name}`, () => api.deleteBranch(appState.repo, name, force)),
+  deleteBranch: (
+    name: string,
+    force: boolean,
+    deleteRemote = false,
+    remote?: string,
+    remoteBranch?: string,
+  ) =>
+    run(`Delete branch ${name}`, () =>
+      api.deleteBranch(appState.repo, name, force, deleteRemote, remote, remoteBranch),
+    ),
   fastForwardBranch: (branch: string, remote: string) =>
     run(`Fast-forward ${branch} → ${remote}/${branch}`, () =>
       api.fastForwardBranch(appState.repo, branch, remote),

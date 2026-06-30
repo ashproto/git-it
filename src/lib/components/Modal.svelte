@@ -36,6 +36,16 @@
     }
   }
 
+  function handleBranchDeleteKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      dialogs.resolveBranchDelete(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      dialogs.resolveBranchDelete(false);
+    }
+  }
+
   // Credentials dialog helpers
   function submitCredentials() {
     const s = dialogs.state;
@@ -135,6 +145,48 @@
           onclick={() => dialogs.resolveDestructive(true)}
         >
           {dialogs.state.confirmLabel}
+        </button>
+      </div>
+    </div>
+  </div>
+{:else if dialogs.state.kind === "branchDelete"}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="overlay"
+    onpointerdown={(e) => {
+      if (e.target === e.currentTarget) dialogs.resolveBranchDelete(false);
+    }}
+    onkeydown={handleBranchDeleteKey}
+  >
+    <div class="dialog" role="dialog" aria-modal="true" aria-label={dialogs.state.title}>
+      <h3>{dialogs.state.title}</h3>
+      <p class="msg">Delete branch "{dialogs.state.branch}"?</p>
+      <label class="backup-row">
+        <input
+          type="checkbox"
+          checked={dialogs.state.force}
+          onchange={(e) => dialogs.setBranchDeleteForce((e.currentTarget as HTMLInputElement).checked)}
+        />
+        Force delete (discard unmerged commits)
+      </label>
+      {#if dialogs.state.upstream !== null}
+        <label class="backup-row">
+          <input
+            type="checkbox"
+            checked={dialogs.state.deleteRemote}
+            onchange={(e) => dialogs.setBranchDeleteRemote((e.currentTarget as HTMLInputElement).checked)}
+          />
+          Also delete {dialogs.state.upstream}
+        </label>
+      {/if}
+      <div class="actions">
+        <button type="button" onclick={() => dialogs.resolveBranchDelete(false)}>Cancel</button>
+        <button
+          type="button"
+          class="primary danger"
+          onclick={() => dialogs.resolveBranchDelete(true)}
+        >
+          Delete
         </button>
       </div>
     </div>

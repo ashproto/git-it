@@ -59,23 +59,18 @@
   }
 
   async function confirmDeleteBranch(name: string) {
-    const ok = await dialogs.confirm({
-      title: "Delete branch",
-      message: `Delete branch "${name}"? Branches with unmerged commits won't delete unless forced.`,
-      confirmLabel: "Delete",
-      danger: true,
-    });
-    if (!ok) return;
-    const deleted = await gitActions.deleteBranch(name, false);
-    if (!deleted) {
-      const force = await dialogs.confirm({
-        title: "Force-delete branch?",
-        message: `"${name}" was not deleted (likely unmerged). Force-delete and lose its unmerged commits?`,
-        confirmLabel: "Force delete",
-        danger: true,
-      });
-      if (force) gitActions.deleteBranch(name, true);
+    const detail = appState.refsDetailed.find((d) => d.kind === "local" && d.name === name);
+    const upstream = detail?.upstream ?? null; // "origin/feature" | null
+    const res = await dialogs.confirmBranchDelete({ branch: name, upstream });
+    if (!res.confirmed) return;
+    let remote: string | undefined;
+    let remoteBranch: string | undefined;
+    if (res.deleteRemote && upstream) {
+      const slash = upstream.indexOf("/");
+      remote = upstream.slice(0, slash);
+      remoteBranch = upstream.slice(slash + 1);
     }
+    await gitActions.deleteBranch(name, res.force, res.deleteRemote && !!upstream, remote, remoteBranch);
   }
 
   function onRefContext(event: MouseEvent, r: RefEntry, kind: "local" | "remote" | "tag") {

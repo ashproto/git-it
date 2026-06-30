@@ -32,12 +32,34 @@ pub fn rename_branch(repo: &Path, old: &str, new: &str) -> Result<(), String> {
 }
 
 /// Delete a branch. `force` uses -D (drops even unmerged commits); without it,
-/// -d refuses to delete a branch whose commits aren't merged into HEAD.
-pub fn delete_branch(repo: &Path, name: &str, force: bool) -> Result<(), String> {
+/// -d refuses to delete a branch whose commits aren't merged into HEAD. When
+/// `delete_remote` is set and a remote/branch is given, ALSO delete the upstream
+/// branch via `git push <remote> --delete`. The local delete runs first; if it
+/// fails the remote delete is skipped. If the local succeeds but the remote delete
+/// fails, return an Err describing the partial outcome.
+pub fn delete_branch(
+    repo: &Path,
+    name: &str,
+    force: bool,
+    delete_remote: bool,
+    remote: Option<&str>,
+    remote_branch: Option<&str>,
+) -> Result<(), String> {
     let flag = if force { "-D" } else { "-d" };
     let mut c = Command::new("git");
     c.current_dir(repo).args(["branch", flag, "--", name]);
     git_ops::run(&mut c)?;
+
+    if delete_remote {
+        if let (Some(rem), Some(rb)) = (remote, remote_branch) {
+            let mut p = Command::new("git");
+            p.current_dir(repo)
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .args(["push", rem, "--delete", "--", rb]);
+            git_ops::run(&mut p)
+                .map_err(|e| format!("Deleted local branch, but remote delete failed: {}", e))?;
+        }
+    }
     Ok(())
 }
 
@@ -193,11 +215,11 @@ mod tests {
         r.commit("b.txt", "B"); // feat now has a commit not in main
         r.git(&["checkout", "-q", "main"]);
         assert!(
-            delete_branch(&r.path, "feat", false).is_err(),
+            delete_branch(&r.path, "feat", false, false, None, None).is_err(),
             "safe delete must refuse an unmerged branch"
         );
         assert!(r.has_ref("refs/heads/feat"));
-        delete_branch(&r.path, "feat", true).unwrap();
+        delete_branch(&r.path, "feat", true, false, None, None).unwrap();
         assert!(!r.has_ref("refs/heads/feat"));
     }
 
@@ -354,6 +376,50 @@ mod tests {
 
         let _ = fs::remove_dir_all(&bare);
         let _ = fs::remove_dir_all(&clone_path);
+    }
+
+    #[test]
+    fn delete_branch_can_also_delete_the_remote() {
+        // origin = bare repo; clone -> work
+        let bare = unique_dir("del-remote-bare");
+        fs::create_dir_all(&bare).unwrap();
+        Command::new("git")
+            .current_dir(&bare)
+            .args(["init", "-q", "--bare"])
+            .output()
+            .unwrap();
+
+        let work = TempRepo::new();
+        work.git(&["remote", "add", "origin", bare.to_str().unwrap()]);
+        work.commit("a.txt", "c1");
+        work.git(&["push", "-q", "origin", "HEAD:main"]);
+
+        // Create and push feature branch.
+        work.git(&["checkout", "-q", "-b", "feature"]);
+        work.commit("b.txt", "c2");
+        work.git(&["push", "-q", "origin", "feature"]);
+
+        // Go back to main so feature is not checked out.
+        work.git(&["checkout", "-q", "main"]);
+
+        // Delete local + remote feature.
+        let res = delete_branch(&work.path, "feature", true, true, Some("origin"), Some("feature"));
+        assert!(res.is_ok(), "{:?}", res);
+
+        // Local branch must be gone.
+        assert!(!work.has_ref("refs/heads/feature"), "local feature must be deleted");
+
+        // Remote (bare) must not have refs/heads/feature.
+        let has_remote = Command::new("git")
+            .current_dir(&bare)
+            .args(["rev-parse", "--verify", "-q", "refs/heads/feature"])
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(!has_remote, "origin must not have refs/heads/feature after remote delete");
+
+        let _ = fs::remove_dir_all(&bare);
     }
 
     #[test]

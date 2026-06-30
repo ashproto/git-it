@@ -141,8 +141,22 @@ pub fn rename_branch(repo: String, old: String, new: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub fn delete_branch(repo: String, name: String, force: bool) -> Result<(), String> {
-    ops::delete_branch(&PathBuf::from(repo), &name, force)
+pub fn delete_branch(
+    repo: String,
+    name: String,
+    force: bool,
+    delete_remote: Option<bool>,
+    remote: Option<String>,
+    remote_branch: Option<String>,
+) -> Result<(), String> {
+    ops::delete_branch(
+        &PathBuf::from(repo),
+        &name,
+        force,
+        delete_remote.unwrap_or(false),
+        remote.as_deref(),
+        remote_branch.as_deref(),
+    )
 }
 
 #[tauri::command]

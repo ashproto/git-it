@@ -35,6 +35,15 @@ type DialogState =
       username: string;
       password: string;
       resolve: (v: { username: string; password: string } | null) => void;
+    }
+  | {
+      kind: "branchDelete";
+      title: string;
+      branch: string;
+      upstream: string | null; // e.g. "origin/feature", or null when no upstream
+      force: boolean;
+      deleteRemote: boolean;
+      resolve: (v: { confirmed: boolean; force: boolean; deleteRemote: boolean }) => void;
     };
 
 function makeDialogs() {
@@ -47,6 +56,7 @@ function makeDialogs() {
     else if (state.kind === "confirm") state.resolve(false);
     else if (state.kind === "destructive") state.resolve({ confirmed: false, backup: false });
     else if (state.kind === "credentials") state.resolve(null);
+    else if (state.kind === "branchDelete") state.resolve({ confirmed: false, force: false, deleteRemote: false });
   }
 
   return {
@@ -159,6 +169,22 @@ function makeDialogs() {
     resolveCredentials(v: { username: string; password: string } | null) {
       if (state.kind === "credentials") {
         state.resolve(v);
+        state = { kind: "none" };
+      }
+    },
+    // ── Branch delete dialog ──────────────────────────────────────────────────
+    confirmBranchDelete(opts: { branch: string; upstream: string | null }): Promise<{ confirmed: boolean; force: boolean; deleteRemote: boolean }> {
+      settlePending();
+      return new Promise((resolve) => {
+        state = { kind: "branchDelete", title: "Delete branch", branch: opts.branch, upstream: opts.upstream, force: false, deleteRemote: false, resolve };
+      });
+    },
+    setBranchDeleteForce(v: boolean) { if (state.kind === "branchDelete") state = { ...state, force: v }; },
+    setBranchDeleteRemote(v: boolean) { if (state.kind === "branchDelete") state = { ...state, deleteRemote: v }; },
+    resolveBranchDelete(confirmed: boolean) {
+      if (state.kind === "branchDelete") {
+        const { force, deleteRemote } = state;
+        state.resolve({ confirmed, force, deleteRemote });
         state = { kind: "none" };
       }
     },

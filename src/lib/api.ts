@@ -62,8 +62,20 @@ export const api = {
     invoke<void>("create_branch", { repo, name, startPoint }),
   renameBranch: (repo: string, oldName: string, newName: string) =>
     invoke<void>("rename_branch", { repo, old: oldName, new: newName }),
-  deleteBranch: (repo: string, name: string, force: boolean) =>
-    invoke<void>("delete_branch", { repo, name, force }),
+  deleteBranch: (
+    repo: string,
+    name: string,
+    force: boolean,
+    deleteRemote?: boolean,
+    remote?: string,
+    remoteBranch?: string,
+  ) =>
+    invoke<void>("delete_branch", {
+      repo, name, force,
+      deleteRemote: deleteRemote ?? false,
+      remote: remote ?? null,
+      remoteBranch: remoteBranch ?? null,
+    }),
   createTag: (repo: string, name: string, target: string, message?: string) =>
     invoke<void>("create_tag", { repo, name, target, message: message ?? null }),
   deleteTag: (repo: string, name: string) => invoke<void>("delete_tag", { repo, name }),
