@@ -570,6 +570,30 @@
     background: transparent;
   }
 
+  /* Native-app feel: clicking or right-clicking UI chrome (branch rows, menus,
+     headers, labels, commit rows) must not start a text selection. We set a
+     no-select baseline on the body and opt BACK IN only where copying text is
+     genuinely useful — form fields, diff code, rendered markdown (PR/issue/
+     comment bodies), commit messages/SHAs, and anything tagged `.selectable`.
+     (DiffView's line-number gutter/sigils keep their own `user-select: none`
+     so gutter-drag line staging never selects text.) */
+  :global(body) {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  :global(input),
+  :global(textarea),
+  :global([contenteditable="true"]),
+  :global(.diff-cell),
+  :global(.md),
+  :global(.body-msg),
+  :global(.sha),
+  :global(.selectable),
+  :global(.selectable *) {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
   main {
     /* App-shell: fills the full viewport as a flex column so fixed chrome
        (header, tabs, status bar) never scrolls and the content area takes
