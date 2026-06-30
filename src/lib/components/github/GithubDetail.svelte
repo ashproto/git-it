@@ -6,6 +6,7 @@
   import type { GhPullDetail, GhIssueDetail } from "../../types";
   import Markdown from "./Markdown.svelte";
   import GithubSkeleton from "./GithubSkeleton.svelte";
+  import PrTimeline from "./PrTimeline.svelte";
   import { revealIn } from "../../github/motion";
 
   let { kind, number }: { kind: "pr" | "issue"; number: number } = $props();
@@ -34,6 +35,15 @@
   function glyph(b: string): string {
     return b === "pass" ? "✓" : b === "fail" ? "✗" : b === "pending" ? "○" : "–";
   }
+  // Roll up the statusCheckRollup buckets for the pinned "latest checks" strip.
+  const checkSummary = $derived.by(() => {
+    const c = pr?.checks ?? [];
+    const passed = c.filter((x) => x.bucket === "pass").length;
+    const failing = c.filter((x) => x.bucket === "fail").length;
+    const pending = c.filter((x) => x.bucket === "pending").length;
+    const neutral = c.filter((x) => x.bucket === "neutral").length;
+    return { total: c.length, passed, failing, pending, neutral };
+  });
 </script>
 
 <div class="detail">
@@ -90,19 +100,19 @@
           <span class="diffstat"><span class="add">+{pr.additions}</span> <span class="del">−{pr.deletions}</span> · {pr.changedFiles} files</span>
         </div>
         {#if pr.checks.length}
-          <details class="block"><summary>Checks ({pr.checks.length})</summary>
+          <details class="block checks-strip">
+            <summary>
+              <span class="ck-sum">
+                {#if checkSummary.passed}<span class="g pass">{glyph("pass")}</span> {checkSummary.passed} passed{/if}
+                {#if checkSummary.failing}<span class="sep">·</span> <span class="g fail">{glyph("fail")}</span> {checkSummary.failing} failing{/if}
+                {#if checkSummary.pending}<span class="sep">·</span> <span class="g pending">{glyph("pending")}</span> {checkSummary.pending} pending{/if}
+                {#if checkSummary.neutral}<span class="sep">·</span> <span class="g">{glyph("neutral")}</span> {checkSummary.neutral} other{/if}
+              </span>
+              <span class="ck-label">checks</span>
+            </summary>
             <ul class="checks">
               {#each pr.checks as c, i (c.name + i)}
                 <li><span class="g {c.bucket}">{glyph(c.bucket)}</span><a href={c.url} target="_blank" rel="noreferrer">{c.name}</a></li>
-              {/each}
-            </ul>
-          </details>
-        {/if}
-        {#if pr.reviews.length}
-          <details class="block"><summary>Reviews ({pr.reviews.length})</summary>
-            <ul class="reviews">
-              {#each pr.reviews as r, i (r.author + i)}
-                <li><strong>{r.author}</strong> <span class="rv">{r.state.replace(/_/g, " ").toLowerCase()}</span> <span class="when">{rel(r.submittedAt)}</span></li>
               {/each}
             </ul>
           </details>
@@ -119,19 +129,26 @@
       </div>
     {/if}
 
-    <section class="comments">
-      <h3>{d.comments.length} {d.comments.length === 1 ? "comment" : "comments"}</h3>
-      {#if d.comments.length === 0}
-        <p class="note">No comments yet.</p>
-      {:else}
-        {#each d.comments as c, i (c.author + i)}
-          <article class="comment">
-            <div class="chead"><strong>{c.author}</strong> <span class="when">{rel(c.createdAt)}</span></div>
-            <Markdown src={c.body} />
-          </article>
-        {/each}
-      {/if}
-    </section>
+    {#if pr}
+      <section class="activity">
+        <h3>Activity</h3>
+        <PrTimeline {pr} />
+      </section>
+    {:else}
+      <section class="comments">
+        <h3>{d.comments.length} {d.comments.length === 1 ? "comment" : "comments"}</h3>
+        {#if d.comments.length === 0}
+          <p class="note">No comments yet.</p>
+        {:else}
+          {#each d.comments as c, i (c.author + i)}
+            <article class="comment">
+              <div class="chead"><strong>{c.author}</strong> <span class="when">{rel(c.createdAt)}</span></div>
+              <Markdown src={c.body} />
+            </article>
+          {/each}
+        {/if}
+      </section>
+    {/if}
   {/if}
 </div>
 
@@ -169,7 +186,7 @@
   .del { color: var(--err, #c0392b); }
   .block { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
   .block summary { cursor: pointer; font-size: 12.5px; }
-  .checks, .reviews, .files { list-style: none; margin: 8px 0 0; padding: 0; }
+  .checks, .files { list-style: none; margin: 8px 0 0; padding: 0; }
   .checks li, .files li { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12px; }
   .files li { justify-content: space-between; }
   .checks a, .files a { color: var(--text); text-decoration: none; }
@@ -178,9 +195,17 @@
   .g.pass { color: var(--status-add, #2ea043); }
   .g.fail { color: var(--err, #c0392b); }
   .g.pending { color: var(--status-mod, #d29922); }
-  .reviews li { font-size: 12px; padding: 2px 0; }
-  .rv { color: var(--text-muted); text-transform: capitalize; }
-  .comments h3 { font-size: 13px; margin: 6px 0; }
+  .checks-strip summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .ck-sum { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12.5px; }
+  .ck-sum .g { width: auto; }
+  .ck-sum .sep { color: var(--text-muted); margin: 0 2px; }
+  .ck-label { color: var(--text-muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .comments h3, .activity h3 { font-size: 13px; margin: 6px 0; }
   .comment { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel-bg); }
   .chead { font-size: 12.5px; margin-bottom: 4px; }
   .when { color: var(--text-muted); }

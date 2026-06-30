@@ -263,6 +263,14 @@ export type GhComment = { author: string; body: string; createdAt: string };
 export type GhReview = { author: string; state: string; body: string; submittedAt: string };
 export type GhFile = { path: string; additions: number; deletions: number };
 
+export type GhCommit = { oid: string; message: string; author: string; committedDate: string };
+export type GhInlineComment = { author: string; body: string; path: string; line: number; createdAt: string };
+export type GhReviewThread = { resolved: boolean; path: string; line: number; comments: GhInlineComment[] };
+export type GhCheckRun = {
+  name: string; status: string; conclusion: string;
+  startedAt: string; updatedAt: string; url: string; headSha: string;
+};
+
 export type GhPullDetail = {
   number: number; title: string; body: string; author: string; state: string; isDraft: boolean;
   labels: GhLabel[]; assignees: string[]; milestone: string | null;
@@ -270,8 +278,15 @@ export type GhPullDetail = {
   reviewDecision: string; mergeable: string; mergeStateStatus: string;
   additions: number; deletions: number; changedFiles: number;
   files: GhFile[]; reviews: GhReview[]; checks: GhCheck[]; comments: GhComment[];
+  commits: GhCommit[]; reviewThreads: GhReviewThread[]; checkRuns: GhCheckRun[];
   createdAt: string; updatedAt: string; url: string;
 };
+
+export type PrTimelineEvent =
+  | { kind: "commit"; at: string; commit: GhCommit }
+  | { kind: "comment"; at: string; comment: GhComment }
+  | { kind: "review"; at: string; review: GhReview; threads: GhReviewThread[] }
+  | { kind: "ciRun"; at: string; run: GhCheckRun };
 export type GhIssueDetail = {
   number: number; title: string; body: string; author: string; state: string; stateReason: string | null;
   labels: GhLabel[]; assignees: string[]; milestone: string | null;
