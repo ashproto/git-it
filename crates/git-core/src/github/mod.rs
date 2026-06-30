@@ -1042,6 +1042,182 @@ fn map_review(r: RawReview) -> GhReview {
     }
 }
 
+// ---- PR commits (from `gh pr view --json commits`) ----
+#[derive(Deserialize)]
+struct RawPrCommit {
+    oid: String,
+    #[serde(rename = "messageHeadline", default)]
+    message_headline: String,
+    #[serde(rename = "committedDate", default)]
+    committed_date: String,
+    #[serde(default)]
+    authors: Vec<RawUser>, // gh returns authors:[{login,name,...}]
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhCommit {
+    pub oid: String,
+    pub message: String,
+    pub author: String,
+    pub committed_date: String,
+}
+
+fn map_pr_commit(c: RawPrCommit) -> GhCommit {
+    GhCommit {
+        oid: c.oid,
+        message: c.message_headline,
+        author: c
+            .authors
+            .into_iter()
+            .next()
+            .map(|a| a.login)
+            .unwrap_or_default(),
+        committed_date: c.committed_date,
+    }
+}
+
+// ---- PR review threads (GraphQL — REST can't give isResolved) ----
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhInlineComment {
+    pub author: String,
+    pub body: String,
+    pub path: String,
+    pub line: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhReviewThread {
+    pub resolved: bool,
+    pub path: String,
+    pub line: i64,
+    pub comments: Vec<GhInlineComment>,
+}
+
+/// Navigate `data.repository.pullRequest.reviewThreads.nodes[]` defensively;
+/// any missing/null field defaults to ""/0 and never panics.
+fn parse_review_threads(json: &str) -> Vec<GhReviewThread> {
+    let v: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let nodes = v
+        .pointer("/data/repository/pullRequest/reviewThreads/nodes")
+        .and_then(|n| n.as_array());
+    let Some(nodes) = nodes else {
+        return Vec::new();
+    };
+    nodes
+        .iter()
+        .map(|t| {
+            let resolved = t.get("isResolved").and_then(|x| x.as_bool()).unwrap_or(false);
+            let path = t.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let line = t.get("line").and_then(|x| x.as_i64()).unwrap_or(0);
+            let comments = t
+                .pointer("/comments/nodes")
+                .and_then(|n| n.as_array())
+                .map(|cn| {
+                    cn.iter()
+                        .map(|c| {
+                            let author = c
+                                .pointer("/author/login")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let body = c.get("body").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                            let cpath = c.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                            let cline = c
+                                .get("line")
+                                .and_then(|x| x.as_i64())
+                                .or_else(|| c.get("originalLine").and_then(|x| x.as_i64()))
+                                .unwrap_or(0);
+                            let created_at = c
+                                .get("createdAt")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            GhInlineComment { author, body, path: cpath, line: cline, created_at }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            GhReviewThread { resolved, path, line, comments }
+        })
+        .collect()
+}
+
+/// Best-effort: fetch resolved/unresolved inline review threads via GraphQL.
+/// Missing perms / no threads → empty; never fails the whole detail.
+fn fetch_review_threads(owner: &str, name: &str, number: i64) -> Vec<GhReviewThread> {
+    let query = "query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){pullRequest(number:$num){reviewThreads(first:100){nodes{isResolved path line comments(first:50){nodes{author{login} body path originalLine line createdAt}}}}}}}";
+    let q_arg = format!("query={query}");
+    let o = format!("o={owner}");
+    let n = format!("n={name}");
+    let num = format!("num={number}");
+    match run_gh(
+        &["api", "graphql", "-f", &q_arg, "-F", &o, "-F", &n, "-F", &num],
+        None,
+    ) {
+        Ok(out) => parse_review_threads(&out),
+        Err(_) => Vec::new(),
+    }
+}
+
+// ---- CI run history (best-effort REST) ----
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhCheckRun {
+    pub name: String,
+    pub status: String,     // queued | in_progress | completed
+    pub conclusion: String, // success | failure | cancelled | "" when null
+    pub started_at: String, // run_started_at
+    pub updated_at: String,
+    pub url: String,        // html_url
+    pub head_sha: String,
+}
+
+/// Navigate `workflow_runs[]` defensively; null conclusion → "".
+fn parse_check_runs(json: &str) -> Vec<GhCheckRun> {
+    let v: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let runs = v.get("workflow_runs").and_then(|r| r.as_array());
+    let Some(runs) = runs else {
+        return Vec::new();
+    };
+    runs.iter()
+        .map(|r| {
+            let s = |k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+            GhCheckRun {
+                name: s("name"),
+                status: s("status"),
+                conclusion: r
+                    .get("conclusion")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                started_at: s("run_started_at"),
+                updated_at: s("updated_at"),
+                url: s("html_url"),
+                head_sha: s("head_sha"),
+            }
+        })
+        .collect()
+}
+
+/// Best-effort: recent workflow runs for the PR's head branch.
+fn fetch_check_runs(owner: &str, name: &str, head_ref: &str) -> Vec<GhCheckRun> {
+    let path = format!("repos/{owner}/{name}/actions/runs?branch={head_ref}&per_page=30");
+    match run_gh(&["api", &path], None) {
+        Ok(out) => parse_check_runs(&out),
+        Err(_) => Vec::new(),
+    }
+}
+
 // ---- PR detail ----
 #[derive(Deserialize)]
 struct RawPullDetail {
@@ -1082,6 +1258,8 @@ struct RawPullDetail {
     status_check_rollup: Vec<RawCheck>,
     #[serde(default)]
     comments: Vec<RawComment>,
+    #[serde(default)]
+    commits: Vec<RawPrCommit>,
     #[serde(rename = "createdAt", default)]
     created_at: String,
     #[serde(rename = "updatedAt", default)]
@@ -1113,6 +1291,12 @@ pub struct GhPullDetail {
     pub reviews: Vec<GhReview>,
     pub checks: Vec<GhCheck>,
     pub comments: Vec<GhComment>,
+    #[serde(default)]
+    pub commits: Vec<GhCommit>,
+    #[serde(default)]
+    pub review_threads: Vec<GhReviewThread>,
+    #[serde(default)]
+    pub check_runs: Vec<GhCheckRun>,
     pub created_at: String,
     pub updated_at: String,
     pub url: String,
@@ -1141,6 +1325,10 @@ fn map_pull_detail(p: RawPullDetail) -> GhPullDetail {
         reviews: p.reviews.into_iter().map(map_review).collect(),
         checks: p.status_check_rollup.into_iter().map(map_check).collect(),
         comments: p.comments.into_iter().map(map_comment).collect(),
+        commits: p.commits.into_iter().map(map_pr_commit).collect(),
+        // Best-effort fields populated by `pr_detail` after the base view.
+        review_threads: Vec::new(),
+        check_runs: Vec::new(),
         created_at: p.created_at,
         updated_at: p.updated_at,
         url: p.url,
@@ -1154,13 +1342,17 @@ pub fn pr_detail(repo: &Path, number: u64) -> Result<GhPullDetail, GithubError> 
     let json = run_gh(
         &[
             "pr", "view", &num, "--repo", &slug, "--json",
-            "number,title,body,author,state,isDraft,labels,assignees,milestone,baseRefName,headRefName,reviewDecision,mergeable,mergeStateStatus,additions,deletions,changedFiles,files,reviews,statusCheckRollup,comments,createdAt,updatedAt,url",
+            "number,title,body,author,state,isDraft,labels,assignees,milestone,baseRefName,headRefName,reviewDecision,mergeable,mergeStateStatus,additions,deletions,changedFiles,files,reviews,statusCheckRollup,comments,commits,createdAt,updatedAt,url",
         ],
         None,
     )?;
     let raw: RawPullDetail =
         serde_json::from_str(&json).map_err(|e| GithubError::Other(format!("parse pr detail: {e}")))?;
-    Ok(map_pull_detail(raw))
+    let mut detail = map_pull_detail(raw);
+    // Best-effort enrichments — never fail the command if they error.
+    detail.review_threads = fetch_review_threads(&owner, &name, number as i64);
+    detail.check_runs = fetch_check_runs(&owner, &name, &detail.head_ref_name);
+    Ok(detail)
 }
 
 // ---- Issue detail ----
@@ -1620,6 +1812,76 @@ mod tests {
         assert_eq!(raw.number, 1);
         assert_eq!(raw.state_reason.as_deref(), Some("completed"));
         assert!(raw.milestone.is_none());
+    }
+
+    #[test]
+    fn map_pr_commit_takes_first_author_login() {
+        let json = r#"[{
+            "oid":"abc1234def","messageHeadline":"Fix bug","committedDate":"2026-01-02T00:00:00Z",
+            "authors":[{"login":"alice","name":"Alice"},{"login":"bob"}]
+        }]"#;
+        let raw: Vec<RawPrCommit> = serde_json::from_str(json).unwrap();
+        let c = &raw.into_iter().map(map_pr_commit).collect::<Vec<_>>()[0];
+        assert_eq!(c.oid, "abc1234def");
+        assert_eq!(c.message, "Fix bug");
+        assert_eq!(c.author, "alice");
+        assert_eq!(c.committed_date, "2026-01-02T00:00:00Z");
+    }
+
+    #[test]
+    fn map_pr_commit_tolerates_no_authors() {
+        let json = r#"[{"oid":"x","messageHeadline":"","committedDate":"","authors":[]}]"#;
+        let raw: Vec<RawPrCommit> = serde_json::from_str(json).unwrap();
+        let c = &raw.into_iter().map(map_pr_commit).collect::<Vec<_>>()[0];
+        assert_eq!(c.author, "");
+    }
+
+    #[test]
+    fn parse_review_threads_extracts_resolved_and_comments() {
+        let json = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[
+            {"isResolved":true,"path":"a.rs","line":5,"comments":{"nodes":[
+                {"author":{"login":"rev"},"body":"fix this","path":"a.rs","originalLine":5,"line":null,"createdAt":"2026-01-03T00:00:00Z"}
+            ]}},
+            {"isResolved":false,"path":"b.rs","line":null,"comments":{"nodes":[]}}
+        ]}}}}}"#;
+        let out = parse_review_threads(json);
+        assert_eq!(out.len(), 2);
+        assert!(out[0].resolved);
+        assert_eq!(out[0].path, "a.rs");
+        assert_eq!(out[0].comments.len(), 1);
+        assert_eq!(out[0].comments[0].author, "rev");
+        // line null falls back to originalLine.
+        assert_eq!(out[0].comments[0].line, 5);
+        assert!(!out[1].resolved);
+        assert_eq!(out[1].line, 0); // null thread line → 0
+    }
+
+    #[test]
+    fn parse_review_threads_empty_on_garbage() {
+        assert!(parse_review_threads("not json").is_empty());
+        assert!(parse_review_threads("{}").is_empty());
+    }
+
+    #[test]
+    fn parse_check_runs_extracts_runs_with_null_conclusion() {
+        let json = r#"{"total_count":2,"workflow_runs":[
+            {"name":"CI","status":"completed","conclusion":"success","run_started_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:05:00Z","html_url":"u1","head_sha":"aaa"},
+            {"name":"Deploy","status":"in_progress","conclusion":null,"run_started_at":"2026-01-02T00:00:00Z","updated_at":"2026-01-02T00:01:00Z","html_url":"u2","head_sha":"bbb"}
+        ]}"#;
+        let out = parse_check_runs(json);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].name, "CI");
+        assert_eq!(out[0].conclusion, "success");
+        assert_eq!(out[0].started_at, "2026-01-01T00:00:00Z");
+        assert_eq!(out[0].head_sha, "aaa");
+        assert_eq!(out[1].status, "in_progress");
+        assert_eq!(out[1].conclusion, ""); // null → ""
+    }
+
+    #[test]
+    fn parse_check_runs_empty_on_garbage() {
+        assert!(parse_check_runs("nope").is_empty());
+        assert!(parse_check_runs("{}").is_empty());
     }
 
     #[test]
