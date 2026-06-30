@@ -84,6 +84,9 @@ const DIFFCONTEXT_DEFAULT = 3;
 const RELDATES_KEY = "gitit.relativeDates.v1";
 const RELDATES_STORE_KEY = "relativeDates";
 
+const PRTIMELINE_KEY = "gitit.prTimelineNewestFirst.v1";
+const PRTIMELINE_STORE_KEY = "prTimelineNewestFirst";
+
 const PULLREBASE_KEY = "gitit.pullRebase.v1";
 const PULLREBASE_STORE_KEY = "pullRebase";
 
@@ -238,6 +241,17 @@ function loadSyncPullRebase(): boolean {
   try {
     if (typeof localStorage === "undefined") return false;
     const raw = localStorage.getItem(PULLREBASE_KEY);
+    return raw === "true";
+  } catch {
+    return false;
+  }
+}
+
+function loadSyncPrTimelineNewestFirst(): boolean {
+  if (isTauri()) return false;
+  try {
+    if (typeof localStorage === "undefined") return false;
+    const raw = localStorage.getItem(PRTIMELINE_KEY);
     return raw === "true";
   } catch {
     return false;
@@ -951,6 +965,41 @@ function makeState() {
     }
   }
 
+  // ── prTimelineNewestFirst persisted setting ───────────────────────────────
+  // Default sort direction for the PR activity timeline: oldest-first (false,
+  // default) or newest-first (true). Mirrors the pullRebase pattern exactly.
+  let prTimelineNewestFirst = $state<boolean>(loadSyncPrTimelineNewestFirst());
+  let prTimelineNewestFirstTouched = false;
+
+  const ptHydrate = getStore();
+  if (ptHydrate) {
+    ptHydrate
+      .then((store) => store.get<boolean>(PRTIMELINE_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !prTimelineNewestFirstTouched) {
+          prTimelineNewestFirst = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load prTimelineNewestFirst setting", e));
+  }
+
+  function persistPrTimelineNewestFirst() {
+    const snapshot = prTimelineNewestFirst;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(PRTIMELINE_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist prTimelineNewestFirst setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(PRTIMELINE_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist prTimelineNewestFirst setting", e);
+    }
+  }
+
 
   // ── Multi-repo state (Redesign R1) ───────────────────────────────────────
   // openRepos: the set of repos the user has open (tab strip / sidebar list).
@@ -1526,6 +1575,15 @@ function makeState() {
       pullRebaseTouched = true;
       pullRebase = v;
       persistPullRebase();
+    },
+    // ── prTimelineNewestFirst persisted setting ───────────────────────────────
+    get prTimelineNewestFirst() {
+      return prTimelineNewestFirst;
+    },
+    setPrTimelineNewestFirst(v: boolean) {
+      prTimelineNewestFirstTouched = true;
+      prTimelineNewestFirst = v;
+      persistPrTimelineNewestFirst();
     },
     // ── Remote detailed refs + remotes (Phase 6) ──────────────────────────────
     get refsDetailed() {

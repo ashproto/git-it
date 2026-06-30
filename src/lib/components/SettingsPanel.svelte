@@ -94,6 +94,23 @@
         </div>
       </div>
 
+      <div class="seg-row">
+        <span class="seg-label">PR activity order</span>
+        <div class="seg" role="group" aria-label="PR activity timeline default order">
+          <button
+            type="button"
+            class:active={!appState.prTimelineNewestFirst}
+            onclick={() => appState.setPrTimelineNewestFirst(false)}
+            aria-pressed={!appState.prTimelineNewestFirst}
+          >Oldest first</button><button
+            type="button"
+            class:active={appState.prTimelineNewestFirst}
+            onclick={() => appState.setPrTimelineNewestFirst(true)}
+            aria-pressed={appState.prTimelineNewestFirst}
+          >Newest first</button>
+        </div>
+      </div>
+
       <hr class="divider" />
 
       <!-- ── Commit dates ───────────────────────────────────── -->

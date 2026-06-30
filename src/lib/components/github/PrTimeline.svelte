@@ -7,7 +7,23 @@
 
   let { pr }: { pr: GhPullDetail } = $props();
 
-  const events = $derived(buildPrTimeline(pr));
+  // Per-view sort direction, seeded from the persisted default. Track only the
+  // PR's identity (not the global default) so toggling the in-view control
+  // doesn't get yanked, and so changing the Settings default mid-view doesn't
+  // reset what the user already chose for the PR they're looking at.
+  let newestFirst = $state(appState.prTimelineNewestFirst);
+  let seededFor: number | undefined;
+  $effect(() => {
+    if (seededFor !== pr.number) {
+      seededFor = pr.number;
+      newestFirst = appState.prTimelineNewestFirst;
+    }
+  });
+
+  const events = $derived.by(() => {
+    const asc = buildPrTimeline(pr);
+    return newestFirst ? [...asc].reverse() : asc;
+  });
 
   function rel(iso: string): string {
     if (!iso) return "";
@@ -57,6 +73,19 @@
     return `${m}:${ss}`;
   }
 </script>
+
+<div class="order-row">
+  <button
+    type="button"
+    class="order-btn"
+    aria-pressed={newestFirst}
+    onclick={() => (newestFirst = !newestFirst)}
+    title={newestFirst ? "Showing newest first — click for oldest first" : "Showing oldest first — click for newest first"}
+  >
+    <span class="arrow">{newestFirst ? "↓" : "↑"}</span>
+    {newestFirst ? "Newest first" : "Oldest first"}
+  </button>
+</div>
 
 <ol class="timeline">
   {#each events as ev, i (ev.kind + i)}
@@ -152,6 +181,31 @@
 {/snippet}
 
 <style>
+  .order-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+  }
+  .order-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    background: var(--btn-bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    cursor: pointer;
+  }
+  .order-btn:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+  .order-btn .arrow {
+    color: var(--accent);
+    font-weight: 700;
+  }
   .timeline {
     list-style: none;
     margin: 0;
