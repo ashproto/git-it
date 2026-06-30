@@ -195,6 +195,7 @@ export const api = {
     invoke<GhPullDetail>("github_pr_detail", { repo, number }),
   githubIssueDetail: (repo: string, number: number) =>
     invoke<GhIssueDetail>("github_issue_detail", { repo, number }),
+  githubReadme: (repo: string) => invoke<string>("github_readme", { repo }),
   remoteAdd: (repo: string, name: string, url: string) =>
     invoke<void>("remote_add", { repo, name, url }),
   remoteRemove: (repo: string, name: string) => invoke<void>("remote_remove", { repo, name }),

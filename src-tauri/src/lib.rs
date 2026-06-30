@@ -100,6 +100,7 @@ pub fn run() {
             commands::github_issue_create,
             commands::github_pr_detail,
             commands::github_issue_detail,
+            commands::github_readme,
             fswatch::start_watch,
             fswatch::stop_watch,
         ])

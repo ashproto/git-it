@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { mdToSafeHtml } from "./markdown";
+import { mdToSafeHtml, readmeMdToSafeHtml } from "./markdown";
 
 describe("mdToSafeHtml", () => {
   it("renders basic markdown", () => {
@@ -27,5 +27,51 @@ describe("mdToSafeHtml", () => {
   it("drops data: image sources", () => {
     const html = mdToSafeHtml('<img src="data:image/svg+xml,<svg onload=alert(1)>">');
     expect(html).not.toContain("data:");
+  });
+});
+
+describe("readmeMdToSafeHtml", () => {
+  const ctx = { owner: "o", repo: "r", branch: "main" };
+
+  it("absolutizes a relative image to raw.githubusercontent", () => {
+    const html = readmeMdToSafeHtml("![logo](assets/logo.png)", ctx);
+    expect(html).toContain("https://raw.githubusercontent.com/o/r/main/assets/logo.png");
+  });
+
+  it("absolutizes a relative image with leading ./ prefix", () => {
+    const html = readmeMdToSafeHtml("![logo](./assets/logo.png)", ctx);
+    expect(html).toContain("https://raw.githubusercontent.com/o/r/main/assets/logo.png");
+  });
+
+  it("absolutizes a relative link to github.com/blob", () => {
+    const html = readmeMdToSafeHtml("[docs](docs/guide.md)", ctx);
+    expect(html).toContain("https://github.com/o/r/blob/main/docs/guide.md");
+  });
+
+  it("leaves absolute https urls untouched", () => {
+    const html = readmeMdToSafeHtml("![x](https://img.shields.io/x.svg)", ctx);
+    expect(html).toContain("https://img.shields.io/x.svg");
+    expect(html).not.toContain("raw.githubusercontent.com/o/r/main/https");
+  });
+
+  it("leaves in-page anchors (#) untouched", () => {
+    const html = readmeMdToSafeHtml("[section](#section)", ctx);
+    expect(html).toContain('href="#section"');
+    expect(html).not.toContain("blob/main/#");
+  });
+
+  it("leaves protocol-relative urls untouched", () => {
+    const html = readmeMdToSafeHtml("![x](//example.com/img.png)", ctx);
+    expect(html).not.toContain("raw.githubusercontent.com/o/r/main//");
+  });
+
+  it("sanitizes script tags as well as absolutizing", () => {
+    const html = readmeMdToSafeHtml("hi <script>alert(1)</script>", ctx);
+    expect(html).not.toContain("<script");
+  });
+
+  it("absolutizes a bare relative path with leading /", () => {
+    const html = readmeMdToSafeHtml("![x](/img/logo.png)", ctx);
+    expect(html).toContain("https://raw.githubusercontent.com/o/r/main/img/logo.png");
   });
 });

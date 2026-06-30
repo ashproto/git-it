@@ -94,9 +94,15 @@ function makeGithubState() {
   const milestones = makePanel<GhMilestone[]>();
   const labels = makePanel<GhLabel[]>();
 
+  const readme = makePanel<string>();
+
   const prDetail = makePanel<GhPullDetail>();
   const issueDetail = makePanel<GhIssueDetail>();
   let selectedItem = $state<{ kind: "pr" | "issue"; number: number } | null>(null);
+
+  function loadReadme(repo: string) {
+    return readme.load(`${repo}|${reloadNonce}`, () => api.githubReadme(repo));
+  }
 
   function loadPrDetail(repo: string, number: number) {
     return prDetail.load(`${repo}|${number}|${reloadNonce}`, () => api.githubPrDetail(repo, number));
@@ -190,6 +196,7 @@ function makeGithubState() {
     milestones.reset();
     labels.reset();
     selectedItem = null;
+    readme.reset();
     prDetail.reset();
     issueDetail.reset();
     availability = null;
@@ -310,6 +317,10 @@ function makeGithubState() {
     closeItem() {
       selectedItem = null;
     },
+    get readme() {
+      return readme;
+    },
+    loadReadme,
     get prDetail() {
       return prDetail;
     },

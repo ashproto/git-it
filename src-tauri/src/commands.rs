@@ -588,3 +588,8 @@ pub fn github_pr_detail(repo: String, number: u64) -> Result<github::GhPullDetai
 pub fn github_issue_detail(repo: String, number: u64) -> Result<github::GhIssueDetail, github::GithubError> {
     github::issue_detail(&PathBuf::from(repo), number)
 }
+
+#[tauri::command(async)]
+pub fn github_readme(repo: String) -> Result<String, String> {
+    git_core::github::readme(&PathBuf::from(repo)).map_err(|e| format!("{e:?}"))
+}

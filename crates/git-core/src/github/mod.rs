@@ -859,6 +859,20 @@ pub fn labels(repo: &Path) -> Result<Vec<GhLabel>, GithubError> {
     Ok(raw.into_iter().map(map_label).collect())
 }
 
+/// Raw README markdown for the repo (empty string when there is no README or
+/// the request fails — callers render nothing in that case).
+pub fn readme(repo: &Path) -> Result<String, GithubError> {
+    let (owner, name) = match resolve_owner_repo(repo) {
+        Some(x) => x,
+        None => return Ok(String::new()),
+    };
+    let slug = format!("repos/{owner}/{name}/readme");
+    match run_gh(&["api", &slug, "-H", "Accept: application/vnd.github.raw"], None) {
+        Ok(md) => Ok(md),
+        Err(_) => Ok(String::new()), // 404 (no README) / transient → empty
+    }
+}
+
 /// Map a merge-method name to the `gh pr merge` flag. None for an unknown method.
 fn merge_flag(method: &str) -> Option<&'static str> {
     match method {

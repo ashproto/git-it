@@ -33,3 +33,39 @@ export function mdToSafeHtml(src: string): string {
   const raw = marked.parse(src ?? "", { async: false }) as string;
   return DOMPurify.sanitize(raw, CONFIG);
 }
+
+/** Rewrite relative img[src] and a[href] in already-parsed HTML to absolute
+ *  GitHub URLs so images/links in a README render correctly in a WKWebView. */
+function absolutizeRelativeUrls(
+  html: string,
+  owner: string,
+  repo: string,
+  branch: string,
+): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/`;
+  const blobBase = `https://github.com/${owner}/${repo}/blob/${branch}/`;
+  // relative = not scheme:, not protocol-relative (//), not in-page anchor (#)
+  const isRel = (u: string) => !!u && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(u);
+  const strip = (u: string) => u.replace(/^\.?\//, ""); // drop leading ./ or /
+  doc.querySelectorAll("img[src]").forEach((el) => {
+    const v = el.getAttribute("src") ?? "";
+    if (isRel(v)) el.setAttribute("src", rawBase + strip(v));
+  });
+  doc.querySelectorAll("a[href]").forEach((el) => {
+    const v = el.getAttribute("href") ?? "";
+    if (isRel(v)) el.setAttribute("href", blobBase + strip(v));
+  });
+  return doc.body.innerHTML;
+}
+
+/** Render a repo README to SANITIZED HTML, resolving relative image/link URLs
+ *  against the repo's default branch so logos/screenshots/links work. */
+export function readmeMdToSafeHtml(
+  src: string,
+  ctx: { owner: string; repo: string; branch: string },
+): string {
+  const raw = marked.parse(src ?? "", { async: false }) as string;
+  const abs = absolutizeRelativeUrls(raw, ctx.owner, ctx.repo, ctx.branch);
+  return DOMPurify.sanitize(abs, CONFIG);
+}
