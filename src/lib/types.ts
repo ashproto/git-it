@@ -286,6 +286,7 @@ export type PrTimelineEvent =
   | { kind: "commit"; at: string; commit: GhCommit }
   | { kind: "comment"; at: string; comment: GhComment }
   | { kind: "review"; at: string; review: GhReview; threads: GhReviewThread[] }
+  | { kind: "reviewThread"; at: string; thread: GhReviewThread }
   | { kind: "ciRun"; at: string; run: GhCheckRun };
 export type GhIssueDetail = {
   number: number; title: string; body: string; author: string; state: string; stateReason: string | null;

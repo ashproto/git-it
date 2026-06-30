@@ -1,7 +1,7 @@
 <script lang="ts">
   import { appState } from "../../store.svelte";
   import { parseISO, formatCommitDate } from "../../dates";
-  import type { GhPullDetail, GhCheckRun } from "../../types";
+  import type { GhPullDetail, GhCheckRun, GhReviewThread } from "../../types";
   import { buildPrTimeline } from "../../github/prTimeline";
   import Markdown from "./Markdown.svelte";
 
@@ -41,16 +41,20 @@
     return b === "pass" ? "✓" : b === "fail" ? "✗" : b === "pending" ? "…" : "–";
   }
 
-  // mm:ss duration between two ISO timestamps, "" if not computable.
+  // Duration between two ISO timestamps: "m:ss" under an hour, "h:mm:ss" at or
+  // over an hour. "" when either timestamp is missing/unparseable.
   function duration(startIso: string, endIso: string): string {
     const a = parseISO(startIso);
     const b = parseISO(endIso);
     if (!a || !b) return "";
     let secs = Math.round((b.getTime() - a.getTime()) / 1000);
     if (secs < 0) secs = 0;
-    const m = Math.floor(secs / 60);
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
     const s = secs % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
+    const ss = s.toString().padStart(2, "0");
+    if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${ss}`;
+    return `${m}:${ss}`;
   }
 </script>
 
@@ -82,43 +86,14 @@
           {#if ev.threads.length}
             <ul class="threads">
               {#each ev.threads as t, ti (t.path + ":" + t.line + ":" + ti)}
-                {#if t.resolved}
-                  <li class="thread resolved">
-                    <details>
-                      <summary>
-                        <span class="badge resolved">resolved</span>
-                        <span class="loc mono">{t.path}:{t.line}</span>
-                        <span class="cnt">{t.comments.length} {t.comments.length === 1 ? "comment" : "comments"}</span>
-                      </summary>
-                      <div class="thread-body">
-                        {#each t.comments as c, ci (c.author + ci)}
-                          <div class="icomment">
-                            <div class="ihead"><strong>{c.author}</strong> <span class="when">{rel(c.createdAt)}</span></div>
-                            <Markdown src={c.body} />
-                          </div>
-                        {/each}
-                      </div>
-                    </details>
-                  </li>
-                {:else}
-                  <li class="thread">
-                    <div class="thead">
-                      <span class="badge unresolved">unresolved</span>
-                      <span class="loc mono">{t.path}:{t.line}</span>
-                    </div>
-                    <div class="thread-body">
-                      {#each t.comments as c, ci (c.author + ci)}
-                        <div class="icomment">
-                          <div class="ihead"><strong>{c.author}</strong> <span class="when">{rel(c.createdAt)}</span></div>
-                          <Markdown src={c.body} />
-                        </div>
-                      {/each}
-                    </div>
-                  </li>
-                {/if}
+                {@render threadItem(t)}
               {/each}
             </ul>
           {/if}
+        {:else if ev.kind === "reviewThread"}
+          <ul class="threads">
+            {@render threadItem(ev.thread)}
+          </ul>
         {:else if ev.kind === "ciRun"}
           {@const b = ciBucket(ev.run)}
           {@const dur = duration(ev.run.startedAt, ev.run.updatedAt)}
@@ -138,6 +113,43 @@
     </li>
   {/each}
 </ol>
+
+{#snippet threadItem(t: GhReviewThread)}
+  {#if t.resolved}
+    <li class="thread resolved">
+      <details>
+        <summary>
+          <span class="badge resolved">resolved</span>
+          <span class="loc mono">{t.path}:{t.line}</span>
+          <span class="cnt">{t.comments.length} {t.comments.length === 1 ? "comment" : "comments"}</span>
+        </summary>
+        <div class="thread-body">
+          {#each t.comments as c, ci (c.author + ci)}
+            <div class="icomment">
+              <div class="ihead"><strong>{c.author}</strong> <span class="when">{rel(c.createdAt)}</span></div>
+              <Markdown src={c.body} />
+            </div>
+          {/each}
+        </div>
+      </details>
+    </li>
+  {:else}
+    <li class="thread">
+      <div class="thead">
+        <span class="badge unresolved">unresolved</span>
+        <span class="loc mono">{t.path}:{t.line}</span>
+      </div>
+      <div class="thread-body">
+        {#each t.comments as c, ci (c.author + ci)}
+          <div class="icomment">
+            <div class="ihead"><strong>{c.author}</strong> <span class="when">{rel(c.createdAt)}</span></div>
+            <Markdown src={c.body} />
+          </div>
+        {/each}
+      </div>
+    </li>
+  {/if}
+{/snippet}
 
 <style>
   .timeline {
@@ -183,7 +195,8 @@
   }
   .dot.commit { border-color: var(--accent); }
   .dot.comment { border-color: var(--text-muted); }
-  .dot.review { border-color: var(--status-mod, #d29922); }
+  .dot.review,
+  .dot.reviewThread { border-color: var(--status-mod, #d29922); }
   .dot.ciRun { border-color: var(--status-add, #2ea043); }
   .card {
     min-width: 0;

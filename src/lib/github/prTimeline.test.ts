@@ -35,4 +35,14 @@ describe("buildPrTimeline", () => {
     const review = ev.find((e) => e.kind === "review");
     expect(review && review.kind === "review" && review.threads.length).toBe(1);
   });
+
+  it("surfaces inline threads even when there are no top-level reviews", () => {
+    const d = base();
+    d.reviewThreads = [
+      { resolved: false, path: "a.rs", line: 5, comments: [{ author: "c", body: "fix", path: "a.rs", line: 5, createdAt: "2026-01-02T00:00:00Z" }] },
+    ];
+    const ev = buildPrTimeline(d);
+    const t = ev.find((e) => e.kind === "reviewThread");
+    expect(t && t.kind === "reviewThread" && t.thread.comments.length).toBe(1);
+  });
 });
