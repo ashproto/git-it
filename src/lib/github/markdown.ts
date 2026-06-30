@@ -47,7 +47,9 @@ function absolutizeRelativeUrls(
   const blobBase = `https://github.com/${owner}/${repo}/blob/${branch}/`;
   // relative = not scheme:, not protocol-relative (//), not in-page anchor (#)
   const isRel = (u: string) => !!u && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(u);
-  const strip = (u: string) => u.replace(/^\.?\//, ""); // drop leading ./ or /
+  // README-relative paths resolve against the repo root, so drop any leading
+  // ./ or ../ segments (we can't go above the root) and a leading /.
+  const strip = (u: string) => u.replace(/^(?:\.\.?\/)+/, "").replace(/^\//, "");
   doc.querySelectorAll("img[src]").forEach((el) => {
     const v = el.getAttribute("src") ?? "";
     if (isRel(v)) el.setAttribute("src", rawBase + strip(v));

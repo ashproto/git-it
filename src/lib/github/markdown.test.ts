@@ -43,6 +43,12 @@ describe("readmeMdToSafeHtml", () => {
     expect(html).toContain("https://raw.githubusercontent.com/o/r/main/assets/logo.png");
   });
 
+  it("normalizes leading ../ segments against the repo root", () => {
+    const html = readmeMdToSafeHtml("![logo](../../assets/logo.png)", ctx);
+    expect(html).toContain("https://raw.githubusercontent.com/o/r/main/assets/logo.png");
+    expect(html).not.toContain("main/../");
+  });
+
   it("absolutizes a relative link to github.com/blob", () => {
     const html = readmeMdToSafeHtml("[docs](docs/guide.md)", ctx);
     expect(html).toContain("https://github.com/o/r/blob/main/docs/guide.md");

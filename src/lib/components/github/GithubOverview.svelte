@@ -16,21 +16,21 @@
   // Load the README whenever the active repo changes (or after a refresh).
   $effect(() => {
     const repo = appState.repo;
+    void githubState.reloadNonce; // re-fetch on Refresh, like the other panels
     if (repo) void githubState.loadReadme(repo);
   });
 
   // Resolve the render context from githubState so we don't need extra props.
-  const readmeCtx = $derived(() => {
-    const avail = githubState.availability;
-    if (!avail || avail.kind !== "Ok") return null;
-    return { owner: avail.owner, repo: avail.repo, branch: stats.defaultBranch };
+  const readmeCtx = $derived.by(() => {
+    const a = githubState.availability;
+    return a && a.kind === "Ok"
+      ? { owner: a.owner, repo: a.repo, branch: stats.defaultBranch }
+      : null;
   });
 
-  const readmeHtml = $derived(() => {
+  const readmeHtml = $derived.by(() => {
     const md = githubState.readme.data;
-    const ctx = readmeCtx();
-    if (!md || !ctx) return "";
-    return readmeMdToSafeHtml(md, ctx);
+    return md && readmeCtx ? readmeMdToSafeHtml(md, readmeCtx) : "";
   });
 </script>
 
@@ -59,10 +59,10 @@
       <h3 class="readme-heading">README</h3>
       <GithubSkeleton variant="card" />
     </div>
-  {:else if readmeHtml()}
+  {:else if readmeHtml}
     <div class="readme-section">
       <h3 class="readme-heading">README</h3>
-      <div class="readme md">{@html readmeHtml()}</div>
+      <div class="readme">{@html readmeHtml}</div>
     </div>
   {/if}
 </div>
