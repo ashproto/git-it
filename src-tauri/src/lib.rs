@@ -29,6 +29,7 @@ pub fn run() {
             commands::create_tag,
             commands::delete_tag,
             commands::fetch,
+            commands::fast_forward_branch,
             commands::merge,
             commands::cherry_pick,
             commands::revert,

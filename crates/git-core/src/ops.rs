@@ -60,6 +60,21 @@ pub fn delete_tag(repo: &Path, name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Fast-forward a LOCAL branch to its remote tracking tip WITHOUT checking it out,
+/// using `git fetch <remote> <branch>:<branch>`. Git rejects a non-fast-forward
+/// update, so a diverged branch fails cleanly and leaves the ref untouched. Git
+/// also refuses to update the branch that is currently checked out — callers only
+/// offer this for non-current branches.
+pub fn fast_forward_branch(repo: &Path, branch: &str, remote: &str) -> Result<String, String> {
+    let refspec = format!("{}:{}", branch, branch);
+    let mut c = Command::new("git");
+    c.current_dir(repo)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .args(["fetch", "--end-of-options", remote, &refspec]);
+    let (o, e) = git_ops::run(&mut c)?;
+    Ok(format!("{}{}", o, e).trim().to_string())
+}
+
 /// Fetch from a remote (or all remotes when None), pruning deleted remote refs.
 pub fn fetch(repo: &Path, remote: Option<&str>) -> Result<String, String> {
     let mut c = Command::new("git");
@@ -286,6 +301,59 @@ mod tests {
         let payload = format!("--upload-pack=touch {}", marker.to_str().unwrap());
         let _ = fetch(&r.path, Some(&payload));
         assert!(!marker.exists(), "an option-injected --upload-pack payload must not run");
+    }
+
+    #[test]
+    fn fast_forward_branch_advances_non_current_branch() {
+        // Set up "origin": bare repo with main + c1.
+        let bare = unique_dir("ff-bare");
+        fs::create_dir_all(&bare).unwrap();
+        Command::new("git")
+            .current_dir(&bare)
+            .args(["init", "-q", "--bare"])
+            .output()
+            .unwrap();
+
+        // A working repo pushes c1 to origin.
+        let upstream = TempRepo::new();
+        upstream.commit("a.txt", "c1");
+        upstream.git(&["remote", "add", "origin", bare.to_str().unwrap()]);
+        upstream.git(&["push", "-q", "origin", "main"]);
+
+        // Clone origin to get "clone" with main tracking origin/main.
+        let clone_path = unique_dir("ff-clone");
+        Command::new("git")
+            .args(["clone", "-q", bare.to_str().unwrap(), clone_path.to_str().unwrap()])
+            .output()
+            .unwrap();
+
+        // Advance origin: add c2 and push.
+        upstream.commit("b.txt", "c2");
+        upstream.git(&["push", "-q", "origin", "main"]);
+
+        // In clone: switch to a second branch "work" so main is not checked out.
+        let clone = TempRepo { path: clone_path.clone() };
+        clone.git(&["config", "user.email", "t@example.com"]);
+        clone.git(&["config", "user.name", "Tester"]);
+        clone.git(&["checkout", "-q", "-b", "work"]);
+
+        // Fetch so origin/main is updated.
+        fetch(&clone.path, Some("origin")).unwrap();
+
+        let before = clone.rev("main");
+        let origin_main = clone.rev("origin/main");
+        assert_ne!(before, origin_main, "main should be behind origin/main before ff");
+
+        // Fast-forward main to origin/main without checking it out.
+        let res = fast_forward_branch(&clone.path, "main", "origin");
+        assert!(res.is_ok(), "ff failed: {:?}", res);
+
+        let after = clone.rev("main");
+        assert_ne!(before, after, "main should have advanced");
+        assert_eq!(after, origin_main, "main should now equal origin/main");
+
+        let _ = fs::remove_dir_all(&bare);
+        let _ = fs::remove_dir_all(&clone_path);
     }
 
     #[test]

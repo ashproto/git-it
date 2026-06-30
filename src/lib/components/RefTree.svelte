@@ -9,6 +9,7 @@
     onJump,
     onContext,
     colorOf,
+    onCheckout,
   }: {
     nodes: RefTreeNode[];
     kind: "local" | "remote" | "tag";
@@ -16,6 +17,7 @@
     onContext: (e: MouseEvent, ref: RefEntry, kind: "local" | "remote" | "tag") => void;
     // Resolves a ref's swatch colour — its graph lane colour (or manual override).
     colorOf: (ref: RefEntry) => string;
+    onCheckout: (ref: RefEntry, kind: "local" | "remote" | "tag") => void;
   } = $props();
 
   // Collapsed folder paths (in-memory; folders default expanded).
@@ -54,6 +56,7 @@
         class:muted={kind === "remote"}
         style={`padding-left:${indent(depth) + 12}px`}
         onclick={() => onJump(node.ref.sha)}
+        ondblclick={() => onCheckout(node.ref, kind)}
         oncontextmenu={(e) => onContext(e, node.ref, kind)}
         title={node.ref.name}
       >

@@ -45,6 +45,19 @@
     jumpToRefWithLoad(sha);
   }
 
+  function onRefCheckout(r: RefEntry, kind: "local" | "remote" | "tag") {
+    if (kind === "local") {
+      gitActions.checkout(r.name);
+    } else if (kind === "remote") {
+      // origin/feature → local "feature" tracking branch (create if missing, else switch).
+      const short = r.name.replace(/^[^/]+\//, "");
+      const exists = appState.refsByKind.local.some((b) => b.name === short);
+      if (exists) gitActions.checkout(short);
+      else gitActions.createBranch(short, r.name).then((ok) => { if (ok) gitActions.checkout(short); });
+    }
+    // tag → no-op (double-click only jumps).
+  }
+
   async function confirmDeleteBranch(name: string) {
     const ok = await dialogs.confirm({
       title: "Delete branch",
@@ -71,6 +84,17 @@
     const items: MenuItem[] = [];
     if (kind === "local") {
       items.push({ label: `Checkout ${r.name}`, action: () => gitActions.checkout(r.name) });
+      if (!r.isHead) {
+        const detail = appState.refsDetailed.find((d) => d.kind === "local" && d.name === r.name);
+        const upstream = detail?.upstream ?? null; // e.g. "origin/main"
+        if (upstream) {
+          const remote = upstream.slice(0, upstream.indexOf("/"));
+          items.push({
+            label: `Fast-forward to ${remote}`,
+            action: () => gitActions.fastForwardBranch(r.name, remote),
+          });
+        }
+      }
       items.push({
         label: "Rename…",
         action: async () => {
@@ -178,19 +202,19 @@
   {/if}
   <CollapsiblePanel title="Local">
     {#snippet headerActions()}<span class="ref-count">{refs.local.length}</span>{/snippet}
-    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} />
+    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} />
     {#if refs.local.length === 0}<p class="none">No local branches</p>{/if}
   </CollapsiblePanel>
 
   <CollapsiblePanel title="Remotes">
     {#snippet headerActions()}<span class="ref-count">{refs.remote.length}</span>{/snippet}
-    <RefTree nodes={remoteTree} kind="remote" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} />
+    <RefTree nodes={remoteTree} kind="remote" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} />
     {#if refs.remote.length === 0}<p class="none">No remotes</p>{/if}
   </CollapsiblePanel>
 
   <CollapsiblePanel title="Tags">
     {#snippet headerActions()}<span class="ref-count">{refs.tags.length}</span>{/snippet}
-    <RefTree nodes={tagTree} kind="tag" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} />
+    <RefTree nodes={tagTree} kind="tag" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} />
     {#if refs.tags.length === 0}<p class="none">No tags</p>{/if}
   </CollapsiblePanel>
 

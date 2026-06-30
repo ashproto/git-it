@@ -166,6 +166,11 @@ pub fn fetch(repo: String, remote: Option<String>) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn fast_forward_branch(repo: String, branch: String, remote: String) -> Result<String, String> {
+    ops::fast_forward_branch(&PathBuf::from(repo), &branch, &remote)
+}
+
+#[tauri::command]
 pub fn merge(repo: String, reference: String, no_ff: bool, squash: bool) -> Result<OpOutcome, String> {
     ops_merge::merge(&PathBuf::from(repo), &reference, no_ff, squash)
 }
