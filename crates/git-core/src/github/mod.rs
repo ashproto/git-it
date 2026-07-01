@@ -949,14 +949,20 @@ pub fn issue_create(repo: &Path, title: &str, body: &str) -> Result<String, Gith
 /// (its push then silently fails, leaving the repo created but empty — the reported
 /// bug). We instead reset inherited helpers and force gh's own credential helper for
 /// just this command, so the push authenticates with the gh token regardless of the
-/// user's git config. Returns gh's stdout (includes the new repo URL). `--flag=value`
-/// form keeps `name`/`description` dash-safe even if they start with `-`.
+/// user's git config. Returns gh's stdout (includes the new repo URL). `description`
+/// uses `--flag=value` form; `name` is a positional arg, so we reject a leading-dash
+/// name up front (GitHub repository names can't start with `-` anyway).
 pub fn create_repo(
     repo: &Path,
     name: &str,
     private: bool,
     description: &str,
 ) -> Result<String, GithubError> {
+    if name.starts_with('-') {
+        return Err(GithubError::Other(
+            "Repository name can't start with '-'.".into(),
+        ));
+    }
     let repo_str = repo.to_string_lossy().to_string();
     let source_arg = format!("--source={repo_str}");
     let visibility_arg = if private { "--private" } else { "--public" };

@@ -55,7 +55,9 @@ pub fn delete_branch(
             let mut p = Command::new("git");
             p.current_dir(repo)
                 .env("GIT_TERMINAL_PROMPT", "0")
-                .args(["push", rem, "--delete", "--", rb]);
+                // Options first, then --end-of-options, so BOTH the remote name and
+                // the branch operand are guarded against leading-dash flag injection.
+                .args(["push", "--delete", "--end-of-options", rem, rb]);
             git_ops::run(&mut p)
                 .map_err(|e| format!("Deleted local branch, but remote delete failed: {}", e))?;
         }
