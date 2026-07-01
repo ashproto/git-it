@@ -593,3 +593,13 @@ pub fn github_issue_detail(repo: String, number: u64) -> Result<github::GhIssueD
 pub fn github_readme(repo: String) -> Result<String, String> {
     git_core::github::readme(&PathBuf::from(repo)).map_err(|e| format!("{e:?}"))
 }
+
+#[tauri::command(async)]
+pub fn github_create_repo(
+    repo: String,
+    name: String,
+    private: bool,
+    description: String,
+) -> Result<String, github::GithubError> {
+    github::create_repo(&PathBuf::from(repo), &name, private, &description)
+}

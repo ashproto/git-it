@@ -53,6 +53,13 @@
     if (!ok) return;
     await gitActions.remoteRemove(name);
   }
+
+  async function doCreateOnGithub() {
+    const base = (appState.repo || "").replace(/\/+$/, "").split("/").pop() || "";
+    const res = await dialogs.createRepo({ name: base });
+    if (!res.confirmed || !res.name.trim()) return;
+    await gitActions.createGithubRepo(res.name.trim(), res.isPrivate, res.description);
+  }
 </script>
 
 <CollapsiblePanel title="Remotes" bind:collapsed {bare}>
@@ -61,6 +68,9 @@
   {:else}
     <div class="actions-row">
       <button type="button" class="primary" onclick={doAddRemote}>Add remote…</button>
+      {#if appState.remotes.length === 0}
+        <button type="button" onclick={doCreateOnGithub}>Create on GitHub…</button>
+      {/if}
     </div>
     {#if appState.remotes.length === 0}
       <p class="note">No remotes configured. Add one to enable Pull and Push.</p>
@@ -91,6 +101,8 @@
     font-style: italic;
   }
   .actions-row {
+    display: flex;
+    gap: 6px;
     margin-bottom: 8px;
   }
   .list {

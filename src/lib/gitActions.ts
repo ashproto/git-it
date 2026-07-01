@@ -876,4 +876,10 @@ export const gitActions = {
 
   remoteSetUrl: (name: string, url: string) =>
     run(`Set ${name} url`, () => api.remoteSetUrl(appState.repo, name, url)),
+
+  createGithubRepo: (name: string, isPrivate: boolean, description: string) =>
+    run(`Create GitHub repo ${name}`, async () => {
+      await api.githubCreateRepo(appState.repo, name, isPrivate, description);
+      await refreshRefs();
+    }),
 };

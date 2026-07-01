@@ -44,6 +44,14 @@ type DialogState =
       force: boolean;
       deleteRemote: boolean;
       resolve: (v: { confirmed: boolean; force: boolean; deleteRemote: boolean }) => void;
+    }
+  | {
+      kind: "createRepo";
+      title: string;
+      name: string;
+      isPrivate: boolean;
+      description: string;
+      resolve: (v: { confirmed: boolean; name: string; isPrivate: boolean; description: string }) => void;
     };
 
 function makeDialogs() {
@@ -57,6 +65,7 @@ function makeDialogs() {
     else if (state.kind === "destructive") state.resolve({ confirmed: false, backup: false });
     else if (state.kind === "credentials") state.resolve(null);
     else if (state.kind === "branchDelete") state.resolve({ confirmed: false, force: false, deleteRemote: false });
+    else if (state.kind === "createRepo") state.resolve({ confirmed: false, name: "", isPrivate: true, description: "" });
   }
 
   return {
@@ -185,6 +194,23 @@ function makeDialogs() {
       if (state.kind === "branchDelete") {
         const { force, deleteRemote } = state;
         state.resolve({ confirmed, force, deleteRemote });
+        state = { kind: "none" };
+      }
+    },
+    // ── Create-on-GitHub dialog ────────────────────────────────────────────────
+    createRepo(opts: { name: string }): Promise<{ confirmed: boolean; name: string; isPrivate: boolean; description: string }> {
+      settlePending();
+      return new Promise((resolve) => {
+        state = { kind: "createRepo", title: "Create repository on GitHub", name: opts.name, isPrivate: true, description: "", resolve };
+      });
+    },
+    setCreateRepoName(v: string) { if (state.kind === "createRepo") state = { ...state, name: v }; },
+    setCreateRepoPrivate(v: boolean) { if (state.kind === "createRepo") state = { ...state, isPrivate: v }; },
+    setCreateRepoDescription(v: string) { if (state.kind === "createRepo") state = { ...state, description: v }; },
+    resolveCreateRepo(confirmed: boolean) {
+      if (state.kind === "createRepo") {
+        const { name, isPrivate, description } = state;
+        state.resolve({ confirmed, name, isPrivate, description });
         state = { kind: "none" };
       }
     },

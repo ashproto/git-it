@@ -46,6 +46,18 @@
     }
   }
 
+  function handleCreateRepoKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (dialogs.state.kind === "createRepo" && dialogs.state.name.trim()) {
+        dialogs.resolveCreateRepo(true);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      dialogs.resolveCreateRepo(false);
+    }
+  }
+
   // Credentials dialog helpers
   function submitCredentials() {
     const s = dialogs.state;
@@ -191,6 +203,64 @@
       </div>
     </div>
   </div>
+{:else if dialogs.state.kind === "createRepo"}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="overlay"
+    onpointerdown={(e) => {
+      if (e.target === e.currentTarget) dialogs.resolveCreateRepo(false);
+    }}
+    onkeydown={handleCreateRepoKey}
+  >
+    <div class="dialog" role="dialog" aria-modal="true" aria-label={dialogs.state.title}>
+      <h3>{dialogs.state.title}</h3>
+      <p class="msg">Creates the repository on your GitHub account, adds it as origin, and pushes.</p>
+      <label class="lbl" for="create-repo-name">Repository name</label>
+      <input
+        id="create-repo-name"
+        value={dialogs.state.name}
+        oninput={(e) => dialogs.setCreateRepoName((e.currentTarget as HTMLInputElement).value)}
+      />
+      <div class="visibility-row" role="radiogroup" aria-label="Visibility">
+        <label class="radio-opt">
+          <input
+            type="radio"
+            name="create-repo-visibility"
+            checked={dialogs.state.isPrivate}
+            onchange={() => dialogs.setCreateRepoPrivate(true)}
+          />
+          Private
+        </label>
+        <label class="radio-opt">
+          <input
+            type="radio"
+            name="create-repo-visibility"
+            checked={!dialogs.state.isPrivate}
+            onchange={() => dialogs.setCreateRepoPrivate(false)}
+          />
+          Public
+        </label>
+      </div>
+      <label class="lbl" for="create-repo-desc">Description</label>
+      <input
+        id="create-repo-desc"
+        value={dialogs.state.description}
+        placeholder="Description (optional)"
+        oninput={(e) => dialogs.setCreateRepoDescription((e.currentTarget as HTMLInputElement).value)}
+      />
+      <div class="actions">
+        <button type="button" onclick={() => dialogs.resolveCreateRepo(false)}>Cancel</button>
+        <button
+          type="button"
+          class="primary"
+          disabled={!dialogs.state.name.trim()}
+          onclick={() => dialogs.resolveCreateRepo(true)}
+        >
+          Create &amp; push
+        </button>
+      </div>
+    </div>
+  </div>
 {:else if dialogs.state.kind === "credentials"}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -306,6 +376,31 @@
   button.primary.danger {
     background: var(--danger);
     border-color: var(--danger);
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .visibility-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 14px;
+  }
+  .radio-opt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .radio-opt input[type="radio"] {
+    width: auto;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
   }
   .consequence {
     color: var(--text-muted);

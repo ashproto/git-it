@@ -196,6 +196,8 @@ export const api = {
   githubIssueDetail: (repo: string, number: number) =>
     invoke<GhIssueDetail>("github_issue_detail", { repo, number }),
   githubReadme: (repo: string) => invoke<string>("github_readme", { repo }),
+  githubCreateRepo: (repo: string, name: string, isPrivate: boolean, description: string) =>
+    invoke<string>("github_create_repo", { repo, name, private: isPrivate, description }),
   remoteAdd: (repo: string, name: string, url: string) =>
     invoke<void>("remote_add", { repo, name, url }),
   remoteRemove: (repo: string, name: string) => invoke<void>("remote_remove", { repo, name }),

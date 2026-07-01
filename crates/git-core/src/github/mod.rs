@@ -939,6 +939,37 @@ pub fn issue_create(repo: &Path, title: &str, body: &str) -> Result<String, Gith
     Ok(out.trim().to_string())
 }
 
+/// Create a GitHub repo from this local repo and wire it as `origin`, pushing the
+/// current commits — `gh repo create <name> --source <repo> --private|--public
+/// [--description=<d>] --remote=origin --push`. Returns gh's stdout (includes the
+/// new repo URL). Errors surface the gh message (e.g. name already exists, not
+/// authed). `name` may be "name" (own account) or "owner/name". `--title=`-style
+/// single-arg flags keep `name`/`description` dash-safe even if they start with `-`.
+pub fn create_repo(
+    repo: &Path,
+    name: &str,
+    private: bool,
+    description: &str,
+) -> Result<String, GithubError> {
+    let repo_str = repo.to_string_lossy().to_string();
+    let source_arg = format!("--source={repo_str}");
+    let visibility_arg = if private { "--private" } else { "--public" };
+    let desc_arg = format!("--description={description}");
+    let mut args: Vec<&str> = vec![
+        "repo",
+        "create",
+        name,
+        &source_arg,
+        visibility_arg,
+        "--remote=origin",
+        "--push",
+    ];
+    if !description.trim().is_empty() {
+        args.push(&desc_arg);
+    }
+    run_gh(&args, None)
+}
+
 // ---- statusCheckRollup normalization (CheckRun + StatusContext leaves) ----
 #[derive(Deserialize)]
 struct RawCheck {
