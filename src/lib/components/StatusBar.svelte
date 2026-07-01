@@ -39,7 +39,13 @@
   });
 
   // ── Spinner visibility ────────────────────────────────────────────────────────
-  const spinning = $derived(appState.remoteOpActive || appState.isRewriting);
+  // Spin for ANY in-flight work — remote ops, history rewrites, AND the general
+  // navigation/git-action busy state (checkout, delete, fetch, fast-forward, repo
+  // load). Without navBusy/repoLoading the bar showed only text during a delete, so
+  // the app looked frozen.
+  const spinning = $derived(
+    appState.remoteOpActive || appState.isRewriting || appState.navBusy || appState.repoLoading,
+  );
 </script>
 
 <div class="status-bar" role="status" aria-live="polite">
