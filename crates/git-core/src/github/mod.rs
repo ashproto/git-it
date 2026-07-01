@@ -939,12 +939,18 @@ pub fn issue_create(repo: &Path, title: &str, body: &str) -> Result<String, Gith
     Ok(out.trim().to_string())
 }
 
-/// Create a GitHub repo from this local repo and wire it as `origin`, pushing the
-/// current commits — `gh repo create <name> --source <repo> --private|--public
-/// [--description=<d>] --remote=origin --push`. Returns gh's stdout (includes the
-/// new repo URL). Errors surface the gh message (e.g. name already exists, not
-/// authed). `name` may be "name" (own account) or "owner/name". `--title=`-style
-/// single-arg flags keep `name`/`description` dash-safe even if they start with `-`.
+/// Create a GitHub repo from this local repo, wire it as `origin`, and push the
+/// current branch (setting upstream). TWO steps, deliberately not gh's `--push`:
+/// (1) `gh repo create <name> --source=<repo> --private|--public
+/// [--description=<d>] --remote=origin` creates the repo + adds the remote using
+/// gh's API token — always works. (2) We run `git push --set-upstream origin HEAD`
+/// ourselves. gh's own `--push` shells out to a plain `git push` that relies on the
+/// user's GLOBAL git credential helper, which is frequently unconfigured or broken
+/// (its push then silently fails, leaving the repo created but empty — the reported
+/// bug). We instead reset inherited helpers and force gh's own credential helper for
+/// just this command, so the push authenticates with the gh token regardless of the
+/// user's git config. Returns gh's stdout (includes the new repo URL). `--flag=value`
+/// form keeps `name`/`description` dash-safe even if they start with `-`.
 pub fn create_repo(
     repo: &Path,
     name: &str,
@@ -962,12 +968,40 @@ pub fn create_repo(
         &source_arg,
         visibility_arg,
         "--remote=origin",
-        "--push",
     ];
     if !description.trim().is_empty() {
         args.push(&desc_arg);
     }
-    run_gh(&args, None)
+    // Step 1 — create the repo + add `origin` (gh API token; reliable).
+    let created = run_gh(&args, None)?;
+
+    // Step 2 — push the current branch + set upstream. The empty `credential.helper=`
+    // resets any inherited (possibly broken) global helpers; the second entry forces
+    // gh's own credential helper so auth uses the gh token. GIT_TERMINAL_PROMPT=0 so a
+    // missing credential fails fast instead of hanging on a prompt.
+    let out = Command::new("git")
+        .current_dir(repo)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .args([
+            "-c",
+            "credential.helper=",
+            "-c",
+            "credential.helper=!gh auth git-credential",
+            "push",
+            "--set-upstream",
+            "origin",
+            "HEAD",
+        ])
+        .output()
+        .map_err(|e| GithubError::Other(format!("git push failed to spawn: {e}")))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(GithubError::Other(format!(
+            "Repository created and remote added, but the push failed: {}",
+            stderr.trim()
+        )));
+    }
+    Ok(created)
 }
 
 // ---- statusCheckRollup normalization (CheckRun + StatusContext leaves) ----
