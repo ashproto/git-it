@@ -231,6 +231,27 @@ function makeGithubState() {
     get statsLoading() {
       return statsLoading;
     },
+    /** True while ANY github fetch is in flight (availability, stats, or any
+     *  panel). Drives the header Refresh spinner — a soft refresh keeps stale data
+     *  on screen (no skeleton), so this is the only signal that work is happening. */
+    get anyLoading() {
+      return (
+        availLoading ||
+        statsLoading ||
+        pulls.status === "loading" ||
+        issues.status === "loading" ||
+        releases.status === "loading" ||
+        runs.status === "loading" ||
+        traffic.status === "loading" ||
+        contributors.status === "loading" ||
+        activity.status === "loading" ||
+        milestones.status === "loading" ||
+        labels.status === "loading" ||
+        readme.status === "loading" ||
+        prDetail.status === "loading" ||
+        issueDetail.status === "loading"
+      );
+    },
     get activeTab() {
       return activeTab;
     },

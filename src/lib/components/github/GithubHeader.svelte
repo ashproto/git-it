@@ -31,7 +31,14 @@
         <Skeleton w="80px" h="46px" radius="8px" />
       {/each}
     {/if}
-    <button class="refresh" type="button" title="Refresh" onclick={onrefresh}>↻</button>
+    <button
+      class="refresh"
+      class:spinning={githubState.anyLoading}
+      type="button"
+      title={githubState.anyLoading ? "Refreshing…" : "Refresh"}
+      aria-busy={githubState.anyLoading}
+      onclick={onrefresh}
+    >↻</button>
   </div>
 </header>
 
@@ -71,5 +78,27 @@
     background: var(--panel-bg);
     color: var(--text);
     cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+  }
+  .refresh:hover {
+    border-color: var(--accent);
+  }
+  /* Spin the ↻ glyph while any github fetch is in flight — the only feedback on a
+     soft refresh, which keeps stale data on screen (no skeleton). */
+  .refresh.spinning {
+    color: var(--accent);
+    animation: gh-refresh-spin 0.8s linear infinite;
+  }
+  @keyframes gh-refresh-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .refresh.spinning {
+      animation: none;
+      opacity: 0.6;
+    }
   }
 </style>
