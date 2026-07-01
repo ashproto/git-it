@@ -7,6 +7,7 @@
   import Markdown from "./Markdown.svelte";
   import GithubSkeleton from "./GithubSkeleton.svelte";
   import PrTimeline from "./PrTimeline.svelte";
+  import GithubCommentBox from "./GithubCommentBox.svelte";
   import { revealIn } from "../../github/motion";
 
   let { kind, number }: { kind: "pr" | "issue"; number: number } = $props();
@@ -66,7 +67,6 @@
         <a class="ext" href={d.url} target="_blank" rel="noreferrer">Open on github.com ↗</a>
       </div>
       <div class="acts">
-        <button type="button" onclick={() => githubActions.open({ kind: "comment", target: kind, number: d.number, title: d.title })}>Comment</button>
         {#if pr && pr.state === "OPEN" && !pr.isDraft}
           <button type="button" onclick={() => githubActions.open({ kind: "merge", number: d.number, title: d.title })}>Merge</button>
         {/if}
@@ -149,6 +149,8 @@
         {/if}
       </section>
     {/if}
+
+    <GithubCommentBox target={kind} number={d.number} />
   {/if}
 </div>
 

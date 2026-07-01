@@ -61,6 +61,27 @@ function makeGithubActions() {
     }
   }
 
+  // Post a comment inline (no modal) — used by the composer at the bottom of a
+  // PR/issue detail. Manages no shared busy/error state (the caller owns its own);
+  // on success it bumps the reload nonce so the open detail re-fetches and the new
+  // comment lands in the timeline.
+  async function commentInline(
+    target: "pr" | "issue",
+    number: number,
+    body: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const repo = appState.repo;
+    if (!repo || !body.trim()) return { ok: false, error: "Empty comment." };
+    try {
+      if (target === "pr") await api.githubPrComment(repo, number, body);
+      else await api.githubIssueComment(repo, number, body);
+      githubState.bumpReload();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errText(e) };
+    }
+  }
+
   return {
     get pending() {
       return pending;
@@ -74,6 +95,7 @@ function makeGithubActions() {
     open,
     cancel,
     submit,
+    commentInline,
   };
 }
 
