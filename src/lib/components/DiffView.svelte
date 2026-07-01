@@ -723,18 +723,18 @@
 
   /* Unified row backgrounds */
   .diff-row.add {
-    background: var(--diff-add-bg, rgba(46, 160, 67, 0.10));
+    background: var(--diff-add-bg, rgba(46, 160, 67, 0.18));
   }
   .diff-row.del {
-    background: var(--diff-del-bg, rgba(210, 35, 35, 0.10));
+    background: var(--diff-del-bg, rgba(210, 35, 35, 0.18));
   }
 
   @media (prefers-color-scheme: dark) {
     .diff-row.add {
-      background: var(--diff-add-bg-dark, rgba(46, 160, 67, 0.14));
+      background: var(--diff-add-bg-dark, rgba(46, 160, 67, 0.24));
     }
     .diff-row.del {
-      background: var(--diff-del-bg-dark, rgba(210, 35, 35, 0.14));
+      background: var(--diff-del-bg-dark, rgba(210, 35, 35, 0.24));
     }
   }
 
@@ -759,10 +759,10 @@
   }
 
   .split-cell.add {
-    background: var(--diff-add-bg, rgba(46, 160, 67, 0.10));
+    background: var(--diff-add-bg, rgba(46, 160, 67, 0.18));
   }
   .split-cell.del {
-    background: var(--diff-del-bg, rgba(210, 35, 35, 0.10));
+    background: var(--diff-del-bg, rgba(210, 35, 35, 0.18));
   }
   .split-cell.context {
     background: transparent;
@@ -770,10 +770,10 @@
 
   @media (prefers-color-scheme: dark) {
     .split-cell.add {
-      background: var(--diff-add-bg-dark, rgba(46, 160, 67, 0.14));
+      background: var(--diff-add-bg-dark, rgba(46, 160, 67, 0.24));
     }
     .split-cell.del {
-      background: var(--diff-del-bg-dark, rgba(210, 35, 35, 0.14));
+      background: var(--diff-del-bg-dark, rgba(210, 35, 35, 0.24));
     }
   }
 
