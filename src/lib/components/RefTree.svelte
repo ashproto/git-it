@@ -10,6 +10,8 @@
     onContext,
     colorOf,
     onCheckout,
+    selectedKey,
+    onSelect,
   }: {
     nodes: RefTreeNode[];
     kind: "local" | "remote" | "tag";
@@ -18,6 +20,10 @@
     // Resolves a ref's swatch colour — its graph lane colour (or manual override).
     colorOf: (ref: RefEntry) => string;
     onCheckout: (ref: RefEntry, kind: "local" | "remote" | "tag") => void;
+    // Composite `${kind}:${name}` key of the currently-selected ref row (across
+    // all three trees), or null if none selected yet.
+    selectedKey: string | null;
+    onSelect: (kind: "local" | "remote" | "tag", name: string) => void;
   } = $props();
 
   // Collapsed folder paths (in-memory; folders default expanded).
@@ -54,10 +60,17 @@
         class="ref"
         class:head={kind === "local" && node.ref.isHead}
         class:muted={kind === "remote"}
+        class:selected={`${kind}:${node.ref.name}` === selectedKey}
         style={`padding-left:${indent(depth) + 12}px`}
-        onclick={() => onJump(node.ref.sha)}
+        onclick={() => {
+          onJump(node.ref.sha);
+          onSelect(kind, node.ref.name);
+        }}
         ondblclick={() => onCheckout(node.ref, kind)}
-        oncontextmenu={(e) => onContext(e, node.ref, kind)}
+        oncontextmenu={(e) => {
+          onContext(e, node.ref, kind);
+          onSelect(kind, node.ref.name);
+        }}
         title={node.ref.name}
       >
         <span class="ref-ic" style={`color:${colorOf(node.ref)}`} aria-hidden="true">
@@ -102,7 +115,17 @@
   }
   .folder:hover,
   .ref:hover {
-    background: var(--row-hover);
+    background: color-mix(in srgb, var(--accent) 10%, var(--row-hover));
+  }
+  /* Selected ref row: stronger accent tint + a left accent bar, so it reads
+     as clearly distinct from the (lighter) hover state. Applies to local,
+     remote (.muted) and tag rows alike. */
+  .ref.selected {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .ref.selected:hover {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
   .chev {
     display: inline-block;

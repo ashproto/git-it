@@ -34,6 +34,14 @@
   // Ref sections (Local/Remotes/Tags) now use CollapsiblePanel, which manages its
   // own collapse state — no per-section open flags needed here.
 
+  // Visual "selected row" state for the branch/remote/tag lists — a composite
+  // `${kind}:${name}` key (kinds can share names, e.g. local "main" vs a tag
+  // "main"), so it must include the kind to disambiguate.
+  let selectedRefKey = $state<string | null>(null);
+  function selectRef(kind: "local" | "remote" | "tag", name: string) {
+    selectedRefKey = `${kind}:${name}`;
+  }
+
   // Display-only navigation: focus + select the ref's commit and scroll to it.
   // (Checkout etc. arrive in the operations phases.)
   function jumpTo(sha: string) {
@@ -76,6 +84,7 @@
   function onRefContext(event: MouseEvent, r: RefEntry, kind: "local" | "remote" | "tag") {
     event.preventDefault();
     jumpTo(r.sha);
+    selectRef(kind, r.name);
     const items: MenuItem[] = [];
     if (kind === "local") {
       items.push({ label: `Checkout ${r.name}`, action: () => gitActions.checkout(r.name) });
@@ -197,19 +206,19 @@
   {/if}
   <CollapsiblePanel title="Local">
     {#snippet headerActions()}<span class="ref-count">{refs.local.length}</span>{/snippet}
-    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} />
+    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} selectedKey={selectedRefKey} onSelect={selectRef} />
     {#if refs.local.length === 0}<p class="none">No local branches</p>{/if}
   </CollapsiblePanel>
 
   <CollapsiblePanel title="Remotes">
     {#snippet headerActions()}<span class="ref-count">{refs.remote.length}</span>{/snippet}
-    <RefTree nodes={remoteTree} kind="remote" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} />
+    <RefTree nodes={remoteTree} kind="remote" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} selectedKey={selectedRefKey} onSelect={selectRef} />
     {#if refs.remote.length === 0}<p class="none">No remotes</p>{/if}
   </CollapsiblePanel>
 
   <CollapsiblePanel title="Tags">
     {#snippet headerActions()}<span class="ref-count">{refs.tags.length}</span>{/snippet}
-    <RefTree nodes={tagTree} kind="tag" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} />
+    <RefTree nodes={tagTree} kind="tag" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} selectedKey={selectedRefKey} onSelect={selectRef} />
     {#if refs.tags.length === 0}<p class="none">No tags</p>{/if}
   </CollapsiblePanel>
 
