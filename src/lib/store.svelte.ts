@@ -479,6 +479,12 @@ function makeState() {
   }
 
   let graphCommits = $state<GraphCommit[]>([]);
+  // Which repo the currently-displayed graphCommits belong to. On a repo SWITCH we
+  // deliberately keep the previous repo's commits on screen (flicker-fix) until the
+  // new repo's data swaps in — so `graphCommits.length` is non-zero mid-switch. This
+  // lets the UI tell "showing another repo's stale graph" (→ show a loading skeleton)
+  // apart from "same repo, just refreshing" (→ keep the data, no flash).
+  let graphCommitsRepo = $state<string>("");
   let graphHasMore = $state(false);
   let graphLoadingMore = $state(false);
   const rows = $derived(
@@ -1261,6 +1267,9 @@ function makeState() {
     get graphCommits() {
       return graphCommits;
     },
+    get graphCommitsRepo() {
+      return graphCommitsRepo;
+    },
     get rows() {
       return rows;
     },
@@ -1521,6 +1530,7 @@ function makeState() {
     },
     setGraphCommits(gc: GraphCommit[]) {
       graphCommits = gc;
+      graphCommitsRepo = repo;
       commits = gc.map(graphToCommit);
       newDates = new Map();
       selected = new Set();
@@ -1535,6 +1545,7 @@ function makeState() {
     // closes the detail pane, collapses paged history, or discards in-progress edits.
     applyGraphRefresh(gc: GraphCommit[]) {
       graphCommits = gc;
+      graphCommitsRepo = repo;
       commits = gc.map(graphToCommit);
       const live = new Set(gc.map((c) => c.sha));
       if (currentSha && !live.has(currentSha)) currentSha = null;

@@ -402,7 +402,7 @@
                  from the changes screen. display:contents → no layout box when shown. -->
             <div class="timeline-stack" class:hidden={appState.activeView === "changes" || appState.activeView === "github"}>
               <UndoBar />
-              {#if appState.repoLoading && appState.graphCommits.length === 0}
+              {#if appState.repoLoading && (appState.graphCommits.length === 0 || appState.graphCommitsRepo !== appState.repo)}
                 <GraphSkeleton />
               {:else}
                 <GraphHistory bind:collapsed={graphCollapsed} />
