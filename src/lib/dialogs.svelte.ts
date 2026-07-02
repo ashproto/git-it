@@ -52,6 +52,16 @@ type DialogState =
       isPrivate: boolean;
       description: string;
       resolve: (v: { confirmed: boolean; name: string; isPrivate: boolean; description: string }) => void;
+    }
+  | {
+      kind: "createPr";
+      title: string;
+      body: string;
+      base: string;
+      draft: boolean;
+      branch: string;
+      bases: string[];
+      resolve: (v: { title: string; body: string; base: string; draft: boolean } | null) => void;
     };
 
 function makeDialogs() {
@@ -66,6 +76,7 @@ function makeDialogs() {
     else if (state.kind === "credentials") state.resolve(null);
     else if (state.kind === "branchDelete") state.resolve({ confirmed: false, force: false, deleteRemote: false });
     else if (state.kind === "createRepo") state.resolve({ confirmed: false, name: "", isPrivate: true, description: "" });
+    else if (state.kind === "createPr") state.resolve(null);
   }
 
   return {
@@ -211,6 +222,38 @@ function makeDialogs() {
       if (state.kind === "createRepo") {
         const { name, isPrivate, description } = state;
         state.resolve({ confirmed, name, isPrivate, description });
+        state = { kind: "none" };
+      }
+    },
+    // ── Create-pull-request dialog ─────────────────────────────────────────────
+    openCreatePr(
+      branch: string,
+      bases: string[],
+      prefillTitle: string,
+      prefillBody: string,
+    ): Promise<{ title: string; body: string; base: string; draft: boolean } | null> {
+      settlePending();
+      return new Promise((resolve) => {
+        state = {
+          kind: "createPr",
+          title: prefillTitle,
+          body: prefillBody,
+          base: bases[0] ?? "",
+          draft: false,
+          branch,
+          bases,
+          resolve,
+        };
+      });
+    },
+    setCreatePrTitle(v: string) { if (state.kind === "createPr") state = { ...state, title: v }; },
+    setCreatePrBody(v: string) { if (state.kind === "createPr") state = { ...state, body: v }; },
+    setCreatePrBase(v: string) { if (state.kind === "createPr") state = { ...state, base: v }; },
+    setCreatePrDraft(v: boolean) { if (state.kind === "createPr") state = { ...state, draft: v }; },
+    resolveCreatePr(accepted: boolean) {
+      if (state.kind === "createPr") {
+        const { title, body, base, draft } = state;
+        state.resolve(accepted ? { title, body, base, draft } : null);
         state = { kind: "none" };
       }
     },

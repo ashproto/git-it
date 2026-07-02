@@ -7,6 +7,8 @@ import { SAMPLE_GRAPH } from "./graph/sample";
 import type { GraphCommit, OpOutcome, RemoteOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot, WorkingFile } from "./types";
 import { dialogs } from "./dialogs.svelte";
 import { graphView } from "./graphView.svelte";
+import { githubState } from "./githubState.svelte";
+import { prefillFromSubjects } from "./github/prCreate";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -882,4 +884,45 @@ export const gitActions = {
       await api.githubCreateRepo(appState.repo, name, isPrivate, description);
       await refreshRefs();
     }),
+
+  // Create-PR wizard: prefill title/body from the branch's commits, collect
+  // title/body/base/draft in a dialog, create via `gh` (auto-pushing the branch
+  // first if needed), then jump to the new PR on the GitHub screen.
+  createPullRequest: async () => {
+    const branch = appState.refsByKind.local.find((r) => r.isHead)?.name ?? null;
+    if (!branch) {
+      appState.status = "No branch checked out — check out a branch to create a pull request.";
+      return;
+    }
+    // Candidate base branches: every local branch except the current one, with
+    // the repo's default branch first (from GitHub stats when loaded, else
+    // main/master by convention).
+    const others = appState.refsByKind.local.map((r) => r.name).filter((n) => n !== branch);
+    if (others.length === 0) {
+      appState.status = "No other local branch to use as the PR base.";
+      return;
+    }
+    const preferred =
+      [githubState.stats?.defaultBranch, "main", "master"].find(
+        (n): n is string => !!n && others.includes(n),
+      ) ?? null;
+    const bases = preferred ? [preferred, ...others.filter((n) => n !== preferred)] : others;
+    // Best-effort prefill from the commit subjects on base..HEAD.
+    const subjects = await api
+      .branchSubjects(appState.repo, bases[0], 20)
+      .catch(() => [] as string[]);
+    const prefill = prefillFromSubjects(subjects, branch);
+    const v = await dialogs.openCreatePr(branch, bases, prefill.title, prefill.body);
+    if (!v) return;
+    await run("Create pull request", async () => {
+      const number = await api.githubPrCreate(appState.repo, v.title, v.body, v.base, v.draft);
+      // The auto-push may have just created the branch's upstream.
+      await refreshRefs();
+      // Jump straight to the new PR on the GitHub screen.
+      appState.setActiveView("github");
+      githubState.setActiveTab("pulls");
+      githubState.bumpReload();
+      githubState.openItem("pr", number);
+    });
+  },
 };

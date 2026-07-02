@@ -4,9 +4,11 @@
   let inputValue = $state("");
   let inputEl = $state<HTMLInputElement | undefined>();
   let credUsernameEl = $state<HTMLInputElement | undefined>();
+  let prTitleEl = $state<HTMLInputElement | undefined>();
 
   // When a prompt opens, seed + focus the field.
   // When a credentials dialog opens, focus the username input.
+  // When a create-PR dialog opens, focus the title input.
   $effect(() => {
     const s = dialogs.state;
     if (s.kind === "prompt") {
@@ -15,6 +17,9 @@
       inputEl?.select();
     } else if (s.kind === "credentials") {
       credUsernameEl?.focus();
+    } else if (s.kind === "createPr") {
+      prTitleEl?.focus();
+      prTitleEl?.select();
     }
   });
 
@@ -55,6 +60,20 @@
     } else if (e.key === "Escape") {
       e.preventDefault();
       dialogs.resolveCreateRepo(false);
+    }
+  }
+
+  function handleCreatePrKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      // Enter in the description textarea inserts a newline, never submits.
+      if (e.target instanceof HTMLTextAreaElement) return;
+      e.preventDefault();
+      if (dialogs.state.kind === "createPr" && dialogs.state.title.trim()) {
+        dialogs.resolveCreatePr(true);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      dialogs.resolveCreatePr(false);
     }
   }
 
@@ -261,6 +280,67 @@
       </div>
     </div>
   </div>
+{:else if dialogs.state.kind === "createPr"}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="overlay"
+    onpointerdown={(e) => {
+      if (e.target === e.currentTarget) dialogs.resolveCreatePr(false);
+    }}
+    onkeydown={handleCreatePrKey}
+  >
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="Create pull request">
+      <h3>Create pull request</h3>
+      <div class="pr-branch-row">
+        <span class="pr-branch">{dialogs.state.branch}</span>
+        <span class="pr-arrow" aria-hidden="true">→</span>
+        <select
+          class="pr-base"
+          aria-label="Base branch"
+          value={dialogs.state.base}
+          onchange={(e) => dialogs.setCreatePrBase((e.currentTarget as HTMLSelectElement).value)}
+        >
+          {#each dialogs.state.bases as b (b)}
+            <option value={b}>{b}</option>
+          {/each}
+        </select>
+      </div>
+      <label class="lbl" for="create-pr-title">Title</label>
+      <input
+        id="create-pr-title"
+        bind:this={prTitleEl}
+        value={dialogs.state.title}
+        oninput={(e) => dialogs.setCreatePrTitle((e.currentTarget as HTMLInputElement).value)}
+      />
+      <label class="lbl" for="create-pr-body">Description</label>
+      <textarea
+        id="create-pr-body"
+        rows="6"
+        placeholder="Description (optional)"
+        value={dialogs.state.body}
+        oninput={(e) => dialogs.setCreatePrBody((e.currentTarget as HTMLTextAreaElement).value)}
+      ></textarea>
+      <label class="backup-row">
+        <input
+          type="checkbox"
+          checked={dialogs.state.draft}
+          onchange={(e) => dialogs.setCreatePrDraft((e.currentTarget as HTMLInputElement).checked)}
+        />
+        Create as draft
+      </label>
+      <div class="actions">
+        <button type="button" onclick={() => dialogs.resolveCreatePr(false)}>Cancel</button>
+        <button
+          type="button"
+          class="primary"
+          disabled={!dialogs.state.title.trim()}
+          onclick={() => dialogs.resolveCreatePr(true)}
+        >
+          Create pull request
+        </button>
+      </div>
+    </div>
+  </div>
 {:else if dialogs.state.kind === "credentials"}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -431,5 +511,46 @@
     font-size: 11px;
     color: var(--text-muted);
     line-height: 1.4;
+  }
+  textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    margin-bottom: 14px;
+    resize: vertical;
+  }
+  .pr-branch-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  .pr-branch {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pr-arrow {
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  select.pr-base {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
   }
 </style>
