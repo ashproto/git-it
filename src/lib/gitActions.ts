@@ -309,7 +309,13 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
 }
 
 // Git error/output text is often multiline; toasts get only the first line (contract d).
+// GitHub commands reject with a serialized GithubError OBJECT ({kind, message?}) — String()
+// on that yields "[object Object]", so unwrap it first (mirrors errText in githubActions).
 function firstLine(e: unknown): string {
+  if (e && typeof e === "object" && "kind" in e) {
+    const g = e as { kind: string; message?: string };
+    return String(g.kind === "Other" ? (g.message ?? g.kind) : g.kind).split("\n")[0];
+  }
   return String(e).split("\n")[0];
 }
 
@@ -902,8 +908,12 @@ export const gitActions = {
       appState.status = "No other local branch to use as the PR base.";
       return;
     }
+    // Only trust stats' default branch when it was loaded for THIS repo — the
+    // GitHub screen caches one repo's stats, which may belong to another tab.
+    const statsDefault =
+      githubState.loadedRepoPath === appState.repo ? githubState.stats?.defaultBranch : null;
     const preferred =
-      [githubState.stats?.defaultBranch, "main", "master"].find(
+      [statsDefault, "main", "master"].find(
         (n): n is string => !!n && others.includes(n),
       ) ?? null;
     const bases = preferred ? [preferred, ...others.filter((n) => n !== preferred)] : others;
@@ -918,8 +928,12 @@ export const gitActions = {
       const number = await api.githubPrCreate(appState.repo, v.title, v.body, v.base, v.draft);
       // The auto-push may have just created the branch's upstream.
       await refreshRefs();
-      // Jump straight to the new PR on the GitHub screen.
+      // Jump straight to the new PR on the GitHub screen. Await ensure() BEFORE
+      // selecting: a fresh GitHub-screen mount runs ensure() itself, and a first
+      // load (loadedRepo mismatch) resets selectedItem — awaiting it here makes
+      // the mount's ensure() an early-return no-op, so the selection sticks.
       appState.setActiveView("github");
+      await githubState.ensure(appState.repo);
       githubState.setActiveTab("pulls");
       githubState.bumpReload();
       githubState.openItem("pr", number);

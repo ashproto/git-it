@@ -229,6 +229,11 @@ function makeGithubState() {
   }
 
   return {
+    /** The repo path the cached availability/stats belong to (null before first load).
+     *  Lets callers reject another repo's cached stats (e.g. defaultBranch). */
+    get loadedRepoPath() {
+      return loadedRepo;
+    },
     get availability() {
       return availability;
     },
