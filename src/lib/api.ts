@@ -21,6 +21,7 @@ import type {
   IssueStateFilter,
   GhPullDetail,
   GhIssueDetail,
+  GhCommentKind,
   DraftComment,
   GraphCommit,
   OpOutcome,
@@ -202,6 +203,13 @@ export const api = {
     invoke<void>("github_pr_reply_thread", { repo, prNumber, commentId, body }),
   githubPrResolveThread: (repo: string, threadId: string, resolve: boolean) =>
     invoke<void>("github_pr_resolve_thread", { repo, threadId, resolve }),
+  githubCurrentLogin: () => invoke<string>("github_current_login"),
+  githubSetReaction: (repo: string, kind: GhCommentKind, target: number, content: string, add: boolean) =>
+    invoke<void>("github_set_reaction", { repo, kind, target, content, add }),
+  githubEditComment: (repo: string, kind: GhCommentKind, target: number, body: string) =>
+    invoke<void>("github_edit_comment", { repo, kind, target, body }),
+  githubDeleteComment: (repo: string, kind: GhCommentKind, target: number) =>
+    invoke<void>("github_delete_comment", { repo, kind, target }),
   githubIssueDetail: (repo: string, number: number) =>
     invoke<GhIssueDetail>("github_issue_detail", { repo, number }),
   githubReadme: (repo: string) => invoke<string>("github_readme", { repo }),

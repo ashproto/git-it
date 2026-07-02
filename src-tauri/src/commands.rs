@@ -625,6 +625,41 @@ pub fn github_pr_resolve_thread(
 }
 
 #[tauri::command(async)]
+pub fn github_current_login() -> Result<String, github::GithubError> {
+    github::current_login()
+}
+
+#[tauri::command(async)]
+pub fn github_set_reaction(
+    repo: String,
+    kind: github::review::CommentKind,
+    target: u64,
+    content: String,
+    add: bool,
+) -> Result<(), github::GithubError> {
+    github::review::set_reaction(&PathBuf::from(repo), kind, target, &content, add)
+}
+
+#[tauri::command(async)]
+pub fn github_edit_comment(
+    repo: String,
+    kind: github::review::CommentKind,
+    target: u64,
+    body: String,
+) -> Result<(), github::GithubError> {
+    github::review::edit_comment(&PathBuf::from(repo), kind, target, &body)
+}
+
+#[tauri::command(async)]
+pub fn github_delete_comment(
+    repo: String,
+    kind: github::review::CommentKind,
+    target: u64,
+) -> Result<(), github::GithubError> {
+    github::review::delete_comment(&PathBuf::from(repo), kind, target)
+}
+
+#[tauri::command(async)]
 pub fn github_readme(repo: String) -> Result<String, String> {
     git_core::github::readme(&PathBuf::from(repo)).map_err(|e| format!("{e:?}"))
 }

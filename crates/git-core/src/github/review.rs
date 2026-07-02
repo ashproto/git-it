@@ -171,6 +171,143 @@ pub fn pr_resolve_thread(repo: &Path, thread_id: &str, resolve: bool) -> Result<
     run_gh(&["api", "graphql", "-f", &q_arg, "-f", &id_arg], None).map(|_| ())
 }
 
+// ── Reactions + comment edit/delete ──────────────────────────────────────────
+
+/// What a reaction/edit/delete targets. For the comment kinds `target` is the
+/// numeric REST comment id; for the body kinds it is the PR/issue NUMBER.
+/// Deserializes from the TS strings "issueComment" | "reviewComment" |
+/// "prBody" | "issueBody".
+#[derive(serde::Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum CommentKind {
+    IssueComment,
+    ReviewComment,
+    PrBody,
+    IssueBody,
+}
+
+/// The 8 REST reaction content names. Returns the matched `&'static str` so an
+/// arbitrary string is never forwarded to `gh`.
+fn validate_reaction_content(content: &str) -> Result<&'static str, GithubError> {
+    const ALLOWED: [&str; 8] = ["+1", "-1", "laugh", "confused", "heart", "hooray", "rocket", "eyes"];
+    ALLOWED
+        .iter()
+        .find(|a| **a == content)
+        .copied()
+        .ok_or_else(|| GithubError::Other(format!("Invalid reaction: {content}")))
+}
+
+/// REST base path for a target's reactions. PRs are issues in REST, so both
+/// body kinds react via the issues endpoint.
+fn reaction_base_path(owner: &str, name: &str, kind: CommentKind, target: u64) -> String {
+    match kind {
+        CommentKind::IssueComment => {
+            format!("repos/{owner}/{name}/issues/comments/{target}/reactions")
+        }
+        CommentKind::ReviewComment => {
+            format!("repos/{owner}/{name}/pulls/comments/{target}/reactions")
+        }
+        CommentKind::PrBody | CommentKind::IssueBody => {
+            format!("repos/{owner}/{name}/issues/{target}/reactions")
+        }
+    }
+}
+
+/// REST path of an editable/deletable comment; `None` for the body kinds
+/// (which edit via `gh pr/issue edit` and can never be deleted).
+fn comment_endpoint(owner: &str, name: &str, kind: CommentKind, target: u64) -> Option<String> {
+    match kind {
+        CommentKind::IssueComment => Some(format!("repos/{owner}/{name}/issues/comments/{target}")),
+        CommentKind::ReviewComment => Some(format!("repos/{owner}/{name}/pulls/comments/{target}")),
+        CommentKind::PrBody | CommentKind::IssueBody => None,
+    }
+}
+
+/// Find the viewer's own reaction of `content` in a REST reactions-list
+/// response (`[{id, content, user:{login}}, …]`). Panic-safe: malformed JSON
+/// or missing fields → `None`.
+fn find_own_reaction_id(list_json: &str, login: &str, content: &str) -> Option<u64> {
+    let v: serde_json::Value = serde_json::from_str(list_json).ok()?;
+    v.as_array()?.iter().find_map(|r| {
+        let user = r.pointer("/user/login")?.as_str()?;
+        let c = r.get("content")?.as_str()?;
+        if user == login && c == content {
+            r.get("id")?.as_u64()
+        } else {
+            None
+        }
+    })
+}
+
+/// Add (`add=true`) or remove (`add=false`) the viewer's `content` reaction on
+/// the target. Add is a single POST (GitHub treats re-adding as a no-op).
+/// Remove lists the reactions, finds the viewer's matching one, and DELETEs it
+/// by id; nothing to remove → `Ok(())` (idempotent).
+pub fn set_reaction(
+    repo: &Path,
+    kind: CommentKind,
+    target: u64,
+    content: &str,
+    add: bool,
+) -> Result<(), GithubError> {
+    let content = validate_reaction_content(content)?;
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let base = reaction_base_path(&owner, &name, kind, target);
+    if add {
+        let body = serde_json::json!({ "content": content }).to_string();
+        run_gh(&["api", &base, "--method", "POST", "--input", "-"], Some(&body)).map(|_| ())
+    } else {
+        let list_path = format!("{base}?per_page=100");
+        let list = run_gh(&["api", &list_path], None)?;
+        let login = super::current_login()?;
+        match find_own_reaction_id(&list, &login, content) {
+            Some(id) => {
+                let del_path = format!("{base}/{id}");
+                run_gh(&["api", &del_path, "--method", "DELETE"], None).map(|_| ())
+            }
+            None => Ok(()), // already gone — idempotent
+        }
+    }
+}
+
+/// Edit a comment or a PR/issue description. Comment kinds PATCH their REST
+/// endpoint with a JSON body over stdin; body kinds go through
+/// `gh pr/issue edit --body-file -` (body over stdin, never an arg).
+pub fn edit_comment(
+    repo: &Path,
+    kind: CommentKind,
+    target: u64,
+    body: &str,
+) -> Result<(), GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    if let Some(path) = comment_endpoint(&owner, &name, kind, target) {
+        let json = serde_json::json!({ "body": body }).to_string();
+        return run_gh(&["api", &path, "--method", "PATCH", "--input", "-"], Some(&json))
+            .map(|_| ());
+    }
+    let slug = format!("{owner}/{name}");
+    let num = target.to_string();
+    let noun = match kind {
+        CommentKind::PrBody => "pr",
+        _ => "issue",
+    };
+    run_gh(&[noun, "edit", &num, "--repo", &slug, "--body-file", "-"], Some(body)).map(|_| ())
+}
+
+/// Delete a comment. Only the comment kinds are deletable; descriptions are
+/// part of the PR/issue itself. The kind check runs before any repo/gh work.
+pub fn delete_comment(repo: &Path, kind: CommentKind, target: u64) -> Result<(), GithubError> {
+    if matches!(kind, CommentKind::PrBody | CommentKind::IssueBody) {
+        return Err(GithubError::Other("Descriptions can't be deleted.".into()));
+    }
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let Some(path) = comment_endpoint(&owner, &name, kind, target) else {
+        // Unreachable after the kind check above; kept for panic-safety.
+        return Err(GithubError::Other("Descriptions can't be deleted.".into()));
+    };
+    run_gh(&["api", &path, "--method", "DELETE"], None).map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,6 +396,117 @@ mod tests {
         assert!(validate_thread_id("PRRT_kwDOJx2R3M5FQz-a").is_ok());
         assert!(validate_thread_id("MDIzOlB1bGxSZXF1ZXN0UmV2aWV3VGhyZWFkMQ==").is_ok());
         assert!(validate_thread_id("a+b/c_d-e=").is_ok());
+    }
+
+    #[test]
+    fn comment_kind_deserializes_from_ts_strings() {
+        let cases = [
+            ("\"issueComment\"", CommentKind::IssueComment),
+            ("\"reviewComment\"", CommentKind::ReviewComment),
+            ("\"prBody\"", CommentKind::PrBody),
+            ("\"issueBody\"", CommentKind::IssueBody),
+        ];
+        for (json, want) in cases {
+            let got: CommentKind = serde_json::from_str(json).unwrap();
+            assert_eq!(got, want, "{json}");
+        }
+        assert!(serde_json::from_str::<CommentKind>("\"IssueComment\"").is_err());
+        assert!(serde_json::from_str::<CommentKind>("\"bogus\"").is_err());
+    }
+
+    #[test]
+    fn reaction_content_validated_against_rest_names() {
+        for ok in ["+1", "-1", "laugh", "confused", "heart", "hooray", "rocket", "eyes"] {
+            assert_eq!(validate_reaction_content(ok).unwrap(), ok);
+        }
+        assert!(validate_reaction_content("THUMBS_UP").is_err()); // must be REST form
+        assert!(validate_reaction_content("shrug").is_err());
+        assert!(validate_reaction_content("").is_err());
+    }
+
+    #[test]
+    fn reaction_base_path_per_kind() {
+        assert_eq!(
+            reaction_base_path("o", "r", CommentKind::IssueComment, 7),
+            "repos/o/r/issues/comments/7/reactions"
+        );
+        assert_eq!(
+            reaction_base_path("o", "r", CommentKind::ReviewComment, 7),
+            "repos/o/r/pulls/comments/7/reactions"
+        );
+        // PRs are issues in REST — both body kinds use the issues endpoint,
+        // with the PR/issue NUMBER as the target.
+        assert_eq!(
+            reaction_base_path("o", "r", CommentKind::PrBody, 42),
+            "repos/o/r/issues/42/reactions"
+        );
+        assert_eq!(
+            reaction_base_path("o", "r", CommentKind::IssueBody, 42),
+            "repos/o/r/issues/42/reactions"
+        );
+    }
+
+    #[test]
+    fn comment_endpoint_only_for_comment_kinds() {
+        assert_eq!(
+            comment_endpoint("o", "r", CommentKind::IssueComment, 7).as_deref(),
+            Some("repos/o/r/issues/comments/7")
+        );
+        assert_eq!(
+            comment_endpoint("o", "r", CommentKind::ReviewComment, 7).as_deref(),
+            Some("repos/o/r/pulls/comments/7")
+        );
+        assert_eq!(comment_endpoint("o", "r", CommentKind::PrBody, 1), None);
+        assert_eq!(comment_endpoint("o", "r", CommentKind::IssueBody, 1), None);
+    }
+
+    #[test]
+    fn find_own_reaction_id_matches_login_and_content() {
+        // Real REST list shape: [{id, content (REST name), user:{login}}].
+        let json = r#"[
+            {"id":11,"content":"+1","user":{"login":"alice"}},
+            {"id":22,"content":"heart","user":{"login":"me"}},
+            {"id":33,"content":"+1","user":{"login":"me"}}
+        ]"#;
+        assert_eq!(find_own_reaction_id(json, "me", "+1"), Some(33));
+        assert_eq!(find_own_reaction_id(json, "me", "heart"), Some(22));
+        assert_eq!(find_own_reaction_id(json, "me", "eyes"), None);
+        assert_eq!(find_own_reaction_id(json, "nobody", "+1"), None);
+        // Panic-safe on malformed input.
+        assert_eq!(find_own_reaction_id("not json", "me", "+1"), None);
+        assert_eq!(find_own_reaction_id("{}", "me", "+1"), None);
+        assert_eq!(find_own_reaction_id(r#"[{"id":1}]"#, "me", "+1"), None);
+    }
+
+    #[test]
+    fn set_reaction_rejects_invalid_content_before_gh() {
+        // Invalid content must fail up front — even with a bogus repo path,
+        // validation runs first and never reaches resolve/gh.
+        let err = set_reaction(
+            Path::new("/nonexistent"),
+            CommentKind::IssueComment,
+            1,
+            "THUMBS_UP",
+            true,
+        )
+        .unwrap_err();
+        match err {
+            GithubError::Other(m) => assert!(m.contains("Invalid reaction"), "{m}"),
+            other => panic!("expected Other, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn delete_comment_refuses_body_kinds() {
+        // The kind check runs before any repo resolution or gh call, so a
+        // nonexistent path proves nothing external was touched.
+        for kind in [CommentKind::PrBody, CommentKind::IssueBody] {
+            let err = delete_comment(Path::new("/nonexistent"), kind, 1).unwrap_err();
+            match err {
+                GithubError::Other(m) => assert_eq!(m, "Descriptions can't be deleted."),
+                other => panic!("expected Other, got {other:?}"),
+            }
+        }
     }
 
     #[test]

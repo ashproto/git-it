@@ -1062,6 +1062,83 @@ fn map_check(c: RawCheck) -> GhCheck {
     }
 }
 
+// ---- reactions ----
+
+/// One emoji-reaction group on a comment/body, normalized to the REST content
+/// name (`+1`, `-1`, `laugh`, `confused`, `heart`, `hooray`, `rocket`, `eyes`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhReactionGroup {
+    pub content: String,
+    pub count: u64,
+    pub viewer_reacted: bool,
+}
+
+/// Normalize a reaction content name to its REST form. GraphQL (and gh's JSON
+/// export) emits UPPER_SNAKE (`THUMBS_UP`); REST uses `+1` etc. Already-REST
+/// names pass through; unknown names → `None` (the group is dropped).
+pub fn normalize_reaction(content: &str) -> Option<String> {
+    let rest = match content {
+        "THUMBS_UP" | "+1" => "+1",
+        "THUMBS_DOWN" | "-1" => "-1",
+        "LAUGH" | "laugh" => "laugh",
+        "CONFUSED" | "confused" => "confused",
+        "HEART" | "heart" => "heart",
+        "HOORAY" | "hooray" => "hooray",
+        "ROCKET" | "rocket" => "rocket",
+        "EYES" | "eyes" => "eyes",
+        _ => return None,
+    };
+    Some(rest.to_string())
+}
+
+/// Map a `reactionGroups` JSON array (gh export or GraphQL, both shaped
+/// `{content, users:{totalCount}, viewerHasReacted?}`) into normalized groups.
+/// Zero-count and unknown-content groups are dropped; anything malformed maps
+/// to an empty list — never an error. gh's `pr/issue view` export omits
+/// `viewerHasReacted`, which then defaults to `false`.
+fn parse_reaction_groups(v: Option<&serde_json::Value>) -> Vec<GhReactionGroup> {
+    let Some(arr) = v.and_then(|x| x.as_array()) else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|g| {
+            let content = normalize_reaction(g.get("content")?.as_str()?)?;
+            let count = g
+                .pointer("/users/totalCount")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0);
+            if count == 0 {
+                return None;
+            }
+            let viewer_reacted = g
+                .get("viewerHasReacted")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
+            Some(GhReactionGroup { content, count, viewer_reacted })
+        })
+        .collect()
+}
+
+/// Extract the numeric REST id from a timeline-comment URL's
+/// `#issuecomment-<digits>` fragment (gh's JSON export only carries the
+/// GraphQL node id, so this is the only source of the REST id).
+pub fn issue_comment_id_from_url(url: &str) -> Option<u64> {
+    let (_, frag) = url.rsplit_once("#issuecomment-")?;
+    if frag.is_empty() || !frag.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    frag.parse().ok()
+}
+
+/// The authenticated gh user's login (`gh api user --jq .login`), trimmed.
+/// Repo-independent — used by the frontend to recognize "own" comments and by
+/// the reaction-removal path to find the viewer's reaction.
+pub fn current_login() -> Result<String, GithubError> {
+    let out = run_gh(&["api", "user", "--jq", ".login"], None)?;
+    Ok(out.trim().to_string())
+}
+
 // ---- shared detail sub-DTOs ----
 #[derive(Deserialize)]
 struct RawMilestoneRef {
@@ -1074,6 +1151,10 @@ struct RawComment {
     body: String,
     #[serde(rename = "createdAt", default)]
     created_at: String,
+    #[serde(default)]
+    url: String,
+    #[serde(rename = "reactionGroups", default)]
+    reaction_groups: serde_json::Value,
 }
 #[derive(Deserialize)]
 struct RawReview {
@@ -1100,6 +1181,10 @@ pub struct GhComment {
     pub author: String,
     pub body: String,
     pub created_at: String,
+    /// Numeric REST id (edit/delete/react target), extracted from the comment
+    /// URL's `#issuecomment-<digits>` fragment. `None` when unavailable.
+    pub id: Option<u64>,
+    pub reactions: Vec<GhReactionGroup>,
 }
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1118,7 +1203,13 @@ pub struct GhFile {
 }
 
 fn map_comment(c: RawComment) -> GhComment {
-    GhComment { author: c.author.map(|a| a.login).unwrap_or_default(), body: c.body, created_at: c.created_at }
+    GhComment {
+        author: c.author.map(|a| a.login).unwrap_or_default(),
+        body: c.body,
+        created_at: c.created_at,
+        id: issue_comment_id_from_url(&c.url),
+        reactions: parse_reaction_groups(Some(&c.reaction_groups)),
+    }
 }
 fn map_review(r: RawReview) -> GhReview {
     GhReview {
@@ -1175,6 +1266,7 @@ pub struct GhInlineComment {
     pub created_at: String,
     /// REST comment id — the reply target. `None` when GraphQL omits it.
     pub database_id: Option<i64>,
+    pub reactions: Vec<GhReactionGroup>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1232,6 +1324,7 @@ fn parse_review_threads(json: &str) -> Vec<GhReviewThread> {
                                 .unwrap_or("")
                                 .to_string();
                             let database_id = c.get("databaseId").and_then(|x| x.as_i64());
+                            let reactions = parse_reaction_groups(c.get("reactionGroups"));
                             GhInlineComment {
                                 author,
                                 body,
@@ -1239,6 +1332,7 @@ fn parse_review_threads(json: &str) -> Vec<GhReviewThread> {
                                 line: cline,
                                 created_at,
                                 database_id,
+                                reactions,
                             }
                         })
                         .collect()
@@ -1252,7 +1346,7 @@ fn parse_review_threads(json: &str) -> Vec<GhReviewThread> {
 /// Best-effort: fetch resolved/unresolved inline review threads via GraphQL.
 /// Missing perms / no threads → empty; never fails the whole detail.
 fn fetch_review_threads(owner: &str, name: &str, number: i64) -> Vec<GhReviewThread> {
-    let query = "query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){pullRequest(number:$num){reviewThreads(first:100){nodes{id isResolved path line comments(first:50){nodes{databaseId author{login} body path originalLine line createdAt}}}}}}}";
+    let query = "query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){pullRequest(number:$num){reviewThreads(first:100){nodes{id isResolved path line comments(first:50){nodes{databaseId author{login} body path originalLine line createdAt reactionGroups{content viewerHasReacted users{totalCount}}}}}}}}}";
     let q_arg = format!("query={query}");
     let o = format!("o={owner}");
     let n = format!("n={name}");
@@ -1360,6 +1454,8 @@ struct RawPullDetail {
     comments: Vec<RawComment>,
     #[serde(default)]
     commits: Vec<RawPrCommit>,
+    #[serde(rename = "reactionGroups", default)]
+    reaction_groups: serde_json::Value,
     #[serde(rename = "createdAt", default)]
     created_at: String,
     #[serde(rename = "updatedAt", default)]
@@ -1397,6 +1493,8 @@ pub struct GhPullDetail {
     pub review_threads: Vec<GhReviewThread>,
     #[serde(default)]
     pub check_runs: Vec<GhCheckRun>,
+    /// Reactions on the PR description itself.
+    pub body_reactions: Vec<GhReactionGroup>,
     pub created_at: String,
     pub updated_at: String,
     pub url: String,
@@ -1429,6 +1527,7 @@ fn map_pull_detail(p: RawPullDetail) -> GhPullDetail {
         // Best-effort fields populated by `pr_detail` after the base view.
         review_threads: Vec::new(),
         check_runs: Vec::new(),
+        body_reactions: parse_reaction_groups(Some(&p.reaction_groups)),
         created_at: p.created_at,
         updated_at: p.updated_at,
         url: p.url,
@@ -1442,7 +1541,7 @@ pub fn pr_detail(repo: &Path, number: u64) -> Result<GhPullDetail, GithubError> 
     let json = run_gh(
         &[
             "pr", "view", &num, "--repo", &slug, "--json",
-            "number,title,body,author,state,isDraft,labels,assignees,milestone,baseRefName,headRefName,reviewDecision,mergeable,mergeStateStatus,additions,deletions,changedFiles,files,reviews,statusCheckRollup,comments,commits,createdAt,updatedAt,url",
+            "number,title,body,author,state,isDraft,labels,assignees,milestone,baseRefName,headRefName,reviewDecision,mergeable,mergeStateStatus,additions,deletions,changedFiles,files,reviews,statusCheckRollup,comments,commits,reactionGroups,createdAt,updatedAt,url",
         ],
         None,
     )?;
@@ -1473,6 +1572,8 @@ struct RawIssueDetail {
     milestone: Option<RawMilestoneRef>,
     #[serde(default)]
     comments: Vec<RawComment>,
+    #[serde(rename = "reactionGroups", default)]
+    reaction_groups: serde_json::Value,
     #[serde(rename = "createdAt", default)]
     created_at: String,
     #[serde(rename = "updatedAt", default)]
@@ -1493,6 +1594,8 @@ pub struct GhIssueDetail {
     pub assignees: Vec<String>,
     pub milestone: Option<String>,
     pub comments: Vec<GhComment>,
+    /// Reactions on the issue description itself.
+    pub body_reactions: Vec<GhReactionGroup>,
     pub created_at: String,
     pub updated_at: String,
     pub url: String,
@@ -1505,7 +1608,7 @@ pub fn issue_detail(repo: &Path, number: u64) -> Result<GhIssueDetail, GithubErr
     let json = run_gh(
         &[
             "issue", "view", &num, "--repo", &slug, "--json",
-            "number,title,body,author,state,stateReason,labels,assignees,milestone,comments,createdAt,updatedAt,url",
+            "number,title,body,author,state,stateReason,labels,assignees,milestone,comments,reactionGroups,createdAt,updatedAt,url",
         ],
         None,
     )?;
@@ -1522,6 +1625,7 @@ pub fn issue_detail(repo: &Path, number: u64) -> Result<GhIssueDetail, GithubErr
         assignees: raw.assignees.into_iter().map(|a| a.login).collect(),
         milestone: raw.milestone.map(|m| m.title),
         comments: raw.comments.into_iter().map(map_comment).collect(),
+        body_reactions: parse_reaction_groups(Some(&raw.reaction_groups)),
         created_at: raw.created_at,
         updated_at: raw.updated_at,
         url: raw.url,
@@ -1887,7 +1991,10 @@ mod tests {
             "files":[{"path":"a.rs","additions":10,"deletions":2}],
             "reviews":[{"author":{"login":"rev"},"state":"APPROVED","body":"lgtm","submittedAt":"2026-01-01T00:00:00Z"}],
             "statusCheckRollup":[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"d"}],
-            "comments":[{"author":{"login":"c"},"body":"nice","createdAt":"2026-01-02T00:00:00Z"}],
+            "comments":[{"author":{"login":"c"},"body":"nice","createdAt":"2026-01-02T00:00:00Z",
+                "url":"https://github.com/o/r/pull/13#issuecomment-3987079426",
+                "reactionGroups":[{"content":"THUMBS_UP","users":{"totalCount":2}}]}],
+            "reactionGroups":[{"content":"HEART","users":{"totalCount":1}},{"content":"ROCKET","users":{"totalCount":0}}],
             "createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z","url":"u"
         }"#;
         let d = map_pull_detail(serde_json::from_str(json).unwrap());
@@ -1898,6 +2005,109 @@ mod tests {
         assert_eq!(d.reviews[0].author, "rev");
         assert_eq!(d.checks[0].bucket, "pass");
         assert_eq!(d.comments[0].author, "c");
+        // Comment id from the url fragment + reactions normalized to REST names.
+        assert_eq!(d.comments[0].id, Some(3987079426));
+        assert_eq!(d.comments[0].reactions.len(), 1);
+        assert_eq!(d.comments[0].reactions[0].content, "+1");
+        assert_eq!(d.comments[0].reactions[0].count, 2);
+        assert!(!d.comments[0].reactions[0].viewer_reacted); // gh export omits it → false
+        // Body reactions: zero-count groups dropped.
+        assert_eq!(d.body_reactions.len(), 1);
+        assert_eq!(d.body_reactions[0].content, "heart");
+    }
+
+    #[test]
+    fn map_pull_detail_tolerates_missing_reaction_fields() {
+        // Pre-growth shape: no url / reactionGroups anywhere — must still parse.
+        let json = r#"{
+            "number":1,"title":"t","body":"","author":null,"state":"OPEN","isDraft":false,
+            "labels":[],"assignees":[],"milestone":null,
+            "baseRefName":"main","headRefName":"f","reviewDecision":"","mergeable":"",
+            "mergeStateStatus":"","additions":0,"deletions":0,"changedFiles":0,
+            "files":[],"reviews":[],"statusCheckRollup":[],
+            "comments":[{"author":null,"body":"","createdAt":""}],
+            "createdAt":"","updatedAt":"","url":"u"
+        }"#;
+        let d = map_pull_detail(serde_json::from_str(json).unwrap());
+        assert_eq!(d.comments[0].id, None);
+        assert!(d.comments[0].reactions.is_empty());
+        assert!(d.body_reactions.is_empty());
+    }
+
+    #[test]
+    fn normalize_reaction_covers_all_names() {
+        // All 8 UPPER_SNAKE (GraphQL) names → REST names.
+        let pairs = [
+            ("THUMBS_UP", "+1"),
+            ("THUMBS_DOWN", "-1"),
+            ("LAUGH", "laugh"),
+            ("CONFUSED", "confused"),
+            ("HEART", "heart"),
+            ("HOORAY", "hooray"),
+            ("ROCKET", "rocket"),
+            ("EYES", "eyes"),
+        ];
+        for (gql, rest) in pairs {
+            assert_eq!(normalize_reaction(gql).as_deref(), Some(rest), "{gql}");
+            // Already-REST names pass through unchanged.
+            assert_eq!(normalize_reaction(rest).as_deref(), Some(rest), "{rest}");
+        }
+        // Unknown → None (group dropped).
+        assert_eq!(normalize_reaction("SHRUG"), None);
+        assert_eq!(normalize_reaction(""), None);
+        assert_eq!(normalize_reaction("thumbs_up"), None);
+    }
+
+    #[test]
+    fn issue_comment_id_from_url_extracts_fragment() {
+        assert_eq!(
+            issue_comment_id_from_url("https://github.com/cli/cli/pull/1#issuecomment-3987079426"),
+            Some(3987079426)
+        );
+        assert_eq!(
+            issue_comment_id_from_url("https://github.com/o/r/issues/2#issuecomment-1"),
+            Some(1)
+        );
+        assert_eq!(issue_comment_id_from_url(""), None);
+        assert_eq!(issue_comment_id_from_url("https://github.com/o/r/pull/1"), None);
+        assert_eq!(issue_comment_id_from_url("x#issuecomment-"), None);
+        assert_eq!(issue_comment_id_from_url("x#issuecomment-12ab"), None);
+        // review-comment fragments are a different id space — must not match.
+        assert_eq!(
+            issue_comment_id_from_url("https://github.com/o/r/pull/1#discussion_r123"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_reaction_groups_handles_gh_and_graphql_shapes() {
+        // gh export shape (no viewerHasReacted).
+        let gh: serde_json::Value = serde_json::from_str(
+            r#"[{"content":"THUMBS_UP","users":{"totalCount":1}},{"content":"HOORAY","users":{"totalCount":3}}]"#,
+        )
+        .unwrap();
+        let out = parse_reaction_groups(Some(&gh));
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].content, "+1");
+        assert!(!out[0].viewer_reacted);
+        assert_eq!(out[1].content, "hooray");
+        assert_eq!(out[1].count, 3);
+        // GraphQL shape with viewerHasReacted.
+        let gql: serde_json::Value = serde_json::from_str(
+            r#"[{"content":"EYES","viewerHasReacted":true,"users":{"totalCount":2}}]"#,
+        )
+        .unwrap();
+        let out = parse_reaction_groups(Some(&gql));
+        assert_eq!(out[0].content, "eyes");
+        assert!(out[0].viewer_reacted);
+        // Unknown content + zero counts dropped; garbage → empty.
+        let mixed: serde_json::Value = serde_json::from_str(
+            r#"[{"content":"SHRUG","users":{"totalCount":5}},{"content":"HEART","users":{"totalCount":0}},{"bogus":1}]"#,
+        )
+        .unwrap();
+        assert!(parse_reaction_groups(Some(&mixed)).is_empty());
+        assert!(parse_reaction_groups(None).is_empty());
+        assert!(parse_reaction_groups(Some(&serde_json::Value::Null)).is_empty());
     }
 
     #[test]
@@ -1940,7 +2150,8 @@ mod tests {
     fn parse_review_threads_extracts_resolved_and_comments() {
         let json = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[
             {"id":"PRRT_abc","isResolved":true,"path":"a.rs","line":5,"comments":{"nodes":[
-                {"databaseId":987654,"author":{"login":"rev"},"body":"fix this","path":"a.rs","originalLine":5,"line":null,"createdAt":"2026-01-03T00:00:00Z"}
+                {"databaseId":987654,"author":{"login":"rev"},"body":"fix this","path":"a.rs","originalLine":5,"line":null,"createdAt":"2026-01-03T00:00:00Z",
+                 "reactionGroups":[{"content":"THUMBS_UP","viewerHasReacted":true,"users":{"totalCount":2}},{"content":"HEART","viewerHasReacted":false,"users":{"totalCount":0}}]}
             ]}},
             {"isResolved":false,"path":"b.rs","line":null,"comments":{"nodes":[
                 {"author":{"login":"x"},"body":"","path":"b.rs","originalLine":null,"line":null,"createdAt":""}
@@ -1956,10 +2167,16 @@ mod tests {
         assert_eq!(out[0].comments[0].database_id, Some(987654));
         // line null falls back to originalLine.
         assert_eq!(out[0].comments[0].line, 5);
+        // GraphQL reactionGroups: normalized, zero-count dropped, viewer flag kept.
+        assert_eq!(out[0].comments[0].reactions.len(), 1);
+        assert_eq!(out[0].comments[0].reactions[0].content, "+1");
+        assert_eq!(out[0].comments[0].reactions[0].count, 2);
+        assert!(out[0].comments[0].reactions[0].viewer_reacted);
         assert!(!out[1].resolved);
         assert_eq!(out[1].id, ""); // missing id → ""
         assert_eq!(out[1].line, 0); // null thread line → 0
         assert_eq!(out[1].comments[0].database_id, None); // missing databaseId → None
+        assert!(out[1].comments[0].reactions.is_empty()); // missing reactionGroups → []
     }
 
     #[test]

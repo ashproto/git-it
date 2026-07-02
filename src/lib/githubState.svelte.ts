@@ -79,6 +79,9 @@ function makeGithubState() {
   let statsLoading = $state(false);
   let activeTab = $state<GithubTab>("overview");
   let loadedRepo: string | null = null;
+  // The authenticated gh user's login — lets the UI recognize "own" comments
+  // (edit/delete affordances). Fetched once, fire-and-forget; null until known.
+  let login = $state<string | null>(null);
 
   const pulls = makePanel<GhPull[]>();
   const issues = makePanel<GhIssue[]>();
@@ -217,6 +220,11 @@ function makeGithubState() {
     }
     if (availability && availability.kind === "Ok") {
       void loadStats(repo);
+      if (login === null) {
+        // Repo-independent; best-effort — the UI just hides own-comment
+        // affordances until (unless) it resolves.
+        api.githubCurrentLogin().then((l) => (login = l)).catch(() => {});
+      }
     }
   }
 
@@ -235,6 +243,10 @@ function makeGithubState() {
     },
     get statsLoading() {
       return statsLoading;
+    },
+    /** The authenticated gh user's login; null until fetched (or on failure). */
+    get login() {
+      return login;
     },
     /** True while ANY github fetch is in flight (availability, stats, or any
      *  panel). Drives the header Refresh spinner — a soft refresh keeps stale data

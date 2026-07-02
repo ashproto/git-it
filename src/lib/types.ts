@@ -259,12 +259,24 @@ export type GhMilestone = {
 export type MergeMethod = "merge" | "squash" | "rebase";
 
 export type GhCheck = { name: string; bucket: "pass" | "fail" | "pending" | "neutral"; url: string };
-export type GhComment = { author: string; body: string; createdAt: string };
+
+/** One emoji-reaction group, normalized to the REST content name
+ *  (`+1`, `-1`, `laugh`, `confused`, `heart`, `hooray`, `rocket`, `eyes`).
+ *  `viewerReacted` is only known for review-thread comments (GraphQL);
+ *  it is always false on timeline comments and bodies (gh's JSON omits it). */
+export type GhReactionGroup = { content: string; count: number; viewerReacted: boolean };
+
+/** What a reaction/edit/delete targets. Comment kinds target the numeric REST
+ *  comment id; body kinds target the PR/issue NUMBER. */
+export type GhCommentKind = "issueComment" | "reviewComment" | "prBody" | "issueBody";
+
+// `id` = numeric REST id (edit/delete/react target), null when unavailable.
+export type GhComment = { author: string; body: string; createdAt: string; id: number | null; reactions: GhReactionGroup[] };
 export type GhReview = { author: string; state: string; body: string; submittedAt: string };
 export type GhFile = { path: string; additions: number; deletions: number };
 
 export type GhCommit = { oid: string; message: string; author: string; committedDate: string };
-export type GhInlineComment = { author: string; body: string; path: string; line: number; createdAt: string; databaseId: number | null };
+export type GhInlineComment = { author: string; body: string; path: string; line: number; createdAt: string; databaseId: number | null; reactions: GhReactionGroup[] };
 export type GhReviewThread = { id: string; resolved: boolean; path: string; line: number; comments: GhInlineComment[] };
 export type GhCheckRun = {
   name: string; status: string; conclusion: string;
@@ -279,6 +291,7 @@ export type GhPullDetail = {
   additions: number; deletions: number; changedFiles: number;
   files: GhFile[]; reviews: GhReview[]; checks: GhCheck[]; comments: GhComment[];
   commits: GhCommit[]; reviewThreads: GhReviewThread[]; checkRuns: GhCheckRun[];
+  bodyReactions: GhReactionGroup[];
   createdAt: string; updatedAt: string; url: string;
 };
 
@@ -291,7 +304,8 @@ export type PrTimelineEvent =
 export type GhIssueDetail = {
   number: number; title: string; body: string; author: string; state: string; stateReason: string | null;
   labels: GhLabel[]; assignees: string[]; milestone: string | null;
-  comments: GhComment[]; createdAt: string; updatedAt: string; url: string;
+  comments: GhComment[]; bodyReactions: GhReactionGroup[];
+  createdAt: string; updatedAt: string; url: string;
 };
 
 /** One inline line-anchored comment drafted locally, submitted with a one-shot PR review. */
