@@ -590,6 +590,11 @@ pub fn github_issue_detail(repo: String, number: u64) -> Result<github::GhIssueD
 }
 
 #[tauri::command(async)]
+pub fn github_pr_diff(repo: String, number: u64) -> Result<String, github::GithubError> {
+    github::review::pr_diff(&PathBuf::from(repo), number)
+}
+
+#[tauri::command(async)]
 pub fn github_readme(repo: String) -> Result<String, String> {
     git_core::github::readme(&PathBuf::from(repo)).map_err(|e| format!("{e:?}"))
 }

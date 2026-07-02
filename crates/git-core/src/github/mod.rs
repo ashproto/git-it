@@ -2,6 +2,8 @@
 //! `gh` (no token is stored here). All owner/repo operands are validated before
 //! reaching `gh`, and `gh` is spawned with args passed directly (never a shell).
 
+pub mod review;
+
 use crate::ops_remote;
 use serde::{Deserialize, Serialize};
 use std::io::Write;

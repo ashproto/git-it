@@ -193,6 +193,8 @@ export const api = {
     invoke<string>("github_issue_create", { repo, title, body }),
   githubPrDetail: (repo: string, number: number) =>
     invoke<GhPullDetail>("github_pr_detail", { repo, number }),
+  githubPrDiff: (repo: string, number: number) =>
+    invoke<string>("github_pr_diff", { repo, number }),
   githubIssueDetail: (repo: string, number: number) =>
     invoke<GhIssueDetail>("github_issue_detail", { repo, number }),
   githubReadme: (repo: string) => invoke<string>("github_readme", { repo }),
