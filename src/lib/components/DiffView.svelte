@@ -15,9 +15,14 @@
     onUnstageHunk?: (i: number) => void;
     onStageLines?: (hunkIndex: number, selected: number[]) => void;
     onUnstageLines?: (hunkIndex: number, selected: number[]) => void;
+    // PR-review comment affordance (GitHub line/side semantics: RIGHT = new-file
+    // line number for context + added rows, LEFT = old-file line number for
+    // deleted rows). Purely additive — when absent, nothing changes.
+    onLineComment?: (line: number, side: "LEFT" | "RIGHT") => void;
+    hasComment?: (line: number, side: "LEFT" | "RIGHT") => boolean;
   }
 
-  let { patch, language, staged = false, onStageHunk, onUnstageHunk, onStageLines, onUnstageLines }: Props = $props();
+  let { patch, language, staged = false, onStageHunk, onUnstageHunk, onStageLines, onUnstageLines, onLineComment, hasComment }: Props = $props();
 
   // ─── Theme detection ──────────────────────────────────────────────────────────
 
@@ -324,6 +329,23 @@
 
 <!-- ─── Component markup ──────────────────────────────────────────────────────── -->
 
+<!-- Line-comment affordance rendered inside a gutter cell: a hover-revealed ＋
+     to start a comment, or a persistent 💬 marker when a draft comment already
+     exists on that (line, side). Only rendered when onLineComment is provided. -->
+{#snippet commentBtn(lineNo: number, side: "LEFT" | "RIGHT")}
+  {@const marked = hasComment?.(lineNo, side) ?? false}
+  <button
+    type="button"
+    class="cm-btn"
+    class:marked
+    aria-label="Comment on line {lineNo}"
+    onclick={(e) => {
+      e.stopPropagation();
+      onLineComment!(lineNo, side);
+    }}
+  >{marked ? "💬" : "＋"}</button>
+{/snippet}
+
 <div class="diff-view">
   <!-- Header: split/unified toggle + totals + context controls -->
   <div class="diff-toolbar">
@@ -470,8 +492,18 @@
                       onclick={() => { if (ord !== undefined) toggleLine(fi, hi, ord); }}
                       onkeydown={(e) => { if (ord !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, ord); } }}
                     >
-                      <td class="gutter old-gutter">{line.oldNo ?? ""}</td>
-                      <td class="gutter new-gutter">{line.newNo ?? ""}</td>
+                      <td class="gutter old-gutter" class:commentable={!!onLineComment}>
+                        {line.oldNo ?? ""}
+                        {#if onLineComment && line.kind === "del" && line.oldNo != null}
+                          {@render commentBtn(line.oldNo, "LEFT")}
+                        {/if}
+                      </td>
+                      <td class="gutter new-gutter" class:commentable={!!onLineComment}>
+                        {line.newNo ?? ""}
+                        {#if onLineComment && line.kind !== "del" && line.newNo != null}
+                          {@render commentBtn(line.newNo, "RIGHT")}
+                        {/if}
+                      </td>
                       <td class="diff-cell">
                         <span class="sigil">{line.kind === "add" ? "+" : line.kind === "del" ? "−" : " "}</span>
                         {#if toks}
@@ -491,7 +523,12 @@
                     {@const newOrd = row.newLine?.kind === "add" ? ords.get(row.newLine) : undefined}
                     <tr class="diff-row split-row">
                       <!-- Old side -->
-                      <td class="gutter old-gutter">{row.oldLine?.oldNo ?? ""}</td>
+                      <td class="gutter old-gutter" class:commentable={!!onLineComment}>
+                        {row.oldLine?.oldNo ?? ""}
+                        {#if onLineComment && row.oldLine?.kind === "del" && row.oldLine.oldNo != null}
+                          {@render commentBtn(row.oldLine.oldNo, "LEFT")}
+                        {/if}
+                      </td>
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <td
                         class="diff-cell split-cell"
@@ -516,8 +553,13 @@
                         {/if}
                       </td>
 
-                      <!-- New side -->
-                      <td class="gutter new-gutter">{row.newLine?.newNo ?? ""}</td>
+                      <!-- New side: context + added rows comment on RIGHT/newNo -->
+                      <td class="gutter new-gutter" class:commentable={!!onLineComment}>
+                        {row.newLine?.newNo ?? ""}
+                        {#if onLineComment && row.newLine && row.newLine.newNo != null}
+                          {@render commentBtn(row.newLine.newNo, "RIGHT")}
+                        {/if}
+                      </td>
                       <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <td
                         class="diff-cell split-cell"
@@ -849,6 +891,46 @@
   .split-cell.selected {
     box-shadow: inset 2px 0 0 var(--accent);
     background: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  /* ── Line-comment affordance (only present when onLineComment is passed) ────── */
+  /* Anchor for the absolutely-positioned button; position:relative on a td with
+     no offsets is layout-neutral, and the class only exists in comment mode. */
+  .gutter.commentable {
+    position: relative;
+  }
+  .cm-btn {
+    position: absolute;
+    left: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 15px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    line-height: 15px;
+    text-align: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.08s;
+  }
+  tr:hover .cm-btn {
+    opacity: 1;
+  }
+  .cm-btn:focus-visible {
+    opacity: 1;
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  /* Persistent marker when a draft comment exists on the line (click re-opens it). */
+  .cm-btn.marked {
+    opacity: 1;
+    background: transparent;
+    font-size: 10px;
   }
 
   /* ── Mono utility ───────────────────────────────────────────────────────────── */

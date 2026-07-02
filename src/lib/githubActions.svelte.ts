@@ -1,6 +1,7 @@
 import { appState } from "./store.svelte";
 import { api } from "./api";
 import { githubState } from "./githubState.svelte";
+import { reviewDraft } from "./reviewDraft.svelte";
 import type { GithubError, MergeMethod } from "./types";
 
 export type PendingAction =
@@ -82,6 +83,34 @@ function makeGithubActions() {
     }
   }
 
+  // Submit the pending review draft (verdict + summary + inline comments) as ONE
+  // atomic review. Same surfacing contract as commentInline: no shared busy/error
+  // state — the caller (ReviewBar) owns its own and displays `error` verbatim.
+  // The draft is only discarded on success; a failure keeps it intact for retry.
+  async function submitReview(number: number): Promise<{ ok: boolean; error?: string }> {
+    const repo = appState.repo;
+    if (!repo) return { ok: false, error: "No repository open." };
+    // Inline comments only ride along when the draft is bound to THIS PR — a
+    // draft pending on another PR must never leak its comments into this review
+    // (and must survive a summary-only submit here).
+    const own = reviewDraft.belongsTo(repo, number);
+    const comments = own ? [...reviewDraft.comments] : [];
+    try {
+      await api.githubPrSubmitReview(repo, number, reviewDraft.verdict, reviewDraft.summary, comments);
+      if (own || reviewDraft.count === 0) {
+        reviewDraft.discard();
+      } else {
+        // Keep the other PR's comment draft intact; just clear what we consumed.
+        reviewDraft.setSummary("");
+        reviewDraft.setVerdict("COMMENT");
+      }
+      githubState.bumpReload(); // re-fetch the detail/timeline so the review shows
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errText(e) };
+    }
+  }
+
   return {
     get pending() {
       return pending;
@@ -96,6 +125,7 @@ function makeGithubActions() {
     cancel,
     submit,
     commentInline,
+    submitReview,
   };
 }
 

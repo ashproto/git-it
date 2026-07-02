@@ -8,6 +8,7 @@
   import GithubSkeleton from "./GithubSkeleton.svelte";
   import PrTimeline from "./PrTimeline.svelte";
   import PrFilesTab from "./PrFilesTab.svelte";
+  import ReviewBar from "./ReviewBar.svelte";
   import GithubCommentBox from "./GithubCommentBox.svelte";
   import { splitPatchByFile } from "../../github/prDiff";
   import { revealIn } from "../../github/motion";
@@ -138,6 +139,8 @@
             </ul>
           </details>
         {/if}
+        <!-- Pending-review bar — under the checks strip, visible on both tabs. -->
+        <ReviewBar number={d.number} />
       </div>
     {/if}
 
