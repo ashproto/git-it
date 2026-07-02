@@ -21,6 +21,7 @@ import type {
   IssueStateFilter,
   GhPullDetail,
   GhIssueDetail,
+  DraftComment,
   GraphCommit,
   OpOutcome,
   PrerequisiteCheck,
@@ -195,6 +196,8 @@ export const api = {
     invoke<GhPullDetail>("github_pr_detail", { repo, number }),
   githubPrDiff: (repo: string, number: number) =>
     invoke<string>("github_pr_diff", { repo, number }),
+  githubPrSubmitReview: (repo: string, number: number, event: string, body: string, comments: DraftComment[]) =>
+    invoke<void>("github_pr_submit_review", { repo, number, event, body, comments }),
   githubIssueDetail: (repo: string, number: number) =>
     invoke<GhIssueDetail>("github_issue_detail", { repo, number }),
   githubReadme: (repo: string) => invoke<string>("github_readme", { repo }),

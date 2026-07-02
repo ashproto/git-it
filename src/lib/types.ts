@@ -293,3 +293,6 @@ export type GhIssueDetail = {
   labels: GhLabel[]; assignees: string[]; milestone: string | null;
   comments: GhComment[]; createdAt: string; updatedAt: string; url: string;
 };
+
+/** One inline line-anchored comment drafted locally, submitted with a one-shot PR review. */
+export type DraftComment = { path: string; line: number; side: "LEFT" | "RIGHT"; body: string };
