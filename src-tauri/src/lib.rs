@@ -113,6 +113,7 @@ pub fn run() {
             commands::github_readme,
             commands::github_create_repo,
             commands::github_pr_create,
+            commands::github_pr_checkout,
             fswatch::start_watch,
             fswatch::stop_watch,
         ])

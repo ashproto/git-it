@@ -891,6 +891,24 @@ export const gitActions = {
       await refreshRefs();
     }),
 
+  // Jump to an EXISTING pull request on the GitHub screen (branch context menu,
+  // title-bar PR chip). ensure() is awaited BEFORE selecting — a fresh GitHub-
+  // screen mount runs ensure() itself, and a first load resets selectedItem;
+  // awaiting it here makes the mount's ensure() an early-return no-op, so the
+  // selection sticks (same proven sequence as createPullRequest's success path).
+  openPrInApp: async (number: number): Promise<void> => {
+    appState.setActiveView("github");
+    await githubState.ensure(appState.repo);
+    githubState.setActiveTab("pulls");
+    githubState.openItem("pr", number);
+  },
+
+  // Check out a PR's head branch locally via `gh pr checkout` (handles fork
+  // heads natively). run() already reloads the graph, which refreshes refs/
+  // status/working copy — the same post-checkout refresh a branch checkout gets.
+  checkoutPullRequest: (number: number) =>
+    run(`Checkout PR #${number}`, () => api.githubPrCheckout(appState.repo, number)),
+
   // Create-PR wizard: prefill title/body from the branch's commits, collect
   // title/body/base/draft in a dialog, create via `gh` (auto-pushing the branch
   // first if needed), then jump to the new PR on the GitHub screen.

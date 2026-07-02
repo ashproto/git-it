@@ -35,11 +35,38 @@
   import { onMount, untrack } from "svelte";
   import { slide } from "svelte/transition";
   import { appState } from "$lib/store.svelte";
+  import { githubState } from "$lib/githubState.svelte";
+  import { prForBranch } from "$lib/github/branchPr";
+  import { pullStateBadge } from "$lib/github/itemState";
   import { SAMPLE_GRAPH } from "$lib/graph/sample";
 
   const currentBranch = $derived(
     appState.refsByKind.local.find((r) => r.isHead)?.name ?? null,
   );
+  // Title-bar PR chip: the current branch's OPEN pull request, from the cached
+  // pulls list. Shown only on the git screens (the GitHub screen shows PRs
+  // itself), only when the cache belongs to THIS repo, and renders nothing in
+  // every unknown state (no remote, list not loaded, no match).
+  const currentBranchPr = $derived(
+    appState.activeView !== "github" &&
+      currentBranch &&
+      githubState.hasGithubRemote &&
+      githubState.loadedRepoPath === appState.repo
+      ? prForBranch(githubState.pulls.data, currentBranch)
+      : null,
+  );
+  // Opportunistic pulls load for the chip: ONLY when GitHub availability is
+  // already known-Ok for this repo (the GitHub screen ran its ensure()) — the
+  // toolbar never triggers availability probes or a full ensure. Lazy and
+  // cheap: makePanel.load() dedupes by key, and no polling is involved. The
+  // effect re-runs when availability lands (ensure resolving) or repo changes.
+  $effect(() => {
+    const repo = appState.repo;
+    if (!repo || !githubState.hasGithubRemote) return;
+    if (githubState.availability?.kind !== "Ok") return;
+    if (githubState.loadedRepoPath !== repo) return;
+    void githubState.loadPulls(repo);
+  });
   // The project name shown centered in the title bar — the active repo's folder
   // name (Fork-style), falling back to the app name in the empty state.
   const repoName = $derived(
@@ -269,6 +296,18 @@
         </span>
       {:else if detachedHead}
         <span class="branch-chip detached" title="Detached HEAD">detached HEAD</span>
+      {/if}
+      {#if currentBranchPr}
+        {@const prBadge = pullStateBadge(currentBranchPr)}
+        <button
+          class="pr-chip"
+          data-no-drag
+          style="--pr-color:{prBadge.color}"
+          title={currentBranchPr.title}
+          onclick={() => gitActions.openPrInApp(currentBranchPr.number)}
+        >
+          <span class="pr-dot" aria-hidden="true"></span>#{currentBranchPr.number}
+        </button>
       {/if}
     </div>
     <div class="remote-btns" data-no-drag>
@@ -704,6 +743,36 @@
   .branch-chip.detached {
     color: var(--err);
     border-color: var(--err);
+  }
+  /* Current-branch PR chip — styled like the branch chip, tinted with the PR's
+     GitHub state colour (green open / gray draft via itemState). The centred
+     header strip is pointer-events:none, so the chip re-enables them itself
+     (and opts out of the window drag via data-no-drag). */
+  .pr-chip {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    align-self: center;
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--pr-color);
+    border: 1px solid var(--pr-color);
+    border-radius: 999px;
+    padding: 1px 10px;
+    background: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .pr-chip:hover {
+    background: color-mix(in srgb, var(--pr-color) 15%, transparent);
+  }
+  .pr-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--pr-color);
+    flex-shrink: 0;
   }
   .remote-btns {
     display: flex;

@@ -2,6 +2,7 @@
   import { appState } from "../../store.svelte";
   import { githubState } from "../../githubState.svelte";
   import { githubActions } from "../../githubActions.svelte";
+  import { gitActions } from "../../gitActions";
   import { parseISO, formatCommitDate } from "../../dates";
   import type { GhComment, GhCommentKind, GhPullDetail, GhIssueDetail } from "../../types";
   import Markdown from "./Markdown.svelte";
@@ -167,6 +168,13 @@
         <a class="ext" href={d.url} target="_blank" rel="noreferrer">Open on github.com ↗</a>
       </div>
       <div class="acts">
+        {#if pr}
+          <button
+            type="button"
+            title="Check out this pull request's branch locally (gh pr checkout)"
+            onclick={() => gitActions.checkoutPullRequest(d.number)}
+          >Checkout</button>
+        {/if}
         {#if pr && pr.state === "OPEN" && !pr.isDraft}
           <button type="button" onclick={() => githubActions.open({ kind: "merge", number: d.number, title: d.title })}>Merge</button>
         {/if}

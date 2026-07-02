@@ -219,6 +219,8 @@ export const api = {
     invoke<string>("github_create_repo", { repo, name, private: isPrivate, description }),
   githubPrCreate: (repo: string, title: string, body: string, base: string, draft: boolean) =>
     invoke<number>("github_pr_create", { repo, title, body, base, draft }),
+  githubPrCheckout: (repo: string, number: number) =>
+    invoke<void>("github_pr_checkout", { repo, number }),
   branchSubjects: (repo: string, base: string, limit: number) =>
     invoke<string[]>("branch_subjects", { repo, base, limit }),
   remoteAdd: (repo: string, name: string, url: string) =>

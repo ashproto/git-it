@@ -691,6 +691,11 @@ pub fn github_create_repo(
 }
 
 #[tauri::command(async)]
+pub fn github_pr_checkout(repo: String, number: u64) -> Result<(), github::GithubError> {
+    github::review::pr_checkout(&PathBuf::from(repo), number)
+}
+
+#[tauri::command(async)]
 pub fn github_pr_create(
     repo: String,
     title: String,

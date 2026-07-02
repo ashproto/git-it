@@ -4,6 +4,7 @@
   import { parseISO, formatCommitDate } from "../../dates";
   import type { PullStateFilter } from "../../types";
   import { githubActions } from "../../githubActions.svelte";
+  import { gitActions } from "../../gitActions";
   import GithubDetail from "./GithubDetail.svelte";
   import GithubSkeleton from "./GithubSkeleton.svelte";
   import { revealIn } from "../../github/motion";
@@ -63,6 +64,14 @@
           <span class="when">{rel(pr.updatedAt)}</span>
         </div>
         <div class="row-actions">
+          <button
+            type="button"
+            title="Checkout branch locally"
+            onclick={(e) => {
+              e.stopPropagation();
+              void gitActions.checkoutPullRequest(pr.number);
+            }}
+          >Checkout</button>
           {#if pr.state === "OPEN" && !pr.isDraft}
             <button type="button" onclick={() => githubActions.open({ kind: "merge", number: pr.number, title: pr.title })}>Merge</button>
           {/if}

@@ -167,6 +167,24 @@ pub fn pr_create(
     })
 }
 
+/// Args for `gh pr checkout <number>` — deliberately NO `--repo`: the command
+/// runs IN the repo (`run_gh_in`) so gh reads the local git context; gh then
+/// resolves the PR from the repo's remotes and handles fork heads natively.
+fn pr_checkout_args(number: u64) -> Vec<String> {
+    vec!["pr".into(), "checkout".into(), number.to_string()]
+}
+
+/// Check out a pull request's head branch locally via `gh pr checkout`, run in
+/// the repo so gh infers the target repo from the local remotes.
+pub fn pr_checkout(repo: &Path, number: u64) -> Result<(), GithubError> {
+    // Confirms a github.com remote exists (NoRemote gets its own UI state);
+    // the slug itself is unused — gh reads the repo from cwd.
+    resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let args = pr_checkout_args(number);
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_gh_in(repo, &refs, None).map(|_| ())
+}
+
 /// One inline line-anchored review comment, drafted in the UI and submitted
 /// as part of a one-shot review. Field names double as the REST payload keys.
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
@@ -715,6 +733,11 @@ mod tests {
                 other => panic!("expected Other, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn pr_checkout_args_shape() {
+        assert_eq!(pr_checkout_args(42), vec!["pr", "checkout", "42"]);
     }
 
     #[test]

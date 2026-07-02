@@ -10,6 +10,7 @@
   import RefTree from "./RefTree.svelte";
   import StashPanel from "./StashPanel.svelte";
   import { githubState } from "../githubState.svelte";
+  import { prForBranch } from "../github/branchPr";
 
   const refs = $derived(appState.refsByKind);
   // Folderize slashed ref names (feature/x → feature ▸ x), Fork/SourceTree-style.
@@ -96,6 +97,28 @@
           items.push({
             label: `Fast-forward to ${remote}`,
             action: () => gitActions.fastForwardBranch(r.name, remote),
+          });
+        }
+      }
+      // Branch ↔ GitHub bridge: jump to the branch's open PR, or offer to
+      // create one for the checked-out branch. No gh call is made from the
+      // menu itself — only the already-cached pulls list is consulted.
+      if (githubState.hasGithubRemote) {
+        // Trust the cached pulls list only when it belongs to THIS repo (the
+        // GitHub screen caches one repo at a time) — else treat it as unknown.
+        const pr =
+          githubState.loadedRepoPath === appState.repo
+            ? prForBranch(githubState.pulls.data, r.name)
+            : null;
+        if (pr) {
+          items.push({
+            label: `Open pull request #${pr.number}`,
+            action: () => gitActions.openPrInApp(pr.number),
+          });
+        } else if (r.isHead) {
+          items.push({
+            label: "Create pull request…",
+            action: () => gitActions.createPullRequest(),
           });
         }
       }
