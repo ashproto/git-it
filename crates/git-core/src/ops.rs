@@ -99,6 +99,27 @@ pub fn fast_forward_branch(repo: &Path, branch: &str, remote: &str) -> Result<St
     Ok(format!("{}{}", o, e).trim().to_string())
 }
 
+/// Subjects of the commits on HEAD that aren't on `base` (newest first), for
+/// prefilling a PR title/body. Callers treat failure as best-effort (an
+/// unknown base just means no prefill), but a leading-dash base is rejected
+/// before shelling out so it can never read as a flag.
+pub fn branch_subjects(repo: &Path, base: &str, limit: u32) -> Result<Vec<String>, String> {
+    if base.is_empty() || base.starts_with('-') {
+        return Err(format!("Invalid base branch: {}", base));
+    }
+    let range = format!("{}..HEAD", base);
+    let max_count = format!("--max-count={}", limit);
+    let mut c = Command::new("git");
+    c.current_dir(repo)
+        .args(["log", "--format=%s", &max_count, "--end-of-options", &range]);
+    let (o, _) = git_ops::run(&mut c)?;
+    Ok(o.lines()
+        .map(str::trim_end)
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect())
+}
+
 /// Fetch from a remote (or all remotes when None), pruning deleted remote refs.
 pub fn fetch(repo: &Path, remote: Option<&str>) -> Result<String, String> {
     let mut c = Command::new("git");
@@ -422,6 +443,39 @@ mod tests {
         assert!(!has_remote, "origin must not have refs/heads/feature after remote delete");
 
         let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn branch_subjects_lists_newest_first_and_respects_limit() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "base commit");
+        r.git(&["checkout", "-q", "-b", "feat"]);
+        r.commit("b.txt", "first change");
+        r.commit("c.txt", "second change");
+        r.commit("d.txt", "third change");
+
+        let all = branch_subjects(&r.path, "main", 50).unwrap();
+        assert_eq!(all, vec!["third change", "second change", "first change"]);
+
+        let limited = branch_subjects(&r.path, "main", 2).unwrap();
+        assert_eq!(limited, vec!["third change", "second change"]);
+    }
+
+    #[test]
+    fn branch_subjects_rejects_option_like_base() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        assert!(
+            branch_subjects(&r.path, "--all", 10).is_err(),
+            "an option-like base must be rejected before shelling out"
+        );
+    }
+
+    #[test]
+    fn branch_subjects_errors_on_unknown_base() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        assert!(branch_subjects(&r.path, "no-such-branch", 10).is_err());
     }
 
     #[test]

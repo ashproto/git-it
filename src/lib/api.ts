@@ -217,6 +217,10 @@ export const api = {
   githubReadme: (repo: string) => invoke<string>("github_readme", { repo }),
   githubCreateRepo: (repo: string, name: string, isPrivate: boolean, description: string) =>
     invoke<string>("github_create_repo", { repo, name, private: isPrivate, description }),
+  githubPrCreate: (repo: string, title: string, body: string, base: string, draft: boolean) =>
+    invoke<number>("github_pr_create", { repo, title, body, base, draft }),
+  branchSubjects: (repo: string, base: string, limit: number) =>
+    invoke<string[]>("branch_subjects", { repo, base, limit }),
   remoteAdd: (repo: string, name: string, url: string) =>
     invoke<void>("remote_add", { repo, name, url }),
   remoteRemove: (repo: string, name: string) => invoke<void>("remote_remove", { repo, name }),

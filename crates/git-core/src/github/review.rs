@@ -2,8 +2,9 @@
 //! Sibling of the main `github` module; shares its `gh` runner and error type.
 
 use std::path::Path;
+use std::process::Command;
 
-use super::{resolve_owner_repo, run_gh, GithubError};
+use super::{resolve_owner_repo, run_gh, run_gh_in, GithubError};
 
 /// Args for `gh pr diff <number> --repo <slug>` — the PR number and slug are
 /// passed as separate operands (never a shell string).
@@ -24,6 +25,146 @@ pub fn pr_diff(repo: &Path, number: u64) -> Result<String, GithubError> {
     let args = pr_diff_args(&slug, number);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_gh(&refs, None)
+}
+
+/// Flag-injection guard for the two user operands `gh pr create` receives as
+/// argv values: a leading `-` would read as a flag, and an empty title is
+/// rejected up front so gh never falls back to interactive prompting.
+fn validate_pr_create_inputs(title: &str, base: &str) -> Result<(), GithubError> {
+    if title.is_empty() || title.starts_with('-') {
+        return Err(GithubError::Other("Invalid PR title.".into()));
+    }
+    if base.is_empty() || base.starts_with('-') {
+        return Err(GithubError::Other("Invalid base branch.".into()));
+    }
+    Ok(())
+}
+
+/// Extract the PR number from `gh pr create` output: the LAST `/pull/<digits>`
+/// occurrence wins (gh may print warnings before the URL), taking digits until
+/// the first non-digit (so `/pull/123/files` still parses as 123).
+fn pr_number_from_url(out: &str) -> Option<u64> {
+    const NEEDLE: &str = "/pull/";
+    let mut result = None;
+    let mut search_from = 0;
+    while let Some(pos) = out[search_from..].find(NEEDLE) {
+        let digits_start = search_from + pos + NEEDLE.len();
+        let digits: &str = &out[digits_start..];
+        let end = digits
+            .char_indices()
+            .find(|(_, c)| !c.is_ascii_digit())
+            .map(|(i, _)| i)
+            .unwrap_or(digits.len());
+        if end > 0 {
+            if let Ok(n) = digits[..end].parse::<u64>() {
+                result = Some(n);
+            }
+        }
+        search_from = digits_start;
+    }
+    result
+}
+
+/// Args for `gh pr create`. Title/base are separate argv entries after their
+/// flags (dash-guarded by `validate_pr_create_inputs`); the body goes over
+/// stdin via `--body-file -`. Deliberately NO `--repo`: with it, some gh
+/// versions ignore the local branch context — we rely on cwd + upstream.
+fn pr_create_args<'a>(title: &'a str, base: &'a str, draft: bool) -> Vec<&'a str> {
+    let mut args = vec!["pr", "create", "--title", title, "--body-file", "-", "--base", base];
+    if draft {
+        args.push("--draft");
+    }
+    args
+}
+
+/// True when the current branch has an upstream configured (exit 0 from
+/// `git rev-parse @{upstream}`); a spawn failure surfaces as an error.
+fn has_upstream(repo: &Path) -> Result<bool, GithubError> {
+    let out = Command::new("git")
+        .current_dir(repo)
+        .args(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])
+        .output()
+        .map_err(|e| GithubError::Other(format!("git failed to spawn: {e}")))?;
+    Ok(out.status.success())
+}
+
+/// Push the current branch and set its upstream, forcing gh's credential
+/// helper (the empty `credential.helper=` resets any inherited — possibly
+/// broken — global helpers; the second entry authenticates with the gh token).
+/// Same pattern as `create_repo`; `GIT_TERMINAL_PROMPT=0` fails fast instead
+/// of hanging on a prompt.
+fn push_current_branch(repo: &Path) -> Result<(), GithubError> {
+    let out = Command::new("git")
+        .current_dir(repo)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .args([
+            "-c",
+            "credential.helper=",
+            "-c",
+            "credential.helper=!gh auth git-credential",
+            "push",
+            "--set-upstream",
+            "origin",
+            "HEAD",
+        ])
+        .output()
+        .map_err(|e| GithubError::Other(format!("git push failed to spawn: {e}")))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(GithubError::Other(format!(
+            "Could not push the branch: {}",
+            stderr.trim()
+        )));
+    }
+    Ok(())
+}
+
+/// Create a PR from the current branch: push it first if it has no upstream
+/// (see `push_current_branch`), then `gh pr create` — run IN the repo so gh
+/// infers the head branch from the local context. Returns the new PR number
+/// parsed from the URL gh prints.
+pub fn pr_create(
+    repo: &Path,
+    title: &str,
+    body: &str,
+    base: &str,
+    draft: bool,
+) -> Result<u64, GithubError> {
+    validate_pr_create_inputs(title, base)?;
+    // Resolved only to confirm a github.com remote exists (NoRemote gets its
+    // own UI state); the slug itself is unused — see `pr_create_args`.
+    resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+
+    let pushed = if has_upstream(repo)? {
+        false
+    } else {
+        push_current_branch(repo)?;
+        true
+    };
+
+    let args = pr_create_args(title, base, draft);
+    let stdout = match run_gh_in(repo, &args, Some(body)) {
+        Ok(out) => out,
+        // If we just pushed, say so — the user's branch state changed even
+        // though the PR didn't happen. The classified message is preserved.
+        Err(e) if pushed => {
+            let msg = match e {
+                GithubError::Other(m) => m,
+                other => format!("{other:?}"),
+            };
+            return Err(GithubError::Other(format!(
+                "Branch pushed, but creating the pull request failed: {msg}"
+            )));
+        }
+        Err(e) => return Err(e),
+    };
+
+    pr_number_from_url(&stdout).ok_or_else(|| {
+        GithubError::Other(format!(
+            "PR may have been created but the response was unreadable: {}",
+            stdout.trim()
+        ))
+    })
 }
 
 /// One inline line-anchored review comment, drafted in the UI and submitted
@@ -574,6 +715,39 @@ mod tests {
                 other => panic!("expected Other, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn parses_pr_number_from_create_output() {
+        assert_eq!(pr_number_from_url("https://github.com/o/r/pull/123\n"), Some(123));
+        assert_eq!(pr_number_from_url("https://github.com/o/r/pull/123/files"), Some(123));
+        assert_eq!(pr_number_from_url("Warning: something\nhttps://github.com/o/r/pull/9"), Some(9));
+        assert_eq!(pr_number_from_url("garbage"), None);
+        assert_eq!(pr_number_from_url(""), None);
+    }
+
+    #[test]
+    fn pr_create_rejects_leading_dash_operands() {
+        assert!(validate_pr_create_inputs("-t", "main").is_err());
+        assert!(validate_pr_create_inputs("Fix things", "-main").is_err());
+        assert!(validate_pr_create_inputs("Fix things", "main").is_ok());
+    }
+
+    #[test]
+    fn pr_create_rejects_empty_title() {
+        assert!(validate_pr_create_inputs("", "main").is_err());
+    }
+
+    #[test]
+    fn pr_create_args_shape() {
+        assert_eq!(
+            pr_create_args("Fix things", "main", false),
+            vec!["pr", "create", "--title", "Fix things", "--body-file", "-", "--base", "main"]
+        );
+        assert_eq!(
+            pr_create_args("Fix things", "main", true),
+            vec!["pr", "create", "--title", "Fix things", "--body-file", "-", "--base", "main", "--draft"]
+        );
     }
 
     #[test]

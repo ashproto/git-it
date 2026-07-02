@@ -184,6 +184,12 @@ pub fn fast_forward_branch(repo: String, branch: String, remote: String) -> Resu
     ops::fast_forward_branch(&PathBuf::from(repo), &branch, &remote)
 }
 
+// async: shells out to git; best-effort PR title/body prefill for the wizard.
+#[tauri::command(async)]
+pub fn branch_subjects(repo: String, base: String, limit: u32) -> Result<Vec<String>, String> {
+    ops::branch_subjects(&PathBuf::from(repo), &base, limit)
+}
+
 #[tauri::command]
 pub fn merge(repo: String, reference: String, no_ff: bool, squash: bool) -> Result<OpOutcome, String> {
     ops_merge::merge(&PathBuf::from(repo), &reference, no_ff, squash)
@@ -682,4 +688,15 @@ pub fn github_create_repo(
     description: String,
 ) -> Result<String, github::GithubError> {
     github::create_repo(&PathBuf::from(repo), &name, private, &description)
+}
+
+#[tauri::command(async)]
+pub fn github_pr_create(
+    repo: String,
+    title: String,
+    body: String,
+    base: String,
+    draft: bool,
+) -> Result<u64, github::GithubError> {
+    github::review::pr_create(&PathBuf::from(repo), &title, &body, &base, draft)
 }

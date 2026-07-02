@@ -30,6 +30,7 @@ pub fn run() {
             commands::delete_tag,
             commands::fetch,
             commands::fast_forward_branch,
+            commands::branch_subjects,
             commands::merge,
             commands::cherry_pick,
             commands::revert,
@@ -111,6 +112,7 @@ pub fn run() {
             commands::github_delete_comment,
             commands::github_readme,
             commands::github_create_repo,
+            commands::github_pr_create,
             fswatch::start_watch,
             fswatch::stop_watch,
         ])

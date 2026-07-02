@@ -101,7 +101,21 @@ pub fn classify_gh_error(stdout: &str, stderr: &str) -> GithubError {
 /// failure returns a classified `GithubError`. `gh` is spawned with args passed
 /// directly — never via a shell.
 pub fn run_gh(args: &[&str], stdin: Option<&str>) -> Result<String, GithubError> {
+    run_gh_impl(None, args, stdin)
+}
+
+/// `run_gh`, but spawned with the repo as the working directory. Required for
+/// gh subcommands that read the LOCAL git context (`gh pr create` infers the
+/// head branch from the current directory; `gh pr checkout` operates on it).
+pub fn run_gh_in(repo: &Path, args: &[&str], stdin: Option<&str>) -> Result<String, GithubError> {
+    run_gh_impl(Some(repo), args, stdin)
+}
+
+fn run_gh_impl(cwd: Option<&Path>, args: &[&str], stdin: Option<&str>) -> Result<String, GithubError> {
     let mut cmd = Command::new("gh");
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
     cmd.args(args)
         .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
