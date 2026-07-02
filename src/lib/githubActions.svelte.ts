@@ -114,6 +114,43 @@ function makeGithubActions() {
     }
   }
 
+  // Reply to an inline review thread (targets the thread's first comment via
+  // the REST replies endpoint). Same surfacing contract as commentInline: no
+  // shared busy/error state — the caller owns its own; on success the reload
+  // nonce bump re-fetches the detail so the new reply lands in the thread.
+  async function replyThread(
+    prNumber: number,
+    commentId: number,
+    body: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const repo = appState.repo;
+    if (!repo || !body.trim()) return { ok: false, error: "Empty comment." };
+    try {
+      await api.githubPrReplyThread(repo, prNumber, commentId, body);
+      githubState.bumpReload();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errText(e) };
+    }
+  }
+
+  // Resolve or unresolve an inline review thread (GraphQL mutation). Same
+  // contract as replyThread; the reload re-fetch flips the badge.
+  async function resolveThread(
+    threadId: string,
+    resolve: boolean,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const repo = appState.repo;
+    if (!repo) return { ok: false, error: "No repository open." };
+    try {
+      await api.githubPrResolveThread(repo, threadId, resolve);
+      githubState.bumpReload();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errText(e) };
+    }
+  }
+
   return {
     get pending() {
       return pending;
@@ -129,6 +166,8 @@ function makeGithubActions() {
     submit,
     commentInline,
     submitReview,
+    replyThread,
+    resolveThread,
   };
 }
 

@@ -107,6 +107,70 @@ pub fn pr_submit_review(
     .map(|_| ())
 }
 
+/// Body for the reply-to-review-comment REST call — serde_json handles all
+/// escaping, so the user's text never touches a shell string.
+fn reply_body_json(body: &str) -> String {
+    serde_json::json!({ "body": body }).to_string()
+}
+
+/// REST path for replying to an existing inline review comment. All segments
+/// are interpolated by Rust from numeric/resolved values — no user text.
+fn reply_api_path(owner: &str, name: &str, pr_number: u64, comment_id: u64) -> String {
+    format!("repos/{owner}/{name}/pulls/{pr_number}/comments/{comment_id}/replies")
+}
+
+/// Reply to an inline review thread via the REST "replies" endpoint. The
+/// target is the thread's first comment id; the body goes over stdin.
+pub fn pr_reply_thread(
+    repo: &Path,
+    pr_number: u64,
+    comment_id: u64,
+    body: &str,
+) -> Result<(), GithubError> {
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let path = reply_api_path(&owner, &name, pr_number, comment_id);
+    run_gh(
+        &["api", &path, "--method", "POST", "--input", "-"],
+        Some(&reply_body_json(body)),
+    )
+    .map(|_| ())
+}
+
+/// The GraphQL mutation for (un)resolving a review thread — REST has no
+/// equivalent endpoint.
+fn resolve_mutation(resolve: bool) -> &'static str {
+    if resolve {
+        "mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }"
+    } else {
+        "mutation($id: ID!) { unresolveReviewThread(input: {threadId: $id}) { thread { id } } }"
+    }
+}
+
+/// GraphQL node ids are base64-ish (`PRRT_…`); reject anything else before
+/// shelling out so a hostile id can never reach `gh` as an argument.
+fn validate_thread_id(id: &str) -> Result<(), GithubError> {
+    let ok = !id.is_empty()
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'=' | b'+' | b'/' | b'-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(GithubError::Other("Invalid thread id.".into()))
+    }
+}
+
+/// Resolve or unresolve an inline review thread via a GraphQL mutation. The
+/// query and id travel as separate `-f key=value` args (single argv entries —
+/// never a shell string).
+pub fn pr_resolve_thread(repo: &Path, thread_id: &str, resolve: bool) -> Result<(), GithubError> {
+    validate_thread_id(thread_id)?;
+    resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let q_arg = format!("query={}", resolve_mutation(resolve));
+    let id_arg = format!("id={thread_id}");
+    run_gh(&["api", "graphql", "-f", &q_arg, "-f", &id_arg], None).map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +216,49 @@ mod tests {
         assert!(validate_review_event("APPROVE").is_ok());
         assert!(validate_review_event("REQUEST_CHANGES").is_ok());
         assert!(validate_review_event("COMMENT").is_ok());
+    }
+
+    #[test]
+    fn reply_body_json_escapes() {
+        let body = reply_body_json("line1\n\"quoted\" — done");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["body"], "line1\n\"quoted\" — done");
+        assert_eq!(v.as_object().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn reply_api_path_shape() {
+        assert_eq!(
+            reply_api_path("ashproto", "git-it", 42, 987654),
+            "repos/ashproto/git-it/pulls/42/comments/987654/replies"
+        );
+    }
+
+    #[test]
+    fn resolve_mutation_selects_by_flag() {
+        assert_eq!(
+            resolve_mutation(true),
+            "mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }"
+        );
+        assert_eq!(
+            resolve_mutation(false),
+            "mutation($id: ID!) { unresolveReviewThread(input: {threadId: $id}) { thread { id } } }"
+        );
+    }
+
+    #[test]
+    fn thread_id_validator_rejects_bad_ids() {
+        assert!(validate_thread_id("").is_err());
+        assert!(validate_thread_id("abc def").is_err());
+        assert!(validate_thread_id("$(rm -rf)").is_err());
+        assert!(validate_thread_id("id;drop").is_err());
+    }
+
+    #[test]
+    fn thread_id_validator_accepts_node_ids() {
+        assert!(validate_thread_id("PRRT_kwDOJx2R3M5FQz-a").is_ok());
+        assert!(validate_thread_id("MDIzOlB1bGxSZXF1ZXN0UmV2aWV3VGhyZWFkMQ==").is_ok());
+        assert!(validate_thread_id("a+b/c_d-e=").is_ok());
     }
 
     #[test]

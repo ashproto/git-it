@@ -1173,11 +1173,15 @@ pub struct GhInlineComment {
     pub path: String,
     pub line: i64,
     pub created_at: String,
+    /// REST comment id — the reply target. `None` when GraphQL omits it.
+    pub database_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GhReviewThread {
+    /// GraphQL node id — the resolve/unresolve target. "" when missing.
+    pub id: String,
     pub resolved: bool,
     pub path: String,
     pub line: i64,
@@ -1200,6 +1204,7 @@ fn parse_review_threads(json: &str) -> Vec<GhReviewThread> {
     nodes
         .iter()
         .map(|t| {
+            let id = t.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
             let resolved = t.get("isResolved").and_then(|x| x.as_bool()).unwrap_or(false);
             let path = t.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string();
             let line = t.get("line").and_then(|x| x.as_i64()).unwrap_or(0);
@@ -1226,12 +1231,20 @@ fn parse_review_threads(json: &str) -> Vec<GhReviewThread> {
                                 .and_then(|x| x.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            GhInlineComment { author, body, path: cpath, line: cline, created_at }
+                            let database_id = c.get("databaseId").and_then(|x| x.as_i64());
+                            GhInlineComment {
+                                author,
+                                body,
+                                path: cpath,
+                                line: cline,
+                                created_at,
+                                database_id,
+                            }
                         })
                         .collect()
                 })
                 .unwrap_or_default();
-            GhReviewThread { resolved, path, line, comments }
+            GhReviewThread { id, resolved, path, line, comments }
         })
         .collect()
 }
@@ -1239,7 +1252,7 @@ fn parse_review_threads(json: &str) -> Vec<GhReviewThread> {
 /// Best-effort: fetch resolved/unresolved inline review threads via GraphQL.
 /// Missing perms / no threads → empty; never fails the whole detail.
 fn fetch_review_threads(owner: &str, name: &str, number: i64) -> Vec<GhReviewThread> {
-    let query = "query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){pullRequest(number:$num){reviewThreads(first:100){nodes{isResolved path line comments(first:50){nodes{author{login} body path originalLine line createdAt}}}}}}}";
+    let query = "query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){pullRequest(number:$num){reviewThreads(first:100){nodes{id isResolved path line comments(first:50){nodes{databaseId author{login} body path originalLine line createdAt}}}}}}}";
     let q_arg = format!("query={query}");
     let o = format!("o={owner}");
     let n = format!("n={name}");
@@ -1926,21 +1939,27 @@ mod tests {
     #[test]
     fn parse_review_threads_extracts_resolved_and_comments() {
         let json = r#"{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[
-            {"isResolved":true,"path":"a.rs","line":5,"comments":{"nodes":[
-                {"author":{"login":"rev"},"body":"fix this","path":"a.rs","originalLine":5,"line":null,"createdAt":"2026-01-03T00:00:00Z"}
+            {"id":"PRRT_abc","isResolved":true,"path":"a.rs","line":5,"comments":{"nodes":[
+                {"databaseId":987654,"author":{"login":"rev"},"body":"fix this","path":"a.rs","originalLine":5,"line":null,"createdAt":"2026-01-03T00:00:00Z"}
             ]}},
-            {"isResolved":false,"path":"b.rs","line":null,"comments":{"nodes":[]}}
+            {"isResolved":false,"path":"b.rs","line":null,"comments":{"nodes":[
+                {"author":{"login":"x"},"body":"","path":"b.rs","originalLine":null,"line":null,"createdAt":""}
+            ]}}
         ]}}}}}"#;
         let out = parse_review_threads(json);
         assert_eq!(out.len(), 2);
+        assert_eq!(out[0].id, "PRRT_abc");
         assert!(out[0].resolved);
         assert_eq!(out[0].path, "a.rs");
         assert_eq!(out[0].comments.len(), 1);
         assert_eq!(out[0].comments[0].author, "rev");
+        assert_eq!(out[0].comments[0].database_id, Some(987654));
         // line null falls back to originalLine.
         assert_eq!(out[0].comments[0].line, 5);
         assert!(!out[1].resolved);
+        assert_eq!(out[1].id, ""); // missing id → ""
         assert_eq!(out[1].line, 0); // null thread line → 0
+        assert_eq!(out[1].comments[0].database_id, None); // missing databaseId → None
     }
 
     #[test]

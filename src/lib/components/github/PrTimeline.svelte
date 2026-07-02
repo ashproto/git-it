@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from "../../store.svelte";
+  import { githubActions } from "../../githubActions.svelte";
   import { parseISO, formatCommitDate } from "../../dates";
   import type { GhPullDetail, GhCheckRun, GhReviewThread } from "../../types";
   import { buildPrTimeline } from "../../github/prTimeline";
@@ -17,8 +18,62 @@
     if (seededFor !== pr.number) {
       seededFor = pr.number;
       newestFirst = appState.prTimelineNewestFirst;
+      // Thread-action state is per-PR — never carry a half-typed reply or a
+      // stale error over to another PR's timeline.
+      replyOpenFor = null;
+      replyBody = "";
+      threadErr = {};
     }
   });
+
+  // ---- inline thread actions (reply + resolve/unresolve) ----
+  // Threads are identified by their GraphQL node id; path:line is only a
+  // display-key fallback for threads the API returned without an id.
+  function threadKey(t: GhReviewThread): string {
+    return t.id || `${t.path}:${t.line}`;
+  }
+  let replyOpenFor = $state<string | null>(null); // one composer across the whole timeline
+  let replyBody = $state("");
+  let replyBusy = $state(false);
+  let resolveBusyFor = $state<string | null>(null);
+  let threadErr = $state<Record<string, string>>({});
+
+  function openReply(t: GhReviewThread) {
+    if (replyBusy) return;
+    replyOpenFor = threadKey(t); // opening one closes any other
+    replyBody = "";
+  }
+  function cancelReply() {
+    if (replyBusy) return;
+    replyOpenFor = null;
+    replyBody = "";
+  }
+  async function sendReply(t: GhReviewThread) {
+    const commentId = t.comments[0]?.databaseId;
+    const text = replyBody.trim();
+    if (commentId == null || !text || replyBusy) return;
+    const k = threadKey(t);
+    replyBusy = true;
+    delete threadErr[k];
+    const res = await githubActions.replyThread(pr.number, commentId, text);
+    replyBusy = false;
+    if (res.ok) {
+      // Collapse; the bumpReload re-fetch will show the new reply.
+      replyOpenFor = null;
+      replyBody = "";
+    } else {
+      threadErr[k] = res.error ?? "Could not post reply.";
+    }
+  }
+  async function toggleResolve(t: GhReviewThread) {
+    if (!t.id || resolveBusyFor !== null) return;
+    const k = threadKey(t);
+    resolveBusyFor = k;
+    delete threadErr[k];
+    const res = await githubActions.resolveThread(t.id, !t.resolved);
+    resolveBusyFor = null;
+    if (!res.ok) threadErr[k] = res.error ?? "Could not update thread.";
+  }
 
   const events = $derived.by(() => {
     const asc = buildPrTimeline(pr);
@@ -159,6 +214,7 @@
               <Markdown src={c.body} />
             </div>
           {/each}
+          {@render threadActions(t)}
         </div>
       </details>
     </li>
@@ -175,8 +231,67 @@
             <Markdown src={c.body} />
           </div>
         {/each}
+        {@render threadActions(t)}
       </div>
     </li>
+  {/if}
+{/snippet}
+
+{#snippet threadActions(t: GhReviewThread)}
+  {@const k = threadKey(t)}
+  {@const canReply = (t.comments[0]?.databaseId ?? null) !== null}
+  {#if canReply || t.id}
+    <div class="tactions">
+      {#if canReply && replyOpenFor !== k}
+        <button type="button" class="tbtn" onclick={() => openReply(t)}>Reply</button>
+      {/if}
+      {#if t.id}
+        <button
+          type="button"
+          class="tbtn"
+          disabled={resolveBusyFor !== null}
+          onclick={() => void toggleResolve(t)}
+        >
+          {resolveBusyFor === k
+            ? t.resolved
+              ? "Unresolving…"
+              : "Resolving…"
+            : t.resolved
+              ? "Unresolve"
+              : "Resolve"}
+        </button>
+      {/if}
+    </div>
+    {#if canReply && replyOpenFor === k}
+      <div class="reply-box">
+        <textarea
+          bind:value={replyBody}
+          placeholder="Reply…"
+          rows="2"
+          disabled={replyBusy}
+          aria-label="Reply to review thread"
+          onkeydown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              void sendReply(t);
+            }
+          }}
+        ></textarea>
+        <div class="reply-row">
+          <span class="hint">⌘⏎ to submit</span>
+          <button type="button" class="tbtn" disabled={replyBusy} onclick={cancelReply}>Cancel</button>
+          <button
+            type="button"
+            class="tbtn primary"
+            disabled={replyBusy || !replyBody.trim()}
+            onclick={() => void sendReply(t)}
+          >
+            {replyBusy ? "Replying…" : "Reply"}
+          </button>
+        </div>
+      </div>
+    {/if}
+    {#if threadErr[k]}<p class="terr">{threadErr[k]}</p>{/if}
   {/if}
 {/snippet}
 
@@ -321,6 +436,62 @@
   .icomment { border-top: 1px solid var(--border); padding-top: 6px; }
   .icomment:first-child { border-top: none; padding-top: 0; }
   .ihead { font-size: 12px; margin-bottom: 2px; }
+  .tactions {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .tbtn {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .tbtn:hover:not(:disabled) { color: var(--accent); }
+  .tbtn:disabled { opacity: 0.5; cursor: default; }
+  .tbtn.primary { color: var(--accent); font-weight: 600; }
+  .reply-box {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .reply-box textarea {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 48px;
+    font: inherit;
+    font-size: 12.5px;
+    line-height: 1.5;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--input-bg, var(--panel-bg));
+    color: var(--text);
+  }
+  .reply-box textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .reply-box textarea:disabled { opacity: 0.6; }
+  .reply-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .reply-row .hint {
+    margin-right: auto;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .terr {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--status-del, #d22323);
+  }
   .ci-name { color: var(--text); text-decoration: none; }
   a.ci-name:hover { color: var(--accent); }
   .g { width: 14px; text-align: center; font-weight: 700; }

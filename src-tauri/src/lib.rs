@@ -102,6 +102,8 @@ pub fn run() {
             commands::github_issue_detail,
             commands::github_pr_diff,
             commands::github_pr_submit_review,
+            commands::github_pr_reply_thread,
+            commands::github_pr_resolve_thread,
             commands::github_readme,
             commands::github_create_repo,
             fswatch::start_watch,

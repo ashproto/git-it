@@ -29,7 +29,7 @@ describe("buildPrTimeline", () => {
     const d = base();
     d.reviews = [{ author: "c", state: "CHANGES_REQUESTED", body: "", submittedAt: "2026-01-03T00:00:00Z" }];
     d.reviewThreads = [
-      { resolved: false, path: "a.rs", line: 5, comments: [{ author: "c", body: "fix", path: "a.rs", line: 5, createdAt: "2026-01-03T00:00:01Z" }] },
+      { id: "PRRT_1", resolved: false, path: "a.rs", line: 5, comments: [{ author: "c", body: "fix", path: "a.rs", line: 5, createdAt: "2026-01-03T00:00:01Z", databaseId: 11 }] },
     ];
     const ev = buildPrTimeline(d);
     const review = ev.find((e) => e.kind === "review");
@@ -39,7 +39,7 @@ describe("buildPrTimeline", () => {
   it("surfaces inline threads even when there are no top-level reviews", () => {
     const d = base();
     d.reviewThreads = [
-      { resolved: false, path: "a.rs", line: 5, comments: [{ author: "c", body: "fix", path: "a.rs", line: 5, createdAt: "2026-01-02T00:00:00Z" }] },
+      { id: "", resolved: false, path: "a.rs", line: 5, comments: [{ author: "c", body: "fix", path: "a.rs", line: 5, createdAt: "2026-01-02T00:00:00Z", databaseId: null }] },
     ];
     const ev = buildPrTimeline(d);
     const t = ev.find((e) => e.kind === "reviewThread");

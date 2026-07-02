@@ -606,6 +606,25 @@ pub fn github_pr_submit_review(
 }
 
 #[tauri::command(async)]
+pub fn github_pr_reply_thread(
+    repo: String,
+    pr_number: u64,
+    comment_id: u64,
+    body: String,
+) -> Result<(), github::GithubError> {
+    github::review::pr_reply_thread(&PathBuf::from(repo), pr_number, comment_id, &body)
+}
+
+#[tauri::command(async)]
+pub fn github_pr_resolve_thread(
+    repo: String,
+    thread_id: String,
+    resolve: bool,
+) -> Result<(), github::GithubError> {
+    github::review::pr_resolve_thread(&PathBuf::from(repo), &thread_id, resolve)
+}
+
+#[tauri::command(async)]
 pub fn github_readme(repo: String) -> Result<String, String> {
     git_core::github::readme(&PathBuf::from(repo)).map_err(|e| format!("{e:?}"))
 }

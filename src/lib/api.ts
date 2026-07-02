@@ -198,6 +198,10 @@ export const api = {
     invoke<string>("github_pr_diff", { repo, number }),
   githubPrSubmitReview: (repo: string, number: number, event: string, body: string, comments: DraftComment[]) =>
     invoke<void>("github_pr_submit_review", { repo, number, event, body, comments }),
+  githubPrReplyThread: (repo: string, prNumber: number, commentId: number, body: string) =>
+    invoke<void>("github_pr_reply_thread", { repo, prNumber, commentId, body }),
+  githubPrResolveThread: (repo: string, threadId: string, resolve: boolean) =>
+    invoke<void>("github_pr_resolve_thread", { repo, threadId, resolve }),
   githubIssueDetail: (repo: string, number: number) =>
     invoke<GhIssueDetail>("github_issue_detail", { repo, number }),
   githubReadme: (repo: string) => invoke<string>("github_readme", { repo }),

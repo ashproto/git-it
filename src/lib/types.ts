@@ -264,8 +264,8 @@ export type GhReview = { author: string; state: string; body: string; submittedA
 export type GhFile = { path: string; additions: number; deletions: number };
 
 export type GhCommit = { oid: string; message: string; author: string; committedDate: string };
-export type GhInlineComment = { author: string; body: string; path: string; line: number; createdAt: string };
-export type GhReviewThread = { resolved: boolean; path: string; line: number; comments: GhInlineComment[] };
+export type GhInlineComment = { author: string; body: string; path: string; line: number; createdAt: string; databaseId: number | null };
+export type GhReviewThread = { id: string; resolved: boolean; path: string; line: number; comments: GhInlineComment[] };
 export type GhCheckRun = {
   name: string; status: string; conclusion: string;
   startedAt: string; updatedAt: string; url: string; headSha: string;
