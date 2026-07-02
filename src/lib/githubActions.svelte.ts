@@ -103,8 +103,10 @@ function makeGithubActions() {
     try {
       await api.githubPrSubmitReview(repo, number, verdict, summary, comments);
       // Only THIS PR's draft is consumed; a foreign draft stays untouched.
-      // (A failure keeps the draft intact for retry.)
-      if (own) reviewDraft.discard();
+      // (A failure keeps the draft intact for retry.) An UNBOUND store (no
+      // comments anywhere) is also cleared so a submitted summary-only review
+      // can't re-seed another PR's bar.
+      if (own || !reviewDraft.bound) reviewDraft.discard();
       githubState.bumpReload(); // re-fetch the detail/timeline so the review shows
       return { ok: true };
     } catch (e) {
