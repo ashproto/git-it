@@ -73,8 +73,11 @@ export function splitPatchByFile(patch: string): PrDiffFile[] {
         continue;
       }
       if (inBody) {
-        if (line.startsWith("+") && !line.startsWith("+++")) additions++;
-        else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+        // Real +++/--- headers can't appear mid-hunk (a new file starts with
+        // "diff --git"), so every +/− line here is content — including content
+        // that itself begins with "++" or "--".
+        if (line.startsWith("+")) additions++;
+        else if (line.startsWith("-")) deletions++;
       }
     }
 

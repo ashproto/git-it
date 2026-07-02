@@ -82,6 +82,19 @@ new file mode 100644
     expect(f.oldPath).toBeNull();
     expect(f).toMatchObject({ additions: 1, deletions: 0 });
   });
+  it("counts content lines that themselves start with ++ or --", () => {
+    const p = `diff --git a/q.sql b/q.sql
+index 111..222 100644
+--- a/q.sql
++++ b/q.sql
+@@ -1,2 +1,2 @@
+--- old sql comment
++++ something odd
+`;
+    // "--- old sql comment" is a DELETED line whose content starts with "--";
+    // "+++ something odd" is an ADDED line whose content starts with "++".
+    expect(splitPatchByFile(p)[0]).toMatchObject({ additions: 1, deletions: 1 });
+  });
   it("returns [] for whitespace-only input", () => {
     expect(splitPatchByFile("\n  \n")).toEqual([]);
   });
