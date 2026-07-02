@@ -2,7 +2,7 @@
   import { appState } from "../../store.svelte";
   import { githubActions } from "../../githubActions.svelte";
   import { parseISO, formatCommitDate } from "../../dates";
-  import type { GhCommentKind, GhPullDetail, GhCheckRun, GhReviewThread } from "../../types";
+  import type { GhCommentKind, GhInlineComment, GhPullDetail, GhCheckRun, GhReviewThread } from "../../types";
   import { buildPrTimeline } from "../../github/prTimeline";
   import Markdown from "./Markdown.svelte";
   import ReactionBar from "./ReactionBar.svelte";
@@ -263,25 +263,7 @@
         </summary>
         <div class="thread-body">
           {#each t.comments as c, ci (c.author + ci)}
-            <div class="icomment">
-              <div class="ihead">
-                <strong>{c.author}</strong>
-                <span class="when">{rel(c.createdAt)}</span>
-                <CommentActions
-                  author={c.author}
-                  kind="reviewComment"
-                  target={c.databaseId}
-                  body={c.body}
-                  onEditStart={() => startEdit(`rc:${c.databaseId}`, c.body)}
-                />
-              </div>
-              {#if c.databaseId != null && editingKey === `rc:${c.databaseId}`}
-                {@render editBox("reviewComment", c.databaseId)}
-              {:else}
-                <Markdown src={c.body} />
-                <ReactionBar reactions={c.reactions} kind="reviewComment" target={c.databaseId} />
-              {/if}
-            </div>
+            {@render inlineComment(c)}
           {/each}
           {@render threadActions(t)}
         </div>
@@ -295,15 +277,37 @@
       </div>
       <div class="thread-body">
         {#each t.comments as c, ci (c.author + ci)}
-          <div class="icomment">
-            <div class="ihead"><strong>{c.author}</strong> <span class="when">{rel(c.createdAt)}</span></div>
-            <Markdown src={c.body} />
-          </div>
+          {@render inlineComment(c)}
         {/each}
         {@render threadActions(t)}
       </div>
     </li>
   {/if}
+{/snippet}
+
+<!-- One inline review-thread comment: header + own-comment actions, then
+     either the edit-in-place box or the rendered body + reactions. Shared by
+     the resolved and unresolved thread branches so they can't drift. -->
+{#snippet inlineComment(c: GhInlineComment)}
+  <div class="icomment">
+    <div class="ihead">
+      <strong>{c.author}</strong>
+      <span class="when">{rel(c.createdAt)}</span>
+      <CommentActions
+        author={c.author}
+        kind="reviewComment"
+        target={c.databaseId}
+        body={c.body}
+        onEditStart={() => startEdit(`rc:${c.databaseId}`, c.body)}
+      />
+    </div>
+    {#if c.databaseId != null && editingKey === `rc:${c.databaseId}`}
+      {@render editBox("reviewComment", c.databaseId)}
+    {:else}
+      <Markdown src={c.body} />
+      <ReactionBar reactions={c.reactions} kind="reviewComment" target={c.databaseId} />
+    {/if}
+  </div>
 {/snippet}
 
 {#snippet threadActions(t: GhReviewThread)}

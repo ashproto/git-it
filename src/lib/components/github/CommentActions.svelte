@@ -62,8 +62,10 @@
         onclick={() => void del()}
       >🗑</button>
     {/if}
-    {#if error}<span class="cerr">{error}</span>{/if}
   </span>
+  <!-- Outside the hover-revealed span: a failed delete must stay visible after
+       the pointer leaves the row. -->
+  {#if error}<span class="cerr">{error}</span>{/if}
 {/if}
 
 <style>
