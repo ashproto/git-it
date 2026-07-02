@@ -19,8 +19,7 @@ fn pr_diff_args(slug: &str, number: u64) -> Vec<String> {
 
 /// Fetch the unified diff of a pull request via `gh pr diff`.
 pub fn pr_diff(repo: &Path, number: u64) -> Result<String, GithubError> {
-    let (owner, name) = resolve_owner_repo(repo)
-        .ok_or_else(|| GithubError::Other("No GitHub remote found.".into()))?;
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
     let slug = format!("{owner}/{name}");
     let args = pr_diff_args(&slug, number);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();

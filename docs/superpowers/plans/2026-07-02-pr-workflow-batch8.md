@@ -52,8 +52,7 @@ fn pr_diff_args(slug: &str, number: u64) -> Vec<String> {
 }
 
 pub fn pr_diff(repo: &Path, number: u64) -> Result<String, GithubError> {
-    let (owner, name) = resolve_owner_repo(repo)
-        .ok_or_else(|| GithubError::Other("No GitHub remote found.".into()))?;
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
     let slug = format!("{owner}/{name}");
     let args = pr_diff_args(&slug, number);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -270,7 +269,7 @@ fn review_request_json(event: &str, body: &str, comments: &[DraftComment]) -> St
 pub fn pr_submit_review(repo: &Path, number: u64, event: &str, body: &str, comments: Vec<DraftComment>) -> Result<(), GithubError> {
     validate_review_event(event)?;
     // also validate every comment side is LEFT/RIGHT before shelling out
-    let (owner, name) = resolve_owner_repo(repo).ok_or_else(|| GithubError::Other("No GitHub remote found.".into()))?;
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
     let path = format!("repos/{owner}/{name}/pulls/{number}/reviews");
     let json = review_request_json(event, body, &comments);
     run_gh(&["api", &path, "--method", "POST", "--input", "-"], Some(&json)).map(|_| ())
