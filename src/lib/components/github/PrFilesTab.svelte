@@ -42,6 +42,12 @@
   // shared reviewDraft; the ReviewBar submits the whole draft in one shot.
   let composer = $state<{ line: number; side: "LEFT" | "RIGHT"; body: string } | null>(null);
 
+  // The draft store is a single global — its per-file lookups (commentAt/indexAt)
+  // ignore the (repo, PR) binding, so THIS tab may only consult them when the
+  // draft is unbound or bound to THIS PR. Otherwise PR B would show/edit/delete
+  // PR A's comments on coincident (path, line, side).
+  const mine = $derived(!reviewDraft.bound || reviewDraft.belongsTo(appState.repo, number));
+
   // Close the composer when the user switches file or the diff (PR) changes —
   // its line/side would point into the wrong file. Reads only the triggers.
   $effect(() => {
@@ -51,12 +57,18 @@
   });
 
   // Index of the existing draft comment the composer is editing, or -1 when new.
+  // Gated on `mine` so Save can never route an edit into another PR's draft.
   const editingIdx = $derived(
-    composer && selected ? reviewDraft.indexAt(selected.path, composer.line, composer.side) : -1,
+    mine && composer && selected
+      ? reviewDraft.indexAt(selected.path, composer.line, composer.side)
+      : -1,
   );
 
   function openComposer(line: number, side: "LEFT" | "RIGHT") {
-    const existing = selected ? reviewDraft.commentAt(selected.path, line, side) : undefined;
+    // Only prefill from a draft bound to this PR; with a foreign draft this is
+    // always a NEW comment — Save then hits addComment's cross-PR guard, which
+    // drives the discard-confirm dialog below.
+    const existing = mine && selected ? reviewDraft.commentAt(selected.path, line, side) : undefined;
     composer = { line, side, body: existing?.body ?? "" };
   }
 
@@ -162,7 +174,7 @@
           <DiffView
             patch={selected.patch}
             onLineComment={openComposer}
-            hasComment={(l, s) => !!reviewDraft.commentAt(selected.path, l, s)}
+            hasComment={(l, s) => mine && !!reviewDraft.commentAt(selected.path, l, s)}
           />
         {/key}
       {/if}

@@ -28,6 +28,11 @@ function makeReviewDraft() {
     get verdict() {
       return verdict;
     },
+    /** True while the draft is bound to some (repo, PR) — from the first
+     *  addComment until discard(), surviving removal of the last comment. */
+    get bound(): boolean {
+      return repo !== null;
+    },
     belongsTo(r: string, n: number): boolean {
       return repo === r && prNumber === n;
     },

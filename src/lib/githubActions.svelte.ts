@@ -83,11 +83,16 @@ function makeGithubActions() {
     }
   }
 
-  // Submit the pending review draft (verdict + summary + inline comments) as ONE
-  // atomic review. Same surfacing contract as commentInline: no shared busy/error
-  // state — the caller (ReviewBar) owns its own and displays `error` verbatim.
-  // The draft is only discarded on success; a failure keeps it intact for retry.
-  async function submitReview(number: number): Promise<{ ok: boolean; error?: string }> {
+  // Submit a review as ONE atomic POST. Verdict + summary are passed in
+  // explicitly by the caller (ReviewBar owns them per-PR) — never read from the
+  // global draft, so a draft pending on another PR can't leak its summary here.
+  // Same surfacing contract as commentInline: no shared busy/error state — the
+  // caller owns its own and displays `error` verbatim.
+  async function submitReview(
+    number: number,
+    verdict: string,
+    summary: string,
+  ): Promise<{ ok: boolean; error?: string }> {
     const repo = appState.repo;
     if (!repo) return { ok: false, error: "No repository open." };
     // Inline comments only ride along when the draft is bound to THIS PR — a
@@ -96,14 +101,10 @@ function makeGithubActions() {
     const own = reviewDraft.belongsTo(repo, number);
     const comments = own ? [...reviewDraft.comments] : [];
     try {
-      await api.githubPrSubmitReview(repo, number, reviewDraft.verdict, reviewDraft.summary, comments);
-      if (own || reviewDraft.count === 0) {
-        reviewDraft.discard();
-      } else {
-        // Keep the other PR's comment draft intact; just clear what we consumed.
-        reviewDraft.setSummary("");
-        reviewDraft.setVerdict("COMMENT");
-      }
+      await api.githubPrSubmitReview(repo, number, verdict, summary, comments);
+      // Only THIS PR's draft is consumed; a foreign draft stays untouched.
+      // (A failure keeps the draft intact for retry.)
+      if (own) reviewDraft.discard();
       githubState.bumpReload(); // re-fetch the detail/timeline so the review shows
       return { ok: true };
     } catch (e) {

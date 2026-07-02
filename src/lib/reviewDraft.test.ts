@@ -31,6 +31,16 @@ describe("reviewDraft", () => {
     expect(reviewDraft.commentAt("a.ts", 3, "RIGHT")?.body).toBe("hm");
     expect(reviewDraft.commentAt("a.ts", 4, "RIGHT")).toBeUndefined();
   });
+  it("bound reflects the binding lifecycle (survives removing the last comment)", () => {
+    expect(reviewDraft.bound).toBe(false);
+    reviewDraft.addComment("/r", 5, { path: "a.ts", line: 3, side: "RIGHT", body: "hm" });
+    expect(reviewDraft.bound).toBe(true);
+    reviewDraft.removeComment(0);
+    expect(reviewDraft.count).toBe(0);
+    expect(reviewDraft.bound).toBe(true); // binding + verdict/summary survive an empty list
+    reviewDraft.discard();
+    expect(reviewDraft.bound).toBe(false);
+  });
   it("tracks verdict and summary, cleared on discard", () => {
     reviewDraft.setVerdict("APPROVE");
     reviewDraft.setSummary("ship it");
