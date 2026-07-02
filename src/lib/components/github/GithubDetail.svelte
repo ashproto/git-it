@@ -7,10 +7,24 @@
   import Markdown from "./Markdown.svelte";
   import GithubSkeleton from "./GithubSkeleton.svelte";
   import PrTimeline from "./PrTimeline.svelte";
+  import PrFilesTab from "./PrFilesTab.svelte";
   import GithubCommentBox from "./GithubCommentBox.svelte";
+  import { splitPatchByFile } from "../../github/prDiff";
   import { revealIn } from "../../github/motion";
 
   let { kind, number }: { kind: "pr" | "issue"; number: number } = $props();
+
+  // PR sub-tab (Conversation | Files). Reset to Conversation when a DIFFERENT
+  // PR is opened; track the number the tab was set for so re-renders of the
+  // same PR don't yank the user back.
+  let detailTab = $state<"conversation" | "files">("conversation");
+  let tabFor: number | undefined;
+  $effect(() => {
+    if (tabFor !== number) {
+      tabFor = number;
+      detailTab = "conversation";
+    }
+  });
 
   $effect(() => {
     const repo = appState.repo;
@@ -36,6 +50,13 @@
   function glyph(b: string): string {
     return b === "pass" ? "✓" : b === "fail" ? "✗" : b === "pending" ? "○" : "–";
   }
+  // Files-tab count: the loaded diff's real file count once available, else the
+  // PR's changedFiles field.
+  const filesCount = $derived.by(() => {
+    if (!pr) return 0;
+    const diff = githubState.prDiff.data;
+    return diff != null ? splitPatchByFile(diff).length : pr.changedFiles;
+  });
   // Roll up the statusCheckRollup buckets for the pinned "latest checks" strip.
   const checkSummary = $derived.by(() => {
     const c = pr?.checks ?? [];
@@ -117,23 +138,33 @@
             </ul>
           </details>
         {/if}
-        {#if pr.files.length}
-          <details class="block"><summary>Files ({pr.files.length})</summary>
-            <ul class="files">
-              {#each pr.files as f (f.path)}
-                <li><a href={`${pr.url}/files`} target="_blank" rel="noreferrer" class="mono">{f.path}</a><span class="fstat"><span class="add">+{f.additions}</span> <span class="del">−{f.deletions}</span></span></li>
-              {/each}
-            </ul>
-          </details>
-        {/if}
       </div>
     {/if}
 
     {#if pr}
-      <section class="activity">
-        <h3>Activity</h3>
-        <PrTimeline {pr} />
-      </section>
+      <div class="dtabs">
+        <div class="seg" role="group" aria-label="Pull request detail view">
+          <button
+            type="button"
+            class:active={detailTab === "conversation"}
+            onclick={() => (detailTab = "conversation")}
+            aria-pressed={detailTab === "conversation"}
+          >Conversation</button><button
+            type="button"
+            class:active={detailTab === "files"}
+            onclick={() => (detailTab = "files")}
+            aria-pressed={detailTab === "files"}
+          >Files ({filesCount})</button>
+        </div>
+      </div>
+      {#if detailTab === "conversation"}
+        <section class="activity">
+          <h3>Activity</h3>
+          <PrTimeline {pr} />
+        </section>
+      {:else}
+        <PrFilesTab number={d.number} />
+      {/if}
     {:else}
       <section class="comments">
         <h3>{d.comments.length} {d.comments.length === 1 ? "comment" : "comments"}</h3>
@@ -150,7 +181,9 @@
       </section>
     {/if}
 
-    <GithubCommentBox target={kind} number={d.number} />
+    {#if !pr || detailTab === "conversation"}
+      <GithubCommentBox target={kind} number={d.number} />
+    {/if}
   {/if}
 </div>
 
@@ -188,11 +221,33 @@
   .del { color: var(--err, #c0392b); }
   .block { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
   .block summary { cursor: pointer; font-size: 12.5px; }
-  .checks, .files { list-style: none; margin: 8px 0 0; padding: 0; }
-  .checks li, .files li { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12px; }
-  .files li { justify-content: space-between; }
-  .checks a, .files a { color: var(--text); text-decoration: none; }
-  .checks a:hover, .files a:hover { color: var(--accent); }
+  .checks { list-style: none; margin: 8px 0 0; padding: 0; }
+  .checks li { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12px; }
+  .checks a { color: var(--text); text-decoration: none; }
+  .checks a:hover { color: var(--accent); }
+  .dtabs { display: flex; margin-top: 2px; }
+  .seg {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .seg button {
+    padding: 3px 12px;
+    border: none;
+    background: var(--btn-bg);
+    color: var(--text-muted);
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+    white-space: nowrap;
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button:hover { background: var(--btn-hover); color: var(--text); }
+  .seg button.active { background: var(--accent); color: #fff; }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .g { width: 14px; text-align: center; font-weight: 700; }
   .g.pass { color: var(--status-add, #2ea043); }
   .g.fail { color: var(--err, #c0392b); }
@@ -212,7 +267,6 @@
   .chead { font-size: 12.5px; margin-bottom: 4px; }
   .when { color: var(--text-muted); }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
-  .fstat { font-size: 11.5px; }
   .note { margin: 8px 2px; color: var(--text-muted); font-size: 12.5px; }
   .note.err { color: var(--err, #c0392b); }
 </style>

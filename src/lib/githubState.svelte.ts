@@ -97,6 +97,7 @@ function makeGithubState() {
   const readme = makePanel<string>();
 
   const prDetail = makePanel<GhPullDetail>();
+  const prDiff = makePanel<string>();
   const issueDetail = makePanel<GhIssueDetail>();
   let selectedItem = $state<{ kind: "pr" | "issue"; number: number } | null>(null);
 
@@ -106,6 +107,9 @@ function makeGithubState() {
 
   function loadPrDetail(repo: string, number: number) {
     return prDetail.load(`${repo}|${number}|${reloadNonce}`, () => api.githubPrDetail(repo, number));
+  }
+  function loadPrDiff(repo: string, number: number) {
+    return prDiff.load(`${repo}|${number}|${reloadNonce}`, () => api.githubPrDiff(repo, number));
   }
   function loadIssueDetail(repo: string, number: number) {
     return issueDetail.load(`${repo}|${number}|${reloadNonce}`, () => api.githubIssueDetail(repo, number));
@@ -198,6 +202,7 @@ function makeGithubState() {
     selectedItem = null;
     readme.reset();
     prDetail.reset();
+    prDiff.reset();
     issueDetail.reset();
     availability = null;
     stats = null;
@@ -249,6 +254,7 @@ function makeGithubState() {
         labels.status === "loading" ||
         readme.status === "loading" ||
         prDetail.status === "loading" ||
+        prDiff.status === "loading" ||
         issueDetail.status === "loading"
       );
     },
@@ -331,8 +337,10 @@ function makeGithubState() {
       // previously-opened item. Clear the matching one so the skeleton shows
       // for the new item instead of flashing the old one. (Refresh-in-detail
       // keeps its data — it doesn't go through openItem.)
-      if (kind === "pr") prDetail.reset();
-      else issueDetail.reset();
+      if (kind === "pr") {
+        prDetail.reset();
+        prDiff.reset();
+      } else issueDetail.reset();
       selectedItem = { kind, number };
     },
     closeItem() {
@@ -345,10 +353,14 @@ function makeGithubState() {
     get prDetail() {
       return prDetail;
     },
+    get prDiff() {
+      return prDiff;
+    },
     get issueDetail() {
       return issueDetail;
     },
     loadPrDetail,
+    loadPrDiff,
     loadIssueDetail,
     ensure,
     refresh(repo: string) {
