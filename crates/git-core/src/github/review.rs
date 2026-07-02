@@ -270,6 +270,47 @@ pub fn set_reaction(
     }
 }
 
+/// Percent-encode a validated reaction name for use in a query string. Only
+/// `+` needs encoding (it would decode as a space); the other 7 names are
+/// plain ASCII letters, and `-` is query-safe.
+fn encode_reaction_for_query(content: &str) -> String {
+    content.replace('+', "%2B")
+}
+
+/// List-then-decide toggle: returns the new state (true = now reacted).
+/// Needed because gh's view JSON omits viewerHasReacted outside review
+/// threads, so the UI often can't know whether a click means add or remove.
+/// The list GET filters by `content`, so the 100-per-page cap is per-emoji
+/// (practically unreachable) rather than across all reactions.
+pub fn toggle_reaction(
+    repo: &Path,
+    kind: CommentKind,
+    target: u64,
+    content: &str,
+) -> Result<bool, GithubError> {
+    let content = validate_reaction_content(content)?;
+    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
+    let base = reaction_base_path(&owner, &name, kind, target);
+    let list_path = format!(
+        "{base}?content={}&per_page=100",
+        encode_reaction_for_query(content)
+    );
+    let list = run_gh(&["api", &list_path], None)?;
+    let login = super::current_login()?;
+    match find_own_reaction_id(&list, &login, content) {
+        Some(id) => {
+            let del_path = format!("{base}/{id}");
+            run_gh(&["api", &del_path, "--method", "DELETE"], None)?;
+            Ok(false)
+        }
+        None => {
+            let body = serde_json::json!({ "content": content }).to_string();
+            run_gh(&["api", &base, "--method", "POST", "--input", "-"], Some(&body))?;
+            Ok(true)
+        }
+    }
+}
+
 /// Edit a comment or a PR/issue description. Comment kinds PATCH their REST
 /// endpoint with a JSON body over stdin; body kinds go through
 /// `gh pr/issue edit --body-file -` (body over stdin, never an arg).
@@ -488,6 +529,32 @@ mod tests {
             1,
             "THUMBS_UP",
             true,
+        )
+        .unwrap_err();
+        match err {
+            GithubError::Other(m) => assert!(m.contains("Invalid reaction"), "{m}"),
+            other => panic!("expected Other, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reaction_query_encoding_escapes_plus_only() {
+        // `+` must be percent-encoded in a query string (it decodes as a
+        // space); `-` and letter names pass through untouched.
+        assert_eq!(encode_reaction_for_query("+1"), "%2B1");
+        assert_eq!(encode_reaction_for_query("-1"), "-1");
+        assert_eq!(encode_reaction_for_query("heart"), "heart");
+    }
+
+    #[test]
+    fn toggle_reaction_rejects_invalid_content_before_gh() {
+        // Validation runs first — even with a bogus repo path, an invalid
+        // content never reaches resolve/gh.
+        let err = toggle_reaction(
+            Path::new("/nonexistent"),
+            CommentKind::ReviewComment,
+            1,
+            "THUMBS_UP",
         )
         .unwrap_err();
         match err {

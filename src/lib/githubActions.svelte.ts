@@ -2,7 +2,7 @@ import { appState } from "./store.svelte";
 import { api } from "./api";
 import { githubState } from "./githubState.svelte";
 import { reviewDraft } from "./reviewDraft.svelte";
-import type { GithubError, MergeMethod } from "./types";
+import type { GhCommentKind, GithubError, MergeMethod } from "./types";
 
 export type PendingAction =
   | { kind: "comment"; target: "pr" | "issue"; number: number; title: string }
@@ -151,6 +151,62 @@ function makeGithubActions() {
     }
   }
 
+  // Toggle the viewer's reaction on a comment/description (list-then-decide in
+  // the backend — gh's JSON omits viewerHasReacted outside review threads, so
+  // the UI can't always know whether a click means add or remove). Same
+  // surfacing contract as replyThread; the reload re-fetch shows the new counts.
+  async function toggleReaction(
+    kind: GhCommentKind,
+    target: number,
+    content: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const repo = appState.repo;
+    if (!repo) return { ok: false, error: "No repository open." };
+    try {
+      await api.githubToggleReaction(repo, kind, target, content);
+      githubState.bumpReload();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errText(e) };
+    }
+  }
+
+  // Edit one of the viewer's own comments, or a PR/issue description (body
+  // kinds). No empty-body guard here — an empty description is valid (clears
+  // it); comment composers gate empty text themselves.
+  async function editComment(
+    kind: GhCommentKind,
+    target: number,
+    body: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const repo = appState.repo;
+    if (!repo) return { ok: false, error: "No repository open." };
+    try {
+      await api.githubEditComment(repo, kind, target, body);
+      githubState.bumpReload();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errText(e) };
+    }
+  }
+
+  // Delete one of the viewer's own comments. Body kinds are refused by the
+  // backend (descriptions aren't deletable); the UI never offers it either.
+  async function deleteComment(
+    kind: GhCommentKind,
+    target: number,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const repo = appState.repo;
+    if (!repo) return { ok: false, error: "No repository open." };
+    try {
+      await api.githubDeleteComment(repo, kind, target);
+      githubState.bumpReload();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errText(e) };
+    }
+  }
+
   return {
     get pending() {
       return pending;
@@ -168,6 +224,9 @@ function makeGithubActions() {
     submitReview,
     replyThread,
     resolveThread,
+    toggleReaction,
+    editComment,
+    deleteComment,
   };
 }
 

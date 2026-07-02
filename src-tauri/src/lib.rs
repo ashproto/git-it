@@ -106,6 +106,7 @@ pub fn run() {
             commands::github_pr_resolve_thread,
             commands::github_current_login,
             commands::github_set_reaction,
+            commands::github_toggle_reaction,
             commands::github_edit_comment,
             commands::github_delete_comment,
             commands::github_readme,

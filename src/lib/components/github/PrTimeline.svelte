@@ -2,9 +2,11 @@
   import { appState } from "../../store.svelte";
   import { githubActions } from "../../githubActions.svelte";
   import { parseISO, formatCommitDate } from "../../dates";
-  import type { GhPullDetail, GhCheckRun, GhReviewThread } from "../../types";
+  import type { GhCommentKind, GhPullDetail, GhCheckRun, GhReviewThread } from "../../types";
   import { buildPrTimeline } from "../../github/prTimeline";
   import Markdown from "./Markdown.svelte";
+  import ReactionBar from "./ReactionBar.svelte";
+  import CommentActions from "./CommentActions.svelte";
 
   let { pr }: { pr: GhPullDetail } = $props();
 
@@ -23,6 +25,9 @@
       replyOpenFor = null;
       replyBody = "";
       threadErr = {};
+      editingKey = null;
+      editBody = "";
+      editErr = null;
     }
   });
 
@@ -65,6 +70,43 @@
       threadErr[k] = res.error ?? "Could not post reply.";
     }
   }
+  // ---- edit-in-place (own comments) ----
+  // One edit open at a time across the whole timeline; the key namespaces the
+  // two comment families ("ic:<id>" timeline comments, "rc:<databaseId>"
+  // inline review comments). The textarea is prefilled with the RAW markdown
+  // (`body` is the raw source; Markdown.svelte only renders it).
+  let editingKey = $state<string | null>(null);
+  let editBody = $state("");
+  let editBusy = $state(false);
+  let editErr = $state<string | null>(null);
+
+  function startEdit(key: string, raw: string) {
+    if (editBusy) return;
+    editingKey = key;
+    editBody = raw;
+    editErr = null;
+  }
+  function cancelEdit() {
+    if (editBusy) return;
+    editingKey = null;
+    editBody = "";
+    editErr = null;
+  }
+  async function saveEdit(editKind: GhCommentKind, target: number | null) {
+    if (target == null || !editBody.trim() || editBusy) return;
+    editBusy = true;
+    editErr = null;
+    const res = await githubActions.editComment(editKind, target, editBody);
+    editBusy = false;
+    if (res.ok) {
+      // Collapse; the bumpReload re-fetch shows the new text.
+      editingKey = null;
+      editBody = "";
+    } else {
+      editErr = res.error ?? "Could not save the edit.";
+    }
+  }
+
   async function toggleResolve(t: GhReviewThread) {
     if (!t.id || resolveBusyFor !== null) return;
     const k = threadKey(t);
@@ -158,8 +200,20 @@
           <div class="chead">
             <strong>{ev.comment.author}</strong>
             <span class="when">commented {rel(ev.comment.createdAt)}</span>
+            <CommentActions
+              author={ev.comment.author}
+              kind="issueComment"
+              target={ev.comment.id}
+              body={ev.comment.body}
+              onEditStart={() => startEdit(`ic:${ev.comment.id}`, ev.comment.body)}
+            />
           </div>
-          <Markdown src={ev.comment.body} />
+          {#if ev.comment.id != null && editingKey === `ic:${ev.comment.id}`}
+            {@render editBox("issueComment", ev.comment.id)}
+          {:else}
+            <Markdown src={ev.comment.body} />
+            <ReactionBar reactions={ev.comment.reactions} kind="issueComment" target={ev.comment.id} />
+          {/if}
         {:else if ev.kind === "review"}
           <div class="chead">
             <strong>{ev.review.author}</strong>
@@ -210,8 +264,23 @@
         <div class="thread-body">
           {#each t.comments as c, ci (c.author + ci)}
             <div class="icomment">
-              <div class="ihead"><strong>{c.author}</strong> <span class="when">{rel(c.createdAt)}</span></div>
-              <Markdown src={c.body} />
+              <div class="ihead">
+                <strong>{c.author}</strong>
+                <span class="when">{rel(c.createdAt)}</span>
+                <CommentActions
+                  author={c.author}
+                  kind="reviewComment"
+                  target={c.databaseId}
+                  body={c.body}
+                  onEditStart={() => startEdit(`rc:${c.databaseId}`, c.body)}
+                />
+              </div>
+              {#if c.databaseId != null && editingKey === `rc:${c.databaseId}`}
+                {@render editBox("reviewComment", c.databaseId)}
+              {:else}
+                <Markdown src={c.body} />
+                <ReactionBar reactions={c.reactions} kind="reviewComment" target={c.databaseId} />
+              {/if}
             </div>
           {/each}
           {@render threadActions(t)}
@@ -293,6 +362,36 @@
     {/if}
     {#if threadErr[k]}<p class="terr">{threadErr[k]}</p>{/if}
   {/if}
+{/snippet}
+
+{#snippet editBox(editKind: GhCommentKind, target: number)}
+  <div class="reply-box">
+    <textarea
+      bind:value={editBody}
+      rows="4"
+      disabled={editBusy}
+      aria-label="Edit comment"
+      onkeydown={(e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+          e.preventDefault();
+          void saveEdit(editKind, target);
+        }
+      }}
+    ></textarea>
+    <div class="reply-row">
+      <span class="hint">⌘⏎ to save</span>
+      <button type="button" class="tbtn" disabled={editBusy} onclick={cancelEdit}>Cancel</button>
+      <button
+        type="button"
+        class="tbtn primary"
+        disabled={editBusy || !editBody.trim()}
+        onclick={() => void saveEdit(editKind, target)}
+      >
+        {editBusy ? "Saving…" : "Save"}
+      </button>
+    </div>
+    {#if editErr}<p class="terr">{editErr}</p>{/if}
+  </div>
 {/snippet}
 
 <style>
@@ -435,7 +534,10 @@
   .thread-body { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
   .icomment { border-top: 1px solid var(--border); padding-top: 6px; }
   .icomment:first-child { border-top: none; padding-top: 0; }
-  .ihead { font-size: 12px; margin-bottom: 2px; }
+  .ihead { font-size: 12px; margin-bottom: 2px; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+  /* Reveal own-comment edit/delete actions on row hover (GitHub-style). */
+  .row.comment .card:hover :global(.cacts),
+  .icomment:hover :global(.cacts) { opacity: 1; }
   .tactions {
     display: flex;
     gap: 10px;

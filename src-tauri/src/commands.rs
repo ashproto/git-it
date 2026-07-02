@@ -641,6 +641,16 @@ pub fn github_set_reaction(
 }
 
 #[tauri::command(async)]
+pub fn github_toggle_reaction(
+    repo: String,
+    kind: github::review::CommentKind,
+    target: u64,
+    content: String,
+) -> Result<bool, github::GithubError> {
+    github::review::toggle_reaction(&PathBuf::from(repo), kind, target, &content)
+}
+
+#[tauri::command(async)]
 pub fn github_edit_comment(
     repo: String,
     kind: github::review::CommentKind,
