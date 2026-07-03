@@ -11,6 +11,7 @@
   import CommentActions from "./CommentActions.svelte";
   import PrTimeline from "./PrTimeline.svelte";
   import PrFilesTab from "./PrFilesTab.svelte";
+  import PrCommitsTab from "./PrCommitsTab.svelte";
   import ReviewBar from "./ReviewBar.svelte";
   import GithubCommentBox from "./GithubCommentBox.svelte";
   import { splitPatchByFile } from "../../github/prDiff";
@@ -21,7 +22,7 @@
   // PR sub-tab (Conversation | Files). Reset to Conversation when a DIFFERENT
   // PR is opened; track the number the tab was set for so re-renders of the
   // same PR don't yank the user back.
-  let detailTab = $state<"conversation" | "files">("conversation");
+  let detailTab = $state<"conversation" | "files" | "commits">("conversation");
   let tabFor: number | undefined;
   $effect(() => {
     if (tabFor !== number) {
@@ -272,7 +273,12 @@
             class:active={detailTab === "files"}
             onclick={() => (detailTab = "files")}
             aria-pressed={detailTab === "files"}
-          >Files ({filesCount})</button>
+          >Files ({filesCount})</button><button
+            type="button"
+            class:active={detailTab === "commits"}
+            onclick={() => (detailTab = "commits")}
+            aria-pressed={detailTab === "commits"}
+          >Commits ({pr.commits.length})</button>
         </div>
       </div>
       {#if detailTab === "conversation"}
@@ -280,8 +286,10 @@
           <h3>Activity</h3>
           <PrTimeline {pr} />
         </section>
-      {:else}
+      {:else if detailTab === "files"}
         <PrFilesTab number={d.number} />
+      {:else}
+        <PrCommitsTab commits={pr.commits} />
       {/if}
     {:else}
       <section class="comments">

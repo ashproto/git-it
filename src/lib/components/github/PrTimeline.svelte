@@ -455,21 +455,22 @@
   }
   .row:first-child .rail::before { top: 10px; }
   .row:last-child .rail::before { bottom: calc(100% - 18px); }
+  /* Solid (filled) markers — same footprint as the old 10px + 2px-border open
+     circles, but the state colour now fills the dot (user feedback). */
   .dot {
     position: relative;
     z-index: 1;
     margin-top: 6px;
-    width: 10px;
-    height: 10px;
+    width: 14px;
+    height: 14px;
     border-radius: 999px;
-    background: var(--panel-bg);
-    border: 2px solid var(--text-muted);
+    background: var(--text-muted);
   }
-  .dot.commit { border-color: var(--accent); }
-  .dot.comment { border-color: var(--text-muted); }
+  .dot.commit { background: var(--accent); }
+  .dot.comment { background: var(--text-muted); }
   .dot.review,
-  .dot.reviewThread { border-color: var(--status-mod, #d29922); }
-  .dot.ciRun { border-color: var(--status-add, #2ea043); }
+  .dot.reviewThread { background: var(--status-mod, #d29922); }
+  .dot.ciRun { background: var(--status-add, #2ea043); }
   .card {
     min-width: 0;
     padding: 4px 0 12px;
