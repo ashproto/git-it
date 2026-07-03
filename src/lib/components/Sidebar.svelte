@@ -188,6 +188,31 @@
     }
     contextMenu.openAt(event.clientX, event.clientY, items);
   }
+
+  // Escape hatches for a detached HEAD: create a branch at the current commit
+  // (saves any commits made here) or hop back to the default local branch.
+  function onDetachedContext(event: MouseEvent) {
+    event.preventDefault();
+    const sha = refs.head[0]?.sha;
+    if (!sha) return;
+    const items: MenuItem[] = [
+      {
+        label: "Create branch here…",
+        action: async () => {
+          const n = await dialogs.prompt({ title: `New branch at ${sha.slice(0, 7)}`, label: "Branch name" });
+          if (n) gitActions.createBranch(n, sha).then((ok) => { if (ok) gitActions.checkout(n); });
+        },
+      },
+    ];
+    const home =
+      refs.local.find((r) => r.name === "main") ??
+      refs.local.find((r) => r.name === "master") ??
+      refs.local[0];
+    if (home) {
+      items.push({ label: `Checkout ${home.name}`, action: () => gitActions.checkout(home.name) });
+    }
+    contextMenu.openAt(event.clientX, event.clientY, items);
+  }
 </script>
 
 <aside class="sidebar">
@@ -227,14 +252,22 @@
     {/if}
   </nav>
 
-  {#if refs.head.length}
-    <button class="ref detached" onclick={() => jumpTo(refs.head[0].sha)} title="Detached HEAD">
-      <span class="dot head" aria-hidden="true"></span>
-      <span class="rn">HEAD (detached)</span>
-    </button>
-  {/if}
   <CollapsiblePanel title="Local">
     {#snippet headerActions()}<span class="ref-count">{refs.local.length}</span>{/snippet}
+    {#if refs.head.length}
+      <!-- Detached HEAD isn't a branch (HEAD points straight at a commit), so it
+           can't live in the tree — pin it above Local with an explanation and
+           escape hatches instead of floating unexplained between panels. -->
+      <button
+        class="ref detached"
+        onclick={() => jumpTo(refs.head[0].sha)}
+        oncontextmenu={onDetachedContext}
+        title="HEAD points directly at a commit instead of a branch. New commits here are lost when you switch away unless you create a branch."
+      >
+        <span class="warn-icon" aria-hidden="true">⚠</span>
+        <span class="rn">HEAD detached @ {refs.head[0].sha.slice(0, 7)}</span>
+      </button>
+    {/if}
     <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} selectedKey={selectedRefKey} onSelect={selectRef} />
     {#if refs.local.length === 0}<p class="none">No local branches</p>{/if}
   </CollapsiblePanel>
@@ -354,18 +387,20 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .dot.head {
-    background: var(--err);
+  /* Detached HEAD: pinned first row of Local, warning-tinted (it isn't a branch
+     and commits made here are easy to lose). */
+  .ref.detached {
+    background: color-mix(in srgb, #d97706 10%, transparent);
+    border-radius: 6px;
   }
   .ref.detached .rn {
-    color: var(--err);
+    color: color-mix(in srgb, #d97706 75%, var(--text));
     font-weight: 600;
+  }
+  .ref.detached .warn-icon {
+    font-size: 11px;
+    line-height: 1;
+    color: #d97706;
   }
   .none {
     margin: 2px 0 0;
