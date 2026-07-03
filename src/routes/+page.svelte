@@ -35,6 +35,7 @@
   import { matchCommits } from "$lib/graph/commitSearch";
   import { graphView } from "$lib/graphView.svelte";
   import { dialogs } from "$lib/dialogs.svelte";
+  import { anyOverlayOpen } from "$lib/overlays";
   import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
   import { onMount, untrack } from "svelte";
@@ -339,9 +340,10 @@
     // key.toLowerCase(): Caps Lock reports "F" and must not defeat the shortcut.
     if (e.key.toLowerCase() !== "f" || !e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
     // Graph screen only (the GitHub screen gets its own ⌘F handling) and never
-    // over a dialog.
+    // over ANY overlay (dialogs, Settings, Manage Repository, amend, rebase
+    // editor, branch colours — final-review finding M1).
     if (appState.activeView !== "timeline") return;
-    if (dialogs.state.kind !== "none") return;
+    if (anyOverlayOpen()) return;
     // Don't steal focus from a text field the user is typing in (inline commit
     // message editing, modal inputs not tracked by `dialogs`, the search field
     // itself — where focus is already in the right place).

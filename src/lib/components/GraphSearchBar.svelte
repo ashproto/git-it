@@ -70,12 +70,16 @@
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      // Kill any pending debounce so it can't fire after close and repopulate
-      // the (cleared) query with stale text.
-      clearTimeout(timer);
-      timer = undefined;
-      onClose();
+      close();
     }
+  }
+
+  // Single close path (Escape + the ✕ button): kill any pending debounce so it
+  // can't fire after close and repopulate the (cleared) query with stale text.
+  function close() {
+    clearTimeout(timer);
+    timer = undefined;
+    onClose();
   }
 </script>
 
@@ -117,7 +121,7 @@
     {/if}
     <button aria-label="Previous match (Shift+Enter)" title="Previous match (Shift+Enter)" onclick={onPrev} disabled={count === 0}>▲</button>
     <button aria-label="Next match (Enter)" title="Next match (Enter)" onclick={onNext} disabled={count === 0}>▼</button>
-    <button aria-label="Close search (Esc)" title="Close search (Esc)" onclick={onClose}>✕</button>
+    <button aria-label="Close search (Esc)" title="Close search (Esc)" onclick={close}>✕</button>
   </div>
 {/if}
 

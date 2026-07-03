@@ -1,7 +1,6 @@
 <script lang="ts">
   import { appState } from "../../store.svelte";
-  import { dialogs } from "../../dialogs.svelte";
-  import { githubActions } from "../../githubActions.svelte";
+  import { anyOverlayOpen } from "../../overlays";
   import { githubState } from "../../githubState.svelte";
   import GithubHeader from "./GithubHeader.svelte";
   import GithubTabs from "./GithubTabs.svelte";
@@ -38,8 +37,9 @@
   function onWindowKeydown(e: KeyboardEvent) {
     // toLowerCase: with Caps Lock on, e.key reports "F".
     if (e.key.toLowerCase() !== "f" || !e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
-    if (dialogs.state.kind !== "none") return;
-    if (githubActions.pending !== null) return; // GithubActionModal is open
+    // Any overlay (dialogs, GithubActionModal, Settings, Manage Repository, …)
+    // owns the keyboard — final-review finding M1.
+    if (anyOverlayOpen()) return;
     // Don't steal focus from a text field the user is typing in.
     const t = e.target as HTMLElement | null;
     if (t?.closest?.('input, textarea, [contenteditable="true"]')) return;
