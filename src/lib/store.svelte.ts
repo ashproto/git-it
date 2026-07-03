@@ -4,6 +4,7 @@ import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSn
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
 import { computeLanes, laneColor } from "./graph";
+import { reorder } from "./reorder";
 
 // Preferences persist via the Tauri Store plugin (a JSON file written by Rust) so
 // they survive a force-quit/crash — macOS WKWebView flushes localStorage only
@@ -1697,6 +1698,15 @@ function makeState() {
     // launch. Empty on a first run / before the async store hydrate resolves.
     get lastActiveRepo() {
       return lastActiveRepo;
+    },
+
+    // Move a tab (drag reorder); persists the new order like open/close do.
+    reorderRepos(from: number, to: number) {
+      const next = reorder(openRepos, from, to);
+      if (next.every((p, i) => p === openRepos[i])) return; // identity — nothing to do
+      openRepos = next;
+      openReposTouched = true;
+      persistStringList(OPENREPOS_STORE_KEY, OPENREPOS_KEY, openRepos);
     },
 
     // Close a tab; if it was active, fall back to a neighbor (or empty).

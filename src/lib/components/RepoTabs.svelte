@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
   import { pickRepoFolder, api } from "../api";
+  import { gapToIndex } from "../reorder";
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -72,6 +73,121 @@
     appState.recentRepos.filter((p) => !appState.openRepos.includes(p)),
   );
 
+  // ── Drag-to-reorder tabs (pointer events; no HTML5 DnD) ─────────────────────
+  const DRAG_THRESHOLD = 4; // px of horizontal travel before a press becomes a drag
+  let stripEl: HTMLDivElement | undefined = $state();
+  let dragFrom = $state<number | null>(null); // tab index being dragged (threshold crossed)
+  let dropGap = $state<number | null>(null); // insertion gap 0..n while dragging
+  let indicatorLeft = $state(0); // px in the strip's scroll-content coordinates
+  // Pre-threshold press candidate (non-reactive — nothing renders until drag mode).
+  let candidate: { index: number; startX: number; pointerId: number; el: HTMLElement } | null =
+    null;
+  // Set when a drag actually happened, so the click that follows pointerup on the
+  // same tab doesn't also activate it. Reset on the next pointerdown.
+  let didDrag = false;
+
+  function tabRects(): DOMRect[] {
+    if (!stripEl) return [];
+    return Array.from(stripEl.querySelectorAll<HTMLElement>(".tab"), (el) =>
+      el.getBoundingClientRect(),
+    );
+  }
+
+  function onTabPointerDown(e: PointerEvent, index: number) {
+    if (e.button !== 0) return;
+    // The close button must not start a drag (its click closes the tab).
+    if ((e.target as HTMLElement).closest(".tab-close")) return;
+    didDrag = false;
+    candidate = {
+      index,
+      startX: e.clientX,
+      pointerId: e.pointerId,
+      el: e.currentTarget as HTMLElement,
+    };
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", onDragUp);
+    window.addEventListener("pointercancel", onDragCancel);
+    window.addEventListener("keydown", onDragKeydown, true);
+  }
+
+  function onDragMove(e: PointerEvent) {
+    if (!candidate) return;
+    if (dragFrom === null) {
+      if (Math.abs(e.clientX - candidate.startX) < DRAG_THRESHOLD) return;
+      dragFrom = candidate.index;
+      didDrag = true;
+      try {
+        candidate.el.setPointerCapture(candidate.pointerId);
+      } catch {
+        /* capture is best-effort (pointer may already be gone) */
+      }
+    }
+    updateGap(e.clientX);
+  }
+
+  // Insertion gap = how many tab midpoints lie left of the pointer; the drop
+  // indicator sits at that gap's boundary edge.
+  function updateGap(pointerX: number) {
+    if (!stripEl) return;
+    const rects = tabRects();
+    if (rects.length === 0) return;
+    let gap = rects.length;
+    for (let i = 0; i < rects.length; i++) {
+      if (pointerX < rects[i].left + rects[i].width / 2) {
+        gap = i;
+        break;
+      }
+    }
+    dropGap = gap;
+    // Client x → the strip's scroll-content x (abs children scroll with content).
+    const originX = stripEl.getBoundingClientRect().left - stripEl.scrollLeft;
+    const edge = gap < rects.length ? rects[gap].left : rects[rects.length - 1].right;
+    indicatorLeft = edge - originX;
+  }
+
+  function onDragUp() {
+    if (dragFrom !== null && dropGap !== null) {
+      appState.reorderRepos(dragFrom, gapToIndex(dragFrom, dropGap));
+    }
+    endDrag();
+  }
+
+  function onDragCancel() {
+    endDrag();
+  }
+
+  function onDragKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && dragFrom !== null) {
+      e.stopPropagation();
+      endDrag(); // abort — didDrag stays true, so the trailing click is swallowed
+    }
+  }
+
+  function endDrag() {
+    if (candidate) {
+      try {
+        candidate.el.releasePointerCapture(candidate.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+    candidate = null;
+    dragFrom = null;
+    dropGap = null;
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", onDragUp);
+    window.removeEventListener("pointercancel", onDragCancel);
+    window.removeEventListener("keydown", onDragKeydown, true);
+  }
+
+  function onTabClick(path: string) {
+    if (didDrag) {
+      didDrag = false; // this click is the tail end of a drag, not a select
+      return;
+    }
+    appState.setActiveRepo(path);
+  }
+
   // ── Shared open flow ─────────────────────────────────────────────────────────
   async function openRepoFlow() {
     if (!isTauri()) {
@@ -102,13 +218,15 @@
 </script>
 
 <!-- Tab strip — sits flush against --header-bg -->
-<div class="tab-strip" data-no-drag>
-  {#each appState.openRepos as path (path)}
+<div class="tab-strip" data-no-drag bind:this={stripEl}>
+  {#each appState.openRepos as path, i (path)}
     <button
       class="tab"
       class:active={path === appState.repo}
+      class:dragging={dragFrom === i}
       title={path}
-      onclick={() => appState.setActiveRepo(path)}
+      onpointerdown={(e) => onTabPointerDown(e, i)}
+      onclick={() => onTabClick(path)}
     >
       <span class="tab-name">{basename(path)}</span>
       <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -123,6 +241,10 @@
       >×</span>
     </button>
   {/each}
+
+  {#if dragFrom !== null && dropGap !== null}
+    <div class="drop-indicator" style={`left:${indicatorLeft - 1}px`}></div>
+  {/if}
 
   <!-- + button: opens a menu with "Open repository…" + recent repositories -->
   <div class="add-wrap" bind:this={dropdownRoot}>
@@ -169,6 +291,7 @@
 
 <style>
   .tab-strip {
+    position: relative; /* anchors the drag drop-indicator */
     display: flex;
     align-items: stretch;
     gap: 2px;
@@ -209,6 +332,20 @@
   .tab.active {
     color: var(--text);
     border-bottom-color: var(--accent);
+  }
+
+  .tab.dragging {
+    opacity: 0.5;
+  }
+
+  .drop-indicator {
+    position: absolute;
+    top: 5px;
+    bottom: 5px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--accent);
+    pointer-events: none;
   }
 
   .tab-name {
