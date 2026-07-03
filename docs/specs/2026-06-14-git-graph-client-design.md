@@ -6,7 +6,7 @@
 
 ## 1. Summary
 
-Transform Git It  into a
+Transform Git It into a
 Fork/SourceTree-style git client built around a visual commit graph, with the full set of
 git operations. The current timestamp-editing capability is preserved as one operation
 within the new shell.

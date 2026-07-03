@@ -2,8 +2,6 @@
 
 A fast, native **macOS git client** — commit graph, branches, merges, rebases, working-copy diffs, and remotes — with **first-class commit-time editing**. Built with [Tauri 2](https://tauri.app) (Rust) and [SvelteKit 5](https://svelte.dev) (runes).
 
-
-
 > macOS only. The window uses native vibrancy (frosted-glass panels over the desktop) via `NSVisualEffect`.
 
 ## Features
@@ -99,5 +97,3 @@ For zero-friction installs, sign with an Apple Developer ID and notarize — `ta
 ## License
 
 Not yet decided. Until a license is chosen, all rights are reserved — please don't redistribute. A license will be added before any public release.
-
-

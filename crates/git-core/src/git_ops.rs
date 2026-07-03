@@ -65,7 +65,8 @@ pub fn load_commits(repo: &Path, count: u32, range: Option<&str>) -> Result<Vec<
     Ok(commits)
 }
 
-/// Bundles live under `<repo>/.git/git-it-bundles/` toto keep them out of the working tree.
+/// Bundles live under `<repo>/.git/git-it-bundles/` to keep them out of the
+/// working tree (and untouched by checkouts/cleans).
 fn bundles_dir(repo: &Path) -> PathBuf {
     repo.join(".git").join("git-it-bundles")
 }

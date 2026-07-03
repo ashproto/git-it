@@ -1,5 +1,5 @@
-// Date helpers. Mirror the semantics of the Python helpers in
-// legacy/git_it.py (parse_iso, to_local_str, epoch_tz_bytes).
+// Date helpers: ISO parsing, local display strings, and epoch+offset byte
+// forms for git dates (parse_iso / to_local_str / epoch_tz_bytes semantics).
 
 /** User-selectable display options for rendering commit timestamps. */
 export type DateFormatPrefs = {
