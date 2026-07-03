@@ -23,13 +23,18 @@
   import RepoTabs from "$lib/components/RepoTabs.svelte";
   import RepoList from "$lib/components/RepoList.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
+  import GraphSearchBar from "$lib/components/GraphSearchBar.svelte";
   import {
     gitActions,
     reloadGraph,
+    loadMoreGraph,
     startWatchingRepo,
     stopWatchingRepo,
     refreshActiveRepo,
   } from "$lib/gitActions";
+  import { matchCommits } from "$lib/graph/commitSearch";
+  import { graphView } from "$lib/graphView.svelte";
+  import { dialogs } from "$lib/dialogs.svelte";
   import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
   import { onMount, untrack } from "svelte";
@@ -279,6 +284,73 @@
     window.addEventListener("pointerup", onUp);
   }
 
+  // ── ⌘F commit search (graph screen) ─────────────────────────────────────────
+  // Jump-and-highlight over the LOADED commits: matches are indices into
+  // appState.graphCommits (recomputed as pages load in), highlighting is passed
+  // down to the (virtualized) GraphHistory as data, and jumps go through the
+  // graphView controller so off-window rows scroll into view.
+  let searchOpen = $state(false);
+  let searchQuery = $state("");
+  let searchActive = $state(0); // position within searchMatches
+  let searchBar = $state<{ focusInput: () => void }>();
+  const searchMatches = $derived(
+    searchOpen ? matchCommits(appState.graphCommits, searchQuery) : [],
+  );
+  // Clamp: a shrinking match list (query edit, repo refresh) must not strand the pointer.
+  const searchActiveClamped = $derived(
+    searchMatches.length ? Math.min(searchActive, searchMatches.length - 1) : 0,
+  );
+  const searchHits = $derived(searchMatches.length ? new Set(searchMatches) : null);
+  const searchActiveRow = $derived(
+    searchMatches.length ? searchMatches[searchActiveClamped] : -1,
+  );
+  const searchCanLoadMore = $derived(
+    searchQuery.trim() !== "" && searchMatches.length === 0 && appState.graphHasMore,
+  );
+
+  function jumpToSearchMatch(pos: number) {
+    const sha = appState.graphCommits[searchMatches[pos]]?.sha;
+    if (sha) graphView.scrollToCommit(sha);
+  }
+  function onSearchQuery(q: string) {
+    searchQuery = q;
+    searchActive = 0;
+    if (searchMatches.length) jumpToSearchMatch(0);
+  }
+  function searchStep(dir: 1 | -1) {
+    const n = searchMatches.length;
+    if (n === 0) return;
+    searchActive = (searchActiveClamped + dir + n) % n;
+    jumpToSearchMatch(searchActive);
+  }
+  function closeSearch() {
+    searchOpen = false;
+    searchQuery = "";
+    searchActive = 0;
+  }
+  async function searchLoadMore() {
+    await loadMoreGraph();
+    if (searchMatches.length) {
+      searchActive = 0;
+      jumpToSearchMatch(0);
+    }
+  }
+  function onWindowKeydown(e: KeyboardEvent) {
+    if (e.key !== "f" || !e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
+    // Graph screen only (the GitHub screen gets its own ⌘F handling) and never
+    // over a dialog.
+    if (appState.activeView !== "timeline") return;
+    if (dialogs.state.kind !== "none") return;
+    // Don't steal focus from a text field the user is typing in (inline commit
+    // message editing, modal inputs not tracked by `dialogs`, the search field
+    // itself — where focus is already in the right place).
+    const t = e.target as HTMLElement | null;
+    if (t?.closest?.('input, textarea, [contenteditable="true"]')) return;
+    e.preventDefault();
+    if (searchOpen) searchBar?.focusInput();
+    else searchOpen = true;
+  }
+
   // Derived: nothing to show — no active repo, no open repos, and no loaded commits.
   // (The graphCommits check keeps the browser preview's sample graph visible, since
   // its onMount loads commits without setting a repo.)
@@ -286,6 +358,8 @@
     appState.openRepos.length === 0 && !appState.repo && appState.graphCommits.length === 0,
   );
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <main>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -446,10 +520,23 @@
                  from the changes screen. display:contents → no layout box when shown. -->
             <div class="timeline-stack" class:hidden={appState.activeView === "changes" || appState.activeView === "github"}>
               <UndoBar />
+              <GraphSearchBar
+                bind:this={searchBar}
+                open={searchOpen}
+                count={searchMatches.length}
+                active={searchActiveClamped}
+                canLoadMore={searchCanLoadMore}
+                loadingMore={appState.graphLoadingMore}
+                onQuery={onSearchQuery}
+                onNext={() => searchStep(1)}
+                onPrev={() => searchStep(-1)}
+                onClose={closeSearch}
+                onLoadMore={searchLoadMore}
+              />
               {#if appState.repoLoading && (appState.graphCommits.length === 0 || appState.graphCommitsRepo !== appState.repo)}
                 <GraphSkeleton />
               {:else}
-                <GraphHistory bind:collapsed={graphCollapsed} />
+                <GraphHistory bind:collapsed={graphCollapsed} {searchHits} {searchActiveRow} />
               {/if}
             </div>
             <ConflictView />

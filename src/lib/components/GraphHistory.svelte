@@ -16,7 +16,17 @@
 
   // Collapsed state is lifted to the parent (+page) so the slide-up details pane can
   // grow to fill the freed space when the graph is collapsed.
-  let { collapsed = $bindable(false) }: { collapsed?: boolean } = $props();
+  // searchHits/searchActiveRow: ⌘F match highlighting, passed down as commit
+  // INDICES (data, not DOM) so it survives the row virtualization below.
+  let {
+    collapsed = $bindable(false),
+    searchHits = null,
+    searchActiveRow = -1,
+  }: {
+    collapsed?: boolean;
+    searchHits?: Set<number> | null;
+    searchActiveRow?: number;
+  } = $props();
 
   const rowHeight = 30;
   // Overscan rows above/below the viewport so fast scrolling never reveals a gap.
@@ -501,6 +511,8 @@
           tabindex="0"
           class:selected={appState.selected.has(commit.sha)}
           class:edited={appState.newDates.has(commit.sha)}
+          class:search-hit={searchHits?.has(i) ?? false}
+          class:search-active={i === searchActiveRow}
           style={`height:${rowHeight}px`}
           onmousedown={(e) => onRowMouseDown(e, commit.sha, i)}
           oncontextmenu={(e) => onRowContext(e, commit.sha, i)}
@@ -635,6 +647,16 @@
      alignment with the sticky header's gutter padding. */
   .row.edited {
     box-shadow: inset 2px 0 0 var(--accent);
+  }
+  /* ⌘F search: matching rows carry an accent tint; the ACTIVE match is stronger
+     and adds an inset ring. Declared after .selected/.edited so a search
+     highlight stays visible on a selected row. */
+  .row.search-hit {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  .row.search-active {
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
+    box-shadow: inset 0 0 0 1px var(--accent);
   }
   .spacer {
     flex: 0 0 auto;
