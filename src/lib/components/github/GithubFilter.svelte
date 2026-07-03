@@ -14,7 +14,7 @@
 
 <div class="filter">
   <div class="box">
-    <input id="gh-filter-input" type="text" bind:value={query} {placeholder} />
+    <input id="gh-filter-input" type="text" bind:value={query} {placeholder} aria-label={placeholder} />
     {#if active}
       <button class="clear" type="button" aria-label="Clear filter" onclick={() => (query = "")}>✕</button>
     {/if}

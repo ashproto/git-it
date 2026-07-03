@@ -23,5 +23,6 @@ describe("filterItems", () => {
   });
   it("empty query returns the input array", () => {
     expect(filterItems(pulls, " ", ["title"])).toEqual(pulls);
+    expect(filterItems(pulls, " ", ["title"])).toBe(pulls); // same reference
   });
 });

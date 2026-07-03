@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appState } from "../../store.svelte";
   import { dialogs } from "../../dialogs.svelte";
+  import { githubActions } from "../../githubActions.svelte";
   import { githubState } from "../../githubState.svelte";
   import GithubHeader from "./GithubHeader.svelte";
   import GithubTabs from "./GithubTabs.svelte";
@@ -35,8 +36,10 @@
   // so the fixed input id is unique; tabs without a filter (overview/actions/
   // insights) simply have no input and ⌘F is a no-op.
   function onWindowKeydown(e: KeyboardEvent) {
-    if (e.key !== "f" || !e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
+    // toLowerCase: with Caps Lock on, e.key reports "F".
+    if (e.key.toLowerCase() !== "f" || !e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
     if (dialogs.state.kind !== "none") return;
+    if (githubActions.pending !== null) return; // GithubActionModal is open
     // Don't steal focus from a text field the user is typing in.
     const t = e.target as HTMLElement | null;
     if (t?.closest?.('input, textarea, [contenteditable="true"]')) return;
