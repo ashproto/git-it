@@ -21,8 +21,11 @@ describe("curvedEdgePath", () => {
   it("draws a vertical line for a straight (same-lane) edge", () => {
     expect(curvedEdgePath(edge(0, 0, "straight"), 0, g)).toBe("M12 0 L12 30");
   });
-  it("draws a bezier for a lane change", () => {
-    expect(curvedEdgePath(edge(0, 1, "branch"), 0, g)).toBe("M12 0 C12 15 28 15 28 30");
+  it("draws a full-round bezier for a lane change (tension 0.8: vertical tangents)", () => {
+    expect(curvedEdgePath(edge(0, 1, "branch"), 0, g)).toBe("M12 0 C12 24 28 6 28 30");
+  });
+  it("sweeps the same roundness in the merge direction", () => {
+    expect(curvedEdgePath(edge(1, 0, "merge"), 0, g)).toBe("M28 0 C28 24 12 6 12 30");
   });
 });
 
