@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from "../../store.svelte";
+  import { dialogs } from "../../dialogs.svelte";
   import { githubState } from "../../githubState.svelte";
   import GithubHeader from "./GithubHeader.svelte";
   import GithubTabs from "./GithubTabs.svelte";
@@ -27,7 +28,27 @@
   });
 
   const avail = $derived(githubState.availability);
+
+  // ⌘F focuses the active tab's filter field. This component only mounts while
+  // the GitHub screen is shown, so the graph screen's ⌘F handler (gated on
+  // activeView === "timeline") never conflicts. Only one tab renders at a time,
+  // so the fixed input id is unique; tabs without a filter (overview/actions/
+  // insights) simply have no input and ⌘F is a no-op.
+  function onWindowKeydown(e: KeyboardEvent) {
+    if (e.key !== "f" || !e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
+    if (dialogs.state.kind !== "none") return;
+    // Don't steal focus from a text field the user is typing in.
+    const t = e.target as HTMLElement | null;
+    if (t?.closest?.('input, textarea, [contenteditable="true"]')) return;
+    const input = document.getElementById("gh-filter-input");
+    if (!(input instanceof HTMLInputElement)) return;
+    e.preventDefault();
+    input.focus();
+    input.select();
+  }
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <section class="gh">
   {#if !isTauri()}

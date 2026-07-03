@@ -6,9 +6,11 @@
   import { githubActions } from "../../githubActions.svelte";
   import { gitActions } from "../../gitActions";
   import GithubDetail from "./GithubDetail.svelte";
+  import GithubFilter from "./GithubFilter.svelte";
   import GithubSkeleton from "./GithubSkeleton.svelte";
   import { revealIn } from "../../github/motion";
   import { pullStateBadge } from "../../github/itemState";
+  import { filterItems } from "../../github/listFilter";
 
   const FILTERS: PullStateFilter[] = ["open", "closed", "merged", "all"];
 
@@ -21,6 +23,8 @@
   });
 
   const panel = $derived(githubState.pulls);
+  let filterQuery = $state("");
+  const filtered = $derived(filterItems(panel.data ?? [], filterQuery, ["title", "author"]));
   const detailNumber = $derived(
     githubState.selectedItem?.kind === "pr" ? githubState.selectedItem.number : null,
   );
@@ -37,6 +41,7 @@
   {#each FILTERS as f (f)}
     <button class="chip" class:active={githubState.pullState === f} type="button" onclick={() => githubState.setPullState(f)}>{f}</button>
   {/each}
+  <span class="filter-slot"><GithubFilter bind:query={filterQuery} placeholder="Filter pull requests…" shown={filtered.length} total={panel.data?.length ?? 0} /></span>
 </div>
 
 {#if panel.status === "loading" && !panel.data}
@@ -45,9 +50,11 @@
   <p class="note err">Could not load pull requests ({panel.error?.kind}).</p>
 {:else if panel.data && panel.data.length === 0}
   <p class="note">No {githubState.pullState === "all" ? "" : githubState.pullState} pull requests.</p>
+{:else if panel.data && filtered.length === 0}
+  <p class="note">No pull requests match “{filterQuery.trim()}”.</p>
 {:else if panel.data}
   <ul class="list" in:revealIn>
-    {#each panel.data as pr (pr.number)}
+    {#each filtered as pr (pr.number)}
       {@const badge = pullStateBadge(pr)}
       <li class="row" style="--state:{badge.color}">
         <div class="title-row">
@@ -117,8 +124,12 @@
   }
   .filters {
     display: flex;
+    align-items: center;
     gap: 6px;
     margin-bottom: 10px;
+  }
+  .filter-slot {
+    margin-left: auto;
   }
   .chip {
     padding: 3px 12px;

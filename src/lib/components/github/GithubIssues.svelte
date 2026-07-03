@@ -5,9 +5,11 @@
   import type { IssueStateFilter } from "../../types";
   import { githubActions } from "../../githubActions.svelte";
   import GithubDetail from "./GithubDetail.svelte";
+  import GithubFilter from "./GithubFilter.svelte";
   import GithubSkeleton from "./GithubSkeleton.svelte";
   import { revealIn } from "../../github/motion";
   import { issueStateBadge } from "../../github/itemState";
+  import { filterItems } from "../../github/listFilter";
 
   const FILTERS: IssueStateFilter[] = ["open", "closed", "all"];
 
@@ -19,6 +21,8 @@
   });
 
   const panel = $derived(githubState.issues);
+  let filterQuery = $state("");
+  const filtered = $derived(filterItems(panel.data ?? [], filterQuery, ["title", "author"]));
   const detailNumber = $derived(
     githubState.selectedItem?.kind === "issue" ? githubState.selectedItem.number : null,
   );
@@ -35,6 +39,7 @@
   {#each FILTERS as f (f)}
     <button class="chip" class:active={githubState.issueState === f} type="button" onclick={() => githubState.setIssueState(f)}>{f}</button>
   {/each}
+  <span class="filter-slot"><GithubFilter bind:query={filterQuery} placeholder="Filter issues…" shown={filtered.length} total={panel.data?.length ?? 0} /></span>
   <button class="new-issue" type="button" onclick={() => githubActions.open({ kind: "create" })}>New issue</button>
 </div>
 
@@ -44,9 +49,11 @@
   <p class="note err">Could not load issues ({panel.error?.kind}).</p>
 {:else if panel.data && panel.data.length === 0}
   <p class="note">No {githubState.issueState === "all" ? "" : githubState.issueState} issues.</p>
+{:else if panel.data && filtered.length === 0}
+  <p class="note">No issues match “{filterQuery.trim()}”.</p>
 {:else if panel.data}
   <ul class="list" in:revealIn>
-    {#each panel.data as it (it.number)}
+    {#each filtered as it (it.number)}
       {@const badge = issueStateBadge(it)}
       <li class="row" style="--state:{badge.color}">
         <div class="title-row">
@@ -90,8 +97,10 @@
     color: var(--text-muted);
     font-style: italic;
   }
-  .new-issue {
+  .filter-slot {
     margin-left: auto;
+  }
+  .new-issue {
     padding: 3px 12px;
     border: 1px solid var(--accent);
     border-radius: 999px;
@@ -119,6 +128,7 @@
   }
   .filters {
     display: flex;
+    align-items: center;
     gap: 6px;
     margin-bottom: 10px;
   }

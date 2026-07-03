@@ -4,8 +4,10 @@
   import { parseISO, formatCommitDate } from "../../dates";
   import { formatCompact } from "../../github/format";
   import { aggregateDownloads } from "../../github/downloads";
+  import GithubFilter from "./GithubFilter.svelte";
   import GithubSkeleton from "./GithubSkeleton.svelte";
   import { revealIn } from "../../github/motion";
+  import { filterItems } from "../../github/listFilter";
 
   $effect(() => {
     const repo = appState.repo;
@@ -14,6 +16,8 @@
   });
 
   const panel = $derived(githubState.releases);
+  let filterQuery = $state("");
+  const filtered = $derived(filterItems(panel.data ?? [], filterQuery, ["name", "tagName"]));
   const summary = $derived(panel.data ? aggregateDownloads(panel.data) : null);
   const releaseMax = $derived(summary && summary.byRelease.length ? Math.max(1, summary.byRelease[0].total) : 1);
   const platformMax = $derived(summary && summary.byPlatform.length ? Math.max(1, summary.byPlatform[0].total) : 1);
@@ -102,9 +106,15 @@
   {/if}
 
   <!-- Per-release list (asset tables collapsed) -->
-  <h4 class="rels-h">All releases</h4>
+  <div class="rels-head">
+    <h4 class="rels-h">All releases</h4>
+    <GithubFilter bind:query={filterQuery} placeholder="Filter releases…" shown={filtered.length} total={panel.data.length} />
+  </div>
+  {#if filtered.length === 0}
+    <p class="note">No releases match “{filterQuery.trim()}”.</p>
+  {/if}
   <div class="rels">
-    {#each panel.data as r (r.tagName)}
+    {#each filtered as r (r.tagName)}
       <section class="rel">
         <header>
           <a class="rtitle" href={r.htmlUrl} target="_blank" rel="noreferrer">{r.name || r.tagName}</a>
@@ -240,8 +250,15 @@
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
   }
+  .rels-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 4px 0 10px;
+  }
   .rels-h {
-    margin-top: 4px;
+    margin: 0;
   }
   .rels {
     display: flex;
