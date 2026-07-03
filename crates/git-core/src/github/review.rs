@@ -398,37 +398,6 @@ fn find_own_reaction_id(list_json: &str, login: &str, content: &str) -> Option<u
     })
 }
 
-/// Add (`add=true`) or remove (`add=false`) the viewer's `content` reaction on
-/// the target. Add is a single POST (GitHub treats re-adding as a no-op).
-/// Remove lists the reactions, finds the viewer's matching one, and DELETEs it
-/// by id; nothing to remove → `Ok(())` (idempotent).
-pub fn set_reaction(
-    repo: &Path,
-    kind: CommentKind,
-    target: u64,
-    content: &str,
-    add: bool,
-) -> Result<(), GithubError> {
-    let content = validate_reaction_content(content)?;
-    let (owner, name) = resolve_owner_repo(repo).ok_or(GithubError::NoRemote)?;
-    let base = reaction_base_path(&owner, &name, kind, target);
-    if add {
-        let body = serde_json::json!({ "content": content }).to_string();
-        run_gh(&["api", &base, "--method", "POST", "--input", "-"], Some(&body)).map(|_| ())
-    } else {
-        let list_path = format!("{base}?per_page=100");
-        let list = run_gh(&["api", &list_path], None)?;
-        let login = super::current_login()?;
-        match find_own_reaction_id(&list, &login, content) {
-            Some(id) => {
-                let del_path = format!("{base}/{id}");
-                run_gh(&["api", &del_path, "--method", "DELETE"], None).map(|_| ())
-            }
-            None => Ok(()), // already gone — idempotent
-        }
-    }
-}
-
 /// Percent-encode a validated reaction name for use in a query string. Only
 /// `+` needs encoding (it would decode as a space); the other 7 names are
 /// plain ASCII letters, and `-` is query-safe.
@@ -676,24 +645,6 @@ mod tests {
         assert_eq!(find_own_reaction_id("not json", "me", "+1"), None);
         assert_eq!(find_own_reaction_id("{}", "me", "+1"), None);
         assert_eq!(find_own_reaction_id(r#"[{"id":1}]"#, "me", "+1"), None);
-    }
-
-    #[test]
-    fn set_reaction_rejects_invalid_content_before_gh() {
-        // Invalid content must fail up front — even with a bogus repo path,
-        // validation runs first and never reaches resolve/gh.
-        let err = set_reaction(
-            Path::new("/nonexistent"),
-            CommentKind::IssueComment,
-            1,
-            "THUMBS_UP",
-            true,
-        )
-        .unwrap_err();
-        match err {
-            GithubError::Other(m) => assert!(m.contains("Invalid reaction"), "{m}"),
-            other => panic!("expected Other, got {other:?}"),
-        }
     }
 
     #[test]

@@ -204,8 +204,6 @@ export const api = {
   githubPrResolveThread: (repo: string, threadId: string, resolve: boolean) =>
     invoke<void>("github_pr_resolve_thread", { repo, threadId, resolve }),
   githubCurrentLogin: () => invoke<string>("github_current_login"),
-  githubSetReaction: (repo: string, kind: GhCommentKind, target: number, content: string, add: boolean) =>
-    invoke<void>("github_set_reaction", { repo, kind, target, content, add }),
   githubToggleReaction: (repo: string, kind: GhCommentKind, target: number, content: string) =>
     invoke<boolean>("github_toggle_reaction", { repo, kind, target, content }),
   githubEditComment: (repo: string, kind: GhCommentKind, target: number, body: string) =>

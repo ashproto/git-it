@@ -636,17 +636,6 @@ pub fn github_current_login() -> Result<String, github::GithubError> {
 }
 
 #[tauri::command(async)]
-pub fn github_set_reaction(
-    repo: String,
-    kind: github::review::CommentKind,
-    target: u64,
-    content: String,
-    add: bool,
-) -> Result<(), github::GithubError> {
-    github::review::set_reaction(&PathBuf::from(repo), kind, target, &content, add)
-}
-
-#[tauri::command(async)]
 pub fn github_toggle_reaction(
     repo: String,
     kind: github::review::CommentKind,
