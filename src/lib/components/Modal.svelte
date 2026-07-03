@@ -209,6 +209,8 @@
           />
           Also delete {dialogs.state.upstream}
         </label>
+      {:else if dialogs.state.remoteGone}
+        <p class="msg muted">Remote branch already deleted.</p>
       {/if}
       <div class="actions">
         <button type="button" onclick={() => dialogs.resolveBranchDelete(false)}>Cancel</button>
@@ -422,6 +424,11 @@
     font-size: 13px;
     color: var(--text);
     line-height: 1.5;
+  }
+  .msg.muted {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin: 0 0 8px;
   }
   input {
     width: 100%;

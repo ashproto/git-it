@@ -40,7 +40,8 @@ type DialogState =
       kind: "branchDelete";
       title: string;
       branch: string;
-      upstream: string | null; // e.g. "origin/feature", or null when no upstream
+      upstream: string | null; // e.g. "origin/feature" — null when no upstream OR the remote ref is gone
+      remoteGone: boolean; // tracking config exists but the remote branch was already deleted
       force: boolean;
       deleteRemote: boolean;
       resolve: (v: { confirmed: boolean; force: boolean; deleteRemote: boolean }) => void;
@@ -193,10 +194,10 @@ function makeDialogs() {
       }
     },
     // ── Branch delete dialog ──────────────────────────────────────────────────
-    confirmBranchDelete(opts: { branch: string; upstream: string | null }): Promise<{ confirmed: boolean; force: boolean; deleteRemote: boolean }> {
+    confirmBranchDelete(opts: { branch: string; upstream: string | null; remoteGone?: boolean }): Promise<{ confirmed: boolean; force: boolean; deleteRemote: boolean }> {
       settlePending();
       return new Promise((resolve) => {
-        state = { kind: "branchDelete", title: "Delete branch", branch: opts.branch, upstream: opts.upstream, force: false, deleteRemote: false, resolve };
+        state = { kind: "branchDelete", title: "Delete branch", branch: opts.branch, upstream: opts.upstream, remoteGone: opts.remoteGone ?? false, force: false, deleteRemote: false, resolve };
       });
     },
     setBranchDeleteForce(v: boolean) { if (state.kind === "branchDelete") state = { ...state, force: v }; },

@@ -69,8 +69,14 @@
 
   async function confirmDeleteBranch(name: string) {
     const detail = appState.refsDetailed.find((d) => d.kind === "local" && d.name === name);
-    const upstream = detail?.upstream ?? null; // "origin/feature" | null
-    const res = await dialogs.confirmBranchDelete({ branch: name, upstream });
+    const tracking = detail?.upstream ?? null; // "origin/feature" | null (tracking CONFIG)
+    // The tracking config outlives the remote branch ("gone" after a remote-side
+    // delete) — only offer "also delete remote" when the remote ref actually exists.
+    const remoteExists =
+      tracking !== null && appState.refsByKind.remote.some((r) => r.name === tracking);
+    const upstream = remoteExists ? tracking : null;
+    const remoteGone = tracking !== null && !remoteExists;
+    const res = await dialogs.confirmBranchDelete({ branch: name, upstream, remoteGone });
     if (!res.confirmed) return;
     let remote: string | undefined;
     let remoteBranch: string | undefined;
