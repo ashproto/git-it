@@ -336,7 +336,8 @@
     }
   }
   function onWindowKeydown(e: KeyboardEvent) {
-    if (e.key !== "f" || !e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
+    // key.toLowerCase(): Caps Lock reports "F" and must not defeat the shortcut.
+    if (e.key.toLowerCase() !== "f" || !e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
     // Graph screen only (the GitHub screen gets its own ⌘F handling) and never
     // over a dialog.
     if (appState.activeView !== "timeline") return;

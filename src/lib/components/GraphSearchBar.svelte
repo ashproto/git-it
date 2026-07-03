@@ -70,6 +70,10 @@
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
+      // Kill any pending debounce so it can't fire after close and repopulate
+      // the (cleared) query with stale text.
+      clearTimeout(timer);
+      timer = undefined;
       onClose();
     }
   }
