@@ -70,7 +70,8 @@
   <!-- Right: status text + optional spinner -->
   <span class="section right">
     {#if spinning}
-      <span class="spinner" aria-label="Operation in progress" title="Operation in progress"></span>
+      {@const opLabel = appState.busyOp ? `${appState.busyOp} in progress` : "Operation in progress"}
+      <span class="spinner" aria-label={opLabel} title={opLabel}></span>
     {/if}
     <span class="status-text" title={appState.status}>{appState.status}</span>
   </span>

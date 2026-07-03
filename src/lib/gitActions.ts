@@ -294,6 +294,7 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
     return false;
   }
   appState.setNavBusy(true);
+  appState.setBusyOp(label);
   try {
     appState.status = `${label}…`;
     await fn();
@@ -305,6 +306,7 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
     return false;
   } finally {
     appState.setNavBusy(false);
+    appState.setBusyOp(null);
   }
 }
 

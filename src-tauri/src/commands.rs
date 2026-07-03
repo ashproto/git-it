@@ -140,7 +140,9 @@ pub fn rename_branch(repo: String, old: String, new: String) -> Result<(), Strin
     ops::rename_branch(&PathBuf::from(repo), &old, &new)
 }
 
-#[tauri::command]
+// async: may run a network `git push --delete` when delete_remote is set — a sync
+// command would block the UI thread for the whole round-trip (CLAUDE.md gotcha).
+#[tauri::command(async)]
 pub fn delete_branch(
     repo: String,
     name: String,
@@ -174,12 +176,15 @@ pub fn delete_tag(repo: String, name: String) -> Result<(), String> {
     ops::delete_tag(&PathBuf::from(repo), &name)
 }
 
-#[tauri::command]
+// async: network fetch — a sync command runs on the UI thread and freezes the app
+// for the whole transfer (user-reported: "Fetch completely freezes the app").
+#[tauri::command(async)]
 pub fn fetch(repo: String, remote: Option<String>) -> Result<String, String> {
     ops::fetch(&PathBuf::from(repo), remote.as_deref())
 }
 
-#[tauri::command]
+// async: `git fetch <remote> <branch>:<branch>` is a network op (same gotcha as fetch).
+#[tauri::command(async)]
 pub fn fast_forward_branch(repo: String, branch: String, remote: String) -> Result<String, String> {
     ops::fast_forward_branch(&PathBuf::from(repo), &branch, &remote)
 }

@@ -43,6 +43,9 @@
   const currentBranch = $derived(
     appState.refsByKind.local.find((r) => r.isHead)?.name ?? null,
   );
+  // The Fetch button swaps to a spinner + "Fetching…" while its run() op is in
+  // flight (run() labels the op "Fetch"). Feedback lands where the user clicked.
+  const fetching = $derived(appState.busyOp === "Fetch");
   // Title-bar PR chip: the current branch's OPEN pull request, from the cached
   // pulls list. Shown only on the git screens (the GitHub screen shows PRs
   // itself), only when the cache belongs to THIS repo, and renders nothing in
@@ -313,9 +316,11 @@
     <div class="remote-btns" data-no-drag>
       <button
         class="fetch-btn"
+        class:busy={fetching}
+        disabled={fetching}
         onclick={() => gitActions.fetch()}
         title="Fetch all remotes"
-      >Fetch</button>
+      >{#if fetching}<span class="spin" aria-hidden="true">⟳</span> Fetching…{:else}Fetch{/if}</button>
       <button
         class="fetch-btn"
         disabled={!hasRemotes || appState.remoteOpActive}
@@ -800,6 +805,26 @@
   .fetch-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+  /* Fetching state: keep the button legible (it IS the progress indicator) even
+     though it's disabled, and spin the glyph. */
+  .fetch-btn.busy {
+    opacity: 0.9;
+  }
+  .fetch-btn .spin {
+    display: inline-block;
+    animation: b9spin 0.9s linear infinite;
+  }
+  @keyframes b9spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fetch-btn .spin {
+      animation: none;
+      opacity: 0.6;
+    }
   }
 
   /* Push button split: left part is "Push", right part is the ▾ for force-push */

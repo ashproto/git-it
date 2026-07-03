@@ -1115,6 +1115,10 @@ function makeState() {
   // repo's kept-stale remote/branch during the load window.
   let repoLoading = $state<boolean>(false);
   let navBusy = $state<boolean>(false);
+  // Human label of the in-flight gitActions.run() op ("Fetch", "Checkout PR #4", …).
+  // Drives the Fetch-button spinner and the status-bar text so long-running git ops
+  // are visibly "doing something" (user feedback: fetch looked frozen).
+  let busyOp = $state<string | null>(null);
   let remoteLog = $state<string[]>([]);
 
   // Derived: upstream/ahead/behind for the currently checked-out branch.
@@ -1624,6 +1628,12 @@ function makeState() {
     },
     setNavBusy(v: boolean) {
       navBusy = v;
+    },
+    get busyOp() {
+      return busyOp;
+    },
+    setBusyOp(v: string | null) {
+      busyOp = v;
     },
     get remoteLog() {
       return remoteLog;
