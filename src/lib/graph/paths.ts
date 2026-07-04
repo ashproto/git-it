@@ -20,21 +20,47 @@ export function laneX(lane: number, g: GeomConfig): number {
   return g.offsetX + lane * g.laneWidth;
 }
 
-/** How far (as a fraction of the row height) each bezier control point sits from
- * its own endpoint. 0.5 put both controls at mid-row — a gentle, nearly diagonal
- * S that read as "hard curves" (user feedback). 0.8 pulls the tangents vertical
- * at both ends so the edge leaves and arrives straight, sweeping across in a
- * full round S with no elbow (approved "option C"). */
-const CURVE_TENSION = 0.8;
+/** How the merge-in edge (a merge commit reaching to its second parent) is drawn. */
+export type MergeInStyle = "hooked" | "featureSide" | "symmetric";
 
-/** Cubic-bezier connector (Fork style). `topY` is the y of the band's top row dot. */
-export function curvedEdgePath(edge: Edge, topY: number, g: GeomConfig): string {
+export interface CurveOpts {
+  /** Control-point offset as a fraction of row height (0..1). Higher = rounder. */
+  tension: number;
+  mergeInStyle: MergeInStyle;
+}
+
+const DEFAULT_CURVE: CurveOpts = { tension: 0.8, mergeInStyle: "hooked" };
+
+/** Cubic-bezier connector (Fork style). `topY` is the y of the band's top row dot.
+ *
+ * `edge.kind === "branch"` is the merge-in edge (merge dot at top → second parent
+ * lane at bottom); it renders directionally per `mergeInStyle`. Everything else
+ * (a `merge`-kind branch-off, lane shifts) keeps the symmetric S so branch-offs
+ * read as a gentle ease. Same-lane edges are always a straight vertical line. */
+export function curvedEdgePath(
+  edge: Edge,
+  topY: number,
+  g: GeomConfig,
+  opts: CurveOpts = DEFAULT_CURVE,
+): string {
   const x1 = laneX(edge.fromLane, g);
   const x2 = laneX(edge.toLane, g);
   const y1 = topY;
   const y2 = topY + g.rowHeight;
   if (x1 === x2) return `M${x1} ${y1} L${x2} ${y2}`;
-  const a = g.rowHeight * CURVE_TENSION;
+  const h = g.rowHeight;
+  const a = h * opts.tension;
+  if (edge.kind === "branch" && opts.mergeInStyle !== "symmetric") {
+    // b is the complement of a (h - a, not h*(1-tension)) to avoid float noise
+    // like 30*(1-0.8) === 5.999999999999998.
+    const b = h - a;
+    if (opts.mergeInStyle === "hooked") {
+      // Feature lane (x2) runs straight; hook into the node (x1) at the top.
+      return `M${x1} ${y1} C${x2} ${y1} ${x2} ${y2 - b} ${x2} ${y2}`;
+    }
+    // featureSide: node lane (x1) runs straight; bend into the feature lane near the bottom.
+    return `M${x1} ${y1} C${x1} ${y1 + b} ${x1} ${y2} ${x2} ${y2}`;
+  }
   return `M${x1} ${y1} C${x1} ${y1 + a} ${x2} ${y2 - a} ${x2} ${y2}`;
 }
 
