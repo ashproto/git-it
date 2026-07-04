@@ -84,19 +84,44 @@ pub fn delete_tag(repo: &Path, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Fast-forward a LOCAL branch to its remote tracking tip WITHOUT checking it out,
-/// using `git fetch <remote> <branch>:<branch>`. Git rejects a non-fast-forward
-/// update, so a diverged branch fails cleanly and leaves the ref untouched. Git
-/// also refuses to update the branch that is currently checked out — callers only
-/// offer this for non-current branches.
-pub fn fast_forward_branch(repo: &Path, branch: &str, remote: &str) -> Result<String, String> {
-    let refspec = format!("{}:{}", branch, branch);
+/// Fast-forward a LOCAL branch to its upstream tip WITHOUT checking it out.
+///
+/// Uses a FULLY-QUALIFIED refspec `refs/heads/<remote_branch>:refs/heads/<local_branch>`
+/// so a tag (or any other ref) sharing the branch's name can't shadow the destination:
+/// an unqualified `next:next` lets git resolve the ambiguous `next` to a same-named tag
+/// and reject the update as non-fast-forward. Git refuses a genuine non-fast-forward, so
+/// a diverged branch fails cleanly and the ref is left untouched. Callers only offer this
+/// for non-current branches (git also refuses to fetch into the checked-out branch).
+pub fn fast_forward_branch(
+    repo: &Path,
+    local_branch: &str,
+    remote: &str,
+    remote_branch: &str,
+) -> Result<String, String> {
+    if local_branch.is_empty() || local_branch.starts_with('-') {
+        return Err(format!("Invalid branch: {}", local_branch));
+    }
+    if remote_branch.is_empty() || remote_branch.starts_with('-') {
+        return Err(format!("Invalid remote branch: {}", remote_branch));
+    }
+    let refspec = format!("refs/heads/{}:refs/heads/{}", remote_branch, local_branch);
     let mut c = Command::new("git");
     c.current_dir(repo)
         .env("GIT_TERMINAL_PROMPT", "0")
         .args(["fetch", "--end-of-options", remote, &refspec]);
-    let (o, e) = git_ops::run(&mut c)?;
-    Ok(format!("{}{}", o, e).trim().to_string())
+    match git_ops::run(&mut c) {
+        Ok((o, e)) => Ok(format!("{}{}", o, e).trim().to_string()),
+        Err(msg) => {
+            if msg.contains("non-fast-forward") || msg.contains("[rejected]") {
+                Err(format!(
+                    "Can't fast-forward {}: it has diverged from {}/{}.",
+                    local_branch, remote, remote_branch
+                ))
+            } else {
+                Err(msg)
+            }
+        }
+    }
 }
 
 /// Subjects of the commits on HEAD that aren't on `base` (newest first), for
@@ -390,12 +415,62 @@ mod tests {
         assert_ne!(before, origin_main, "main should be behind origin/main before ff");
 
         // Fast-forward main to origin/main without checking it out.
-        let res = fast_forward_branch(&clone.path, "main", "origin");
+        let res = fast_forward_branch(&clone.path, "main", "origin", "main");
         assert!(res.is_ok(), "ff failed: {:?}", res);
 
         let after = clone.rev("main");
         assert_ne!(before, after, "main should have advanced");
         assert_eq!(after, origin_main, "main should now equal origin/main");
+
+        let _ = fs::remove_dir_all(&bare);
+        let _ = fs::remove_dir_all(&clone_path);
+    }
+
+    #[test]
+    fn fast_forward_branch_ignores_same_named_tag() {
+        // origin = bare repo with main + feature @ c1.
+        let bare = unique_dir("ff-tag-bare");
+        fs::create_dir_all(&bare).unwrap();
+        Command::new("git")
+            .current_dir(&bare)
+            .args(["init", "-q", "--bare"])
+            .output()
+            .unwrap();
+
+        let upstream = TempRepo::new();
+        upstream.commit("a.txt", "c1");
+        upstream.git(&["branch", "feature"]);
+        upstream.git(&["remote", "add", "origin", bare.to_str().unwrap()]);
+        upstream.git(&["push", "-q", "origin", "main", "feature"]);
+
+        // Clone; create a LOCAL feature branch tracking origin/feature, stay on main.
+        let clone_path = unique_dir("ff-tag-clone");
+        Command::new("git")
+            .args(["clone", "-q", bare.to_str().unwrap(), clone_path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        let clone = TempRepo { path: clone_path.clone() };
+        clone.git(&["config", "user.email", "t@example.com"]);
+        clone.git(&["config", "user.name", "Tester"]);
+        clone.git(&["branch", "--track", "feature", "origin/feature"]);
+
+        // Create a TAG also named `feature` at the old tip → ref ambiguity.
+        let old = clone.rev("refs/heads/feature");
+        clone.git(&["tag", "feature", &old]);
+
+        // Advance origin/feature by c2.
+        upstream.git(&["checkout", "-q", "feature"]);
+        upstream.commit("b.txt", "c2");
+        upstream.git(&["push", "-q", "origin", "feature"]);
+        upstream.git(&["checkout", "-q", "main"]);
+
+        fetch(&clone.path, Some("origin")).unwrap();
+        let target = clone.rev("refs/remotes/origin/feature");
+
+        let res = fast_forward_branch(&clone.path, "feature", "origin", "feature");
+        assert!(res.is_ok(), "ff failed (tag ambiguity not handled): {:?}", res);
+        assert_eq!(clone.rev("refs/heads/feature"), target, "branch must advance to origin/feature");
+        assert_eq!(clone.rev("refs/tags/feature"), old, "tag must be left untouched");
 
         let _ = fs::remove_dir_all(&bare);
         let _ = fs::remove_dir_all(&clone_path);

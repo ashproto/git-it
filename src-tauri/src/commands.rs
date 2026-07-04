@@ -183,10 +183,15 @@ pub fn fetch(repo: String, remote: Option<String>) -> Result<String, String> {
     ops::fetch(&PathBuf::from(repo), remote.as_deref())
 }
 
-// async: `git fetch <remote> <branch>:<branch>` is a network op (same gotcha as fetch).
+// async: `git fetch <remote> refs/heads/<rb>:refs/heads/<lb>` is a network op (same gotcha as fetch).
 #[tauri::command(async)]
-pub fn fast_forward_branch(repo: String, branch: String, remote: String) -> Result<String, String> {
-    ops::fast_forward_branch(&PathBuf::from(repo), &branch, &remote)
+pub fn fast_forward_branch(
+    repo: String,
+    branch: String,
+    remote: String,
+    remote_branch: String,
+) -> Result<String, String> {
+    ops::fast_forward_branch(&PathBuf::from(repo), &branch, &remote, &remote_branch)
 }
 
 // async: shells out to git; best-effort PR title/body prefill for the wizard.

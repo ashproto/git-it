@@ -99,10 +99,12 @@
         const detail = appState.refsDetailed.find((d) => d.kind === "local" && d.name === r.name);
         const upstream = detail?.upstream ?? null; // e.g. "origin/main"
         if (upstream) {
-          const remote = upstream.slice(0, upstream.indexOf("/"));
+          const slash = upstream.indexOf("/");
+          const remote = upstream.slice(0, slash);
+          const remoteBranch = upstream.slice(slash + 1); // handles a renamed upstream
           items.push({
             label: `Fast-forward to ${remote}`,
-            action: () => gitActions.fastForwardBranch(r.name, remote),
+            action: () => gitActions.fastForwardBranch(r.name, remote, remoteBranch),
           });
         }
       }

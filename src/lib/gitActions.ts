@@ -565,9 +565,9 @@ export const gitActions = {
     run(`Delete branch ${name}`, () =>
       api.deleteBranch(appState.repo, name, force, deleteRemote, remote, remoteBranch),
     ),
-  fastForwardBranch: (branch: string, remote: string) =>
-    run(`Fast-forward ${branch} → ${remote}/${branch}`, () =>
-      api.fastForwardBranch(appState.repo, branch, remote),
+  fastForwardBranch: (branch: string, remote: string, remoteBranch: string) =>
+    run(`Fast-forward ${branch} → ${remote}/${remoteBranch}`, () =>
+      api.fastForwardBranch(appState.repo, branch, remote, remoteBranch),
     ),
   createTag: (name: string, target: string, message?: string) =>
     run(`Create tag ${name}`, () => api.createTag(appState.repo, name, target, message)),

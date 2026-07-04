@@ -83,8 +83,8 @@ export const api = {
   deleteTag: (repo: string, name: string) => invoke<void>("delete_tag", { repo, name }),
   fetch: (repo: string, remote?: string) =>
     invoke<string>("fetch", { repo, remote: remote ?? null }),
-  fastForwardBranch: (repo: string, branch: string, remote: string) =>
-    invoke<string>("fast_forward_branch", { repo, branch, remote }),
+  fastForwardBranch: (repo: string, branch: string, remote: string, remoteBranch: string) =>
+    invoke<string>("fast_forward_branch", { repo, branch, remote, remoteBranch }),
   merge: (repo: string, reference: string, noFf = false, squash = false) =>
     invoke<OpOutcome>("merge", { repo, reference, noFf, squash }),
   cherryPick: (repo: string, shas: string[]) =>
