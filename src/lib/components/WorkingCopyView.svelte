@@ -2,7 +2,8 @@
   import { appState } from "../store.svelte";
   import { gitActions } from "../gitActions";
   import { api } from "../api";
-  import { contextMenu } from "../contextMenu.svelte";
+  import { contextMenu, type MenuItem } from "../contextMenu.svelte";
+  import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
   import DiffView from "./DiffView.svelte";
   import CommitComposer from "./CommitComposer.svelte";
   import FileTree from "./FileTree.svelte";
@@ -29,6 +30,10 @@
 
   // Last path segment — shown as the leaf label in tree mode (full path in title).
   const basename = (p: string) => p.split("/").pop() ?? p;
+
+  // Working-tree absolute path for a repo-relative file (repo paths are absolute,
+  // forward-slashed on macOS).
+  const absPath = (rel: string) => `${appState.repo.replace(/\/$/, "")}/${rel}`;
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -160,7 +165,7 @@
   // Mirrors GraphHistory.onRowContext: preventDefault, select the row (so the diff
   // updates), then open the shared contextMenu with file-state-appropriate actions.
   // discard/clean already show their own confirm — no extra confirm is added here.
-  function onRowContext(
+  async function onRowContext(
     e: MouseEvent,
     f: WorkingFile,
     section: "staged" | "unstaged" | "untracked",
@@ -169,32 +174,59 @@
     // Select the row so the diff pane follows the right-click. selectFile toggles
     // off when re-clicking the selected row, so only set it if not already selected.
     if (selectedFile !== f.path) appState.setSelectedFile(f.path);
+
+    // File actions (Tauri only). A staged deletion has no on-disk file, so Open /
+    // Open With are disabled; Show in Finder still reveals the parent folder.
+    const fileItems: MenuItem[] = [];
+    if (isTauri()) {
+      const abs = absPath(f.path);
+      const gone = f.status.startsWith("D");
+      fileItems.push({ label: "Open", disabled: gone, action: () => void openPath(abs) });
+      if (!gone) {
+        let apps: { name: string; path: string }[] = [];
+        try {
+          apps = await api.appsForFile(abs);
+        } catch {
+          apps = [];
+        }
+        if (apps.length > 0) {
+          fileItems.push({
+            label: "Open With",
+            submenu: apps.map((a) => ({ label: a.name, action: () => void openPath(abs, a.path) })),
+          });
+        }
+      }
+      fileItems.push({ label: "Show in Finder", action: () => void revealItemInDir(abs) });
+      fileItems.push({ separator: true });
+    }
+
     // Branch on the SECTION the row lives in — NOT on f.staged. A partially-staged
     // file (staged AND further-unstaged) appears in both the Staged and Unstaged
     // lists, so the menu must match where it was clicked and offer that section's
     // direction (else the Unstaged row would wrongly show only "Unstage").
+    let sectionItems: MenuItem[];
     if (section === "staged") {
-      contextMenu.openAt(e.clientX, e.clientY, [
-        { label: "Unstage", action: () => gitActions.unstage([f.path]) },
-      ]);
+      sectionItems = [{ label: "Unstage", action: () => gitActions.unstage([f.path]) }];
     } else if (section === "untracked") {
-      contextMenu.openAt(e.clientX, e.clientY, [
+      sectionItems = [
         { label: "Stage", action: () => gitActions.stage([f.path]) },
         { separator: true },
         { label: "Remove", danger: true, action: () => gitActions.clean([f.path]) },
-      ]);
+      ];
     } else {
       // Unstaged section. In unified mode it may hold an untracked file (→ Remove);
       // otherwise it's a tracked file with unstaged edits (→ Discard).
       const removeItem = f.untracked
         ? { label: "Remove", danger: true, action: () => gitActions.clean([f.path]) }
         : { label: "Discard changes", danger: true, action: () => gitActions.discard([f.path]) };
-      contextMenu.openAt(e.clientX, e.clientY, [
+      sectionItems = [
         { label: "Stage", action: () => gitActions.stage([f.path]) },
         { separator: true },
         removeItem,
-      ]);
+      ];
     }
+
+    contextMenu.openAt(e.clientX, e.clientY, [...fileItems, ...sectionItems]);
   }
 
   // ── Horizontal resize: file-list ↔ diff (ITEM 5) ─────────────────────────────
