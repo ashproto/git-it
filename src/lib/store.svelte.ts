@@ -3,7 +3,7 @@
 import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
-import { computeLanes, laneColor } from "./graph";
+import { computeLanes, laneColor, type MergeInStyle } from "./graph";
 import { reorder } from "./reorder";
 
 // Preferences persist via the Tauri Store plugin (a JSON file written by Rust) so
@@ -60,6 +60,12 @@ function graphToCommit(g: GraphCommit): Commit {
 
 const LINESTYLE_KEY = "gitit.graphLineStyle.v1";
 const LINESTYLE_STORE_KEY = "graphLineStyle";
+
+const MERGEINSTYLE_KEY = "gitit.graphMergeInStyle.v1";
+const MERGEINSTYLE_STORE_KEY = "graphMergeInStyle";
+
+const CURVINESS_KEY = "gitit.graphCurviness.v1";
+const CURVINESS_STORE_KEY = "graphCurviness";
 
 const AUTOBACKUP_KEY = "gitit.safety.autoBackup.v1";
 const AUTOBACKUP_STORE_KEY = "safetyAutoBackup";
@@ -164,6 +170,29 @@ function loadSyncLineStyle(): "curved" | "angular" {
     return raw === "angular" ? "angular" : "curved";
   } catch {
     return "curved";
+  }
+}
+
+function loadSyncMergeInStyle(): MergeInStyle {
+  if (isTauri()) return "hooked";
+  try {
+    if (typeof localStorage === "undefined") return "hooked";
+    const raw = localStorage.getItem(MERGEINSTYLE_KEY);
+    return raw === "featureSide" || raw === "symmetric" ? raw : "hooked";
+  } catch {
+    return "hooked";
+  }
+}
+
+// Curviness is one of three presets; anything else falls back to Balanced (0.8).
+function loadSyncCurviness(): number {
+  if (isTauri()) return 0.8;
+  try {
+    if (typeof localStorage === "undefined") return 0.8;
+    const n = Number(localStorage.getItem(CURVINESS_KEY));
+    return n === 0.55 || n === 0.8 || n === 0.95 ? n : 0.8;
+  } catch {
+    return 0.8;
   }
 }
 
@@ -629,6 +658,72 @@ function makeState() {
       if (typeof localStorage !== "undefined") localStorage.setItem(LINESTYLE_KEY, snapshot);
     } catch (e) {
       console.warn("[gte] could not persist line style", e);
+    }
+  }
+
+  let graphMergeInStyle = $state<MergeInStyle>(loadSyncMergeInStyle());
+  let graphMergeInStyleTouched = false;
+  let graphCurviness = $state<number>(loadSyncCurviness());
+  let graphCurvinessTouched = false;
+
+  const misHydrate = getStore();
+  if (misHydrate) {
+    misHydrate
+      .then((store) => store.get<string>(MERGEINSTYLE_STORE_KEY))
+      .then((saved) => {
+        if (
+          (saved === "hooked" || saved === "featureSide" || saved === "symmetric") &&
+          !graphMergeInStyleTouched
+        ) {
+          graphMergeInStyle = saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load merge-in style", e));
+  }
+
+  const cvHydrate = getStore();
+  if (cvHydrate) {
+    cvHydrate
+      .then((store) => store.get<number>(CURVINESS_STORE_KEY))
+      .then((saved) => {
+        if ((saved === 0.55 || saved === 0.8 || saved === 0.95) && !graphCurvinessTouched) {
+          graphCurviness = saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load curviness", e));
+  }
+
+  function persistMergeInStyle() {
+    const snapshot = graphMergeInStyle;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(MERGEINSTYLE_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist merge-in style", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(MERGEINSTYLE_KEY, snapshot);
+    } catch (e) {
+      console.warn("[gte] could not persist merge-in style", e);
+    }
+  }
+
+  function persistCurviness() {
+    const snapshot = graphCurviness;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(CURVINESS_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist curviness", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(CURVINESS_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist curviness", e);
     }
   }
 
@@ -1344,6 +1439,22 @@ function makeState() {
       graphLineStyleTouched = true;
       graphLineStyle = v;
       persistLineStyle();
+    },
+    get graphMergeInStyle() {
+      return graphMergeInStyle;
+    },
+    setGraphMergeInStyle(v: MergeInStyle) {
+      graphMergeInStyleTouched = true;
+      graphMergeInStyle = v;
+      persistMergeInStyle();
+    },
+    get graphCurviness() {
+      return graphCurviness;
+    },
+    setGraphCurviness(v: number) {
+      graphCurvinessTouched = true;
+      graphCurviness = v;
+      persistCurviness();
     },
     get repoStatus() {
       return repoStatus;

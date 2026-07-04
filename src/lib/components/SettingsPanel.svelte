@@ -61,6 +61,56 @@
       </div>
 
       <div class="seg-row">
+        <span class="seg-label">Merge-in curve</span>
+        <div class="seg" role="group" aria-label="Merge-in curve style">
+          <button
+            type="button"
+            class:active={appState.graphMergeInStyle === "hooked"}
+            disabled={appState.graphLineStyle === "angular"}
+            onclick={() => appState.setGraphMergeInStyle("hooked")}
+            aria-pressed={appState.graphMergeInStyle === "hooked"}
+          >Hooked</button><button
+            type="button"
+            class:active={appState.graphMergeInStyle === "featureSide"}
+            disabled={appState.graphLineStyle === "angular"}
+            onclick={() => appState.setGraphMergeInStyle("featureSide")}
+            aria-pressed={appState.graphMergeInStyle === "featureSide"}
+          >Feature-side</button><button
+            type="button"
+            class:active={appState.graphMergeInStyle === "symmetric"}
+            disabled={appState.graphLineStyle === "angular"}
+            onclick={() => appState.setGraphMergeInStyle("symmetric")}
+            aria-pressed={appState.graphMergeInStyle === "symmetric"}
+          >Symmetric</button>
+        </div>
+      </div>
+
+      <div class="seg-row">
+        <span class="seg-label">Curviness</span>
+        <div class="seg" role="group" aria-label="Graph curviness">
+          <button
+            type="button"
+            class:active={appState.graphCurviness === 0.55}
+            disabled={appState.graphLineStyle === "angular"}
+            onclick={() => appState.setGraphCurviness(0.55)}
+            aria-pressed={appState.graphCurviness === 0.55}
+          >Subtle</button><button
+            type="button"
+            class:active={appState.graphCurviness === 0.8}
+            disabled={appState.graphLineStyle === "angular"}
+            onclick={() => appState.setGraphCurviness(0.8)}
+            aria-pressed={appState.graphCurviness === 0.8}
+          >Balanced</button><button
+            type="button"
+            class:active={appState.graphCurviness === 0.95}
+            disabled={appState.graphLineStyle === "angular"}
+            onclick={() => appState.setGraphCurviness(0.95)}
+            aria-pressed={appState.graphCurviness === 0.95}
+          >Sweeping</button>
+        </div>
+      </div>
+
+      <div class="seg-row">
         <span class="seg-label">Repository switcher</span>
         <div class="seg" role="group" aria-label="Repository switcher mode">
           <button

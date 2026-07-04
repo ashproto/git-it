@@ -446,6 +446,8 @@
           {heads}
           {rowHeight}
           lineStyle={appState.graphLineStyle}
+          mergeInStyle={appState.graphMergeInStyle}
+          curviness={appState.graphCurviness}
           renderStart={winStart}
           renderEnd={winEnd}
           colorOf={(idx) => appState.colorForIndex(idx)}

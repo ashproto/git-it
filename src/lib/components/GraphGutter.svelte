@@ -9,6 +9,7 @@
     type RowLayout,
     type Edge,
     type GeomConfig,
+    type MergeInStyle,
   } from "../graph";
 
   let {
@@ -16,6 +17,8 @@
     heads,
     rowHeight = 30,
     lineStyle = "curved",
+    mergeInStyle = "hooked",
+    curviness = 0.8,
     renderStart = 0,
     renderEnd = undefined,
     colorOf,
@@ -24,6 +27,8 @@
     heads: boolean[];
     rowHeight?: number;
     lineStyle?: "curved" | "angular";
+    mergeInStyle?: MergeInStyle;
+    curviness?: number;
     /** First commit index whose dot/edges to draw (inclusive). */
     renderStart?: number;
     /** One past the last commit index to draw (exclusive); undefined ⇒ all rows. */
@@ -54,7 +59,9 @@
 
   const dotY = (i: number) => i * rowHeight + rowHeight / 2;
   const pathFor = (edge: Edge, topY: number) =>
-    lineStyle === "angular" ? angularEdgePath(edge, topY, g) : curvedEdgePath(edge, topY, g);
+    lineStyle === "angular"
+      ? angularEdgePath(edge, topY, g)
+      : curvedEdgePath(edge, topY, g, { tension: curviness, mergeInStyle });
 </script>
 
 <svg
