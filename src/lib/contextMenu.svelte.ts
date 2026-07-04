@@ -5,6 +5,7 @@ export type MenuItem = {
   danger?: boolean;
   disabled?: boolean;
   separator?: boolean;
+  submenu?: MenuItem[];
 };
 
 function makeMenu() {

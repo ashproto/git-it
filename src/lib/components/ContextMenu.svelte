@@ -6,6 +6,12 @@
     item.action?.();
   }
 
+  // Open submenus leftward when the menu itself is near the right edge, so a
+  // right-hand flyout can't run off-screen.
+  const flipSub = $derived(
+    typeof window !== "undefined" && contextMenu.x > window.innerWidth * 0.6,
+  );
+
   // While open, close on outside pointerdown (capture so it beats other handlers),
   // Escape, or window blur.
   $effect(() => {
@@ -40,6 +46,29 @@
     {#each contextMenu.items as item, i (i)}
       {#if item.separator}
         <div class="sep" role="separator"></div>
+      {:else if item.submenu}
+        <div class="sub-wrap" class:flip={flipSub}>
+          <button class="item has-sub" class:danger={item.danger} role="menuitem" disabled={item.disabled}>
+            <span>{item.label}</span><span class="chev" aria-hidden="true">›</span>
+          </button>
+          <div class="menu submenu" role="menu" aria-label={item.label}>
+            {#each item.submenu as sub, j (j)}
+              {#if sub.separator}
+                <div class="sep" role="separator"></div>
+              {:else}
+                <button
+                  class="item"
+                  class:danger={sub.danger}
+                  role="menuitem"
+                  disabled={sub.disabled}
+                  onclick={() => choose(sub)}
+                >
+                  {sub.label}
+                </button>
+              {/if}
+            {/each}
+          </div>
+        </div>
       {:else}
         <button
           class="item"
@@ -94,5 +123,35 @@
     height: 1px;
     background: var(--border);
     margin: 4px 2px;
+  }
+  .sub-wrap {
+    position: relative;
+  }
+  .item.has-sub {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .chev {
+    color: var(--text-muted, var(--text));
+    opacity: 0.7;
+  }
+  .submenu {
+    position: absolute;
+    top: -4px;
+    left: 100%;
+    margin-left: 2px;
+    display: none;
+  }
+  .sub-wrap.flip .submenu {
+    left: auto;
+    right: 100%;
+    margin-left: 0;
+    margin-right: 2px;
+  }
+  .sub-wrap:hover > .submenu,
+  .submenu:hover {
+    display: block;
   }
 </style>
