@@ -165,22 +165,29 @@
   // Mirrors GraphHistory.onRowContext: preventDefault, select the row (so the diff
   // updates), then open the shared contextMenu with file-state-appropriate actions.
   // discard/clean already show their own confirm — no extra confirm is added here.
+  // apps_for_file is async, so IPC completion is no longer FIFO — a monotonic token
+  // drops a stale menu-open if a newer right-click superseded it mid-await.
+  let ctxSeq = 0;
   async function onRowContext(
     e: MouseEvent,
     f: WorkingFile,
     section: "staged" | "unstaged" | "untracked",
   ) {
     e.preventDefault();
+    const seq = ++ctxSeq;
+    const { clientX, clientY } = e;
     // Select the row so the diff pane follows the right-click. selectFile toggles
     // off when re-clicking the selected row, so only set it if not already selected.
     if (selectedFile !== f.path) appState.setSelectedFile(f.path);
 
-    // File actions (Tauri only). A staged deletion has no on-disk file, so Open /
-    // Open With are disabled; Show in Finder still reveals the parent folder.
+    // File actions (Tauri only). A deleted file has no on-disk target, so Open /
+    // Open With are disabled and Show in Finder opens the containing folder instead
+    // (revealItemInDir canonicalizes the path first and would error on a gone file).
     const fileItems: MenuItem[] = [];
     if (isTauri()) {
       const abs = absPath(f.path);
-      const gone = f.status.startsWith("D");
+      const gone = f.status === "deleted";
+      const parent = abs.slice(0, abs.lastIndexOf("/"));
       fileItems.push({ label: "Open", disabled: gone, action: () => void openPath(abs) });
       if (!gone) {
         let apps: { name: string; path: string }[] = [];
@@ -196,7 +203,10 @@
           });
         }
       }
-      fileItems.push({ label: "Show in Finder", action: () => void revealItemInDir(abs) });
+      fileItems.push({
+        label: "Show in Finder",
+        action: () => void (gone ? openPath(parent) : revealItemInDir(abs)),
+      });
       fileItems.push({ separator: true });
     }
 
@@ -226,7 +236,9 @@
       ];
     }
 
-    contextMenu.openAt(e.clientX, e.clientY, [...fileItems, ...sectionItems]);
+    // A newer right-click landed while we awaited apps_for_file — let it win.
+    if (seq !== ctxSeq) return;
+    contextMenu.openAt(clientX, clientY, [...fileItems, ...sectionItems]);
   }
 
   // ── Horizontal resize: file-list ↔ diff (ITEM 5) ─────────────────────────────

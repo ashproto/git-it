@@ -141,14 +141,18 @@
     position: absolute;
     top: -4px;
     left: 100%;
-    margin-left: 2px;
+    /* Flush against the parent (no gap) so the pointer can't fall into a dead zone
+       between row and flyout and close it mid-traverse. */
+    margin-left: 0;
     display: none;
+    max-height: 60vh;
+    overflow-y: auto;
   }
   .sub-wrap.flip .submenu {
     left: auto;
     right: 100%;
     margin-left: 0;
-    margin-right: 2px;
+    margin-right: 0;
   }
   .sub-wrap:hover > .submenu,
   .submenu:hover {

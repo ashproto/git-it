@@ -20,7 +20,13 @@ pub struct AppEntry {
 /// Returns an empty list for a missing file or when nothing handles it. The
 /// leading-dash guard mirrors the shell-out safety rule even though this is an
 /// API call, not a shell-out.
-#[tauri::command]
+///
+/// async: the LaunchServices lookup + per-app `displayNameAtPath` can take tens
+/// of ms and sits on the critical path of opening the context menu — a sync
+/// command would run it on the UI thread and freeze the app (the caller guards
+/// against the resulting out-of-order IPC with a sequence token). NSWorkspace is
+/// not main-thread-only, so running off-thread is safe.
+#[tauri::command(async)]
 pub fn apps_for_file(path: String) -> Result<Vec<AppEntry>, String> {
     if path.is_empty() || path.starts_with('-') {
         return Err("invalid path".into());
