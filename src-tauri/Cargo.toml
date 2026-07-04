@@ -23,3 +23,6 @@ chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-store = "2.4.3"
 # Filesystem watcher for live "Local Changes" updates (see fswatch.rs).
 notify = "6"
+# macOS LaunchServices lookup for the "Open With" file menu (see openwith.rs).
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSFileManager"] }

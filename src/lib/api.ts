@@ -85,6 +85,8 @@ export const api = {
     invoke<string>("fetch", { repo, remote: remote ?? null }),
   fastForwardBranch: (repo: string, branch: string, remote: string, remoteBranch: string) =>
     invoke<string>("fast_forward_branch", { repo, branch, remote, remoteBranch }),
+  appsForFile: (path: string) =>
+    invoke<{ name: string; path: string }[]>("apps_for_file", { path }),
   merge: (repo: string, reference: string, noFf = false, squash = false) =>
     invoke<OpOutcome>("merge", { repo, reference, noFf, squash }),
   cherryPick: (repo: string, shas: string[]) =>

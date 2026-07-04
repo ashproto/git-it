@@ -1,5 +1,6 @@
 mod commands;
 mod fswatch;
+mod openwith;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -30,6 +31,7 @@ pub fn run() {
             commands::delete_tag,
             commands::fetch,
             commands::fast_forward_branch,
+            openwith::apps_for_file,
             commands::branch_subjects,
             commands::merge,
             commands::cherry_pick,
