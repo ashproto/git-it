@@ -348,7 +348,7 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
         let after_at = at_line.trim_start_matches('@').trim_start_matches(' ');
         // e.g. "-12,6 +12,7 @@ heading" or "-5 +5 @@"
         let old_part = after_at.trim_start_matches('-');
-        let end = old_part.find(|c: char| c == ',' || c == ' ').unwrap_or(old_part.len());
+        let end = old_part.find([',', ' ']).unwrap_or(old_part.len());
         old_part[..end].parse().unwrap_or(1)
     };
 

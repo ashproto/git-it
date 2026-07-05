@@ -38,6 +38,8 @@ import type {
   SafetyRef,
   StashEntry,
   WorkingFile,
+  UpdateInfo,
+  DownloadEvent,
 } from "./types";
 
 export async function pickRepoFolder(initial?: string): Promise<string | null> {
@@ -53,6 +55,14 @@ export async function pickRepoFolder(initial?: string): Promise<string | null> {
 export const api = {
   checkPrerequisites: () => invoke<PrerequisiteCheck>("check_prerequisites"),
   isGitRepo: (repo: string) => invoke<boolean>("is_git_repo", { repo }),
+  // ── auto-updater (desktop only) ──────────────────────────────────────────
+  checkUpdateOnChannel: (channel: "stable" | "beta") =>
+    invoke<UpdateInfo | null>("check_update_on_channel", { channel }),
+  installPendingUpdate: (onEvent: (e: DownloadEvent) => void) => {
+    const ch = new Channel<DownloadEvent>();
+    ch.onmessage = onEvent;
+    return invoke<void>("install_pending_update", { onEvent: ch });
+  },
   loadCommits: (repo: string, count: number, range?: string) =>
     invoke<Commit[]>("load_commits", { repo, count, range: range ?? null }),
   loadGraph: (repo: string, count: number, skip = 0) =>

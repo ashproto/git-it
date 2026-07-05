@@ -310,3 +310,17 @@ export type GhIssueDetail = {
 
 /** One inline line-anchored comment drafted locally, submitted with a one-shot PR review. */
 export type DraftComment = { path: string; line: number; side: "LEFT" | "RIGHT"; body: string };
+
+/** Lightweight update metadata returned by the `check_update_on_channel` command. */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  notes: string | null;
+}
+
+/** Download-progress events streamed over the `install_pending_update` IPC Channel.
+ * Shape matches the Rust `DownloadEvent` (PascalCase `event` tag, camelCase data). */
+export type DownloadEvent =
+  | { event: "Started"; data: { contentLength: number | null } }
+  | { event: "Progress"; data: { chunkLength: number } }
+  | { event: "Finished" };

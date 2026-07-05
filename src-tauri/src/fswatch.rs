@@ -3,10 +3,11 @@
 //! Watches the active repo and pushes debounced, CLASSIFIED change events to the
 //! frontend (via the same `tauri::ipc::Channel` pattern used by streamed
 //! pull/push):
-//!   - `"git"`   — a ref/HEAD/log change (commit, branch, checkout, fetch,
-//!                 merge, reset…) made by the app OR externally → reload the graph.
+//!   - `"git"` — a ref/HEAD/log change (commit, branch, checkout, fetch,
+//!     merge, reset…) made by the app OR externally → reload the graph.
 //!   - `"local"` — a worktree file or index change → refresh Local Changes.
-//!   - `"both"`  — both kinds occurred within one debounce window.
+//!   - `"both"` — both kinds occurred within one debounce window.
+//!
 //! Object writes (`.git/objects`), lock files and other `.git` churn are ignored,
 //! so git's own bookkeeping doesn't spam refreshes.
 

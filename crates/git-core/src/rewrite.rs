@@ -65,7 +65,7 @@ fn find_earliest_target(repo: &Path, target_shas: &[String]) -> Option<String> {
     for sha in target_shas {
         let key = sha.to_lowercase();
         if let Some(&p) = pos.get(key.as_str()) {
-            if earliest.as_ref().map_or(true, |(ep, _)| p < *ep) {
+            if earliest.as_ref().is_none_or(|(ep, _)| p < *ep) {
                 earliest = Some((p, key));
             }
         }
@@ -85,7 +85,7 @@ fn parent_count(repo: &Path, sha: &str) -> usize {
         _ => return 0,
     };
     let line = String::from_utf8_lossy(&out.stdout);
-    let parts: Vec<&str> = line.trim().split_whitespace().collect();
+    let parts: Vec<&str> = line.split_whitespace().collect();
     parts.len().saturating_sub(1)
 }
 
