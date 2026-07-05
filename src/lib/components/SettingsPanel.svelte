@@ -1,8 +1,23 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
   import { settingsPanel } from "../settingsPanel.svelte";
+  import { manualCheckForUpdates } from "../updater.svelte";
+  import { onMount } from "svelte";
 
   let closeBtn = $state<HTMLButtonElement | undefined>();
+
+  // App version for the Updates section (desktop only; blank in the browser).
+  let appVersion = $state<string>("");
+  onMount(async () => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { getVersion } = await import("@tauri-apps/api/app");
+        appVersion = await getVersion();
+      } catch {
+        /* non-fatal */
+      }
+    }
+  });
 
   // Deferred focus on the close button when the panel opens (mirrors AmendDialog).
   $effect(() => {
@@ -244,6 +259,43 @@
         />
         <span>Show Output panel (debug)</span>
       </label>
+
+      <hr class="divider" />
+
+      <!-- ── Updates ────────────────────────────────────────── -->
+      <p class="group-label">Updates</p>
+
+      <label class="opt">
+        <input
+          type="checkbox"
+          checked={appState.autoUpdateCheck}
+          onchange={() => appState.setAutoUpdateCheck(!appState.autoUpdateCheck)}
+        />
+        <span>Check for updates automatically</span>
+      </label>
+
+      <div class="seg-row">
+        <span class="seg-label">Update channel</span>
+        <div class="seg" role="group" aria-label="Update channel">
+          <button
+            type="button"
+            class:active={appState.updateChannel === "stable"}
+            onclick={() => appState.setUpdateChannel("stable")}
+            aria-pressed={appState.updateChannel === "stable"}
+          >Stable</button><button
+            type="button"
+            class:active={appState.updateChannel === "beta"}
+            onclick={() => appState.setUpdateChannel("beta")}
+            aria-pressed={appState.updateChannel === "beta"}
+          >Beta</button>
+        </div>
+      </div>
+
+      <div class="seg-row">
+        <span class="seg-label">{appVersion ? `Version ${appVersion}` : "Version"}</span>
+        <button type="button" class="check-updates-btn" onclick={() => manualCheckForUpdates()}
+          >Check for Updates</button>
+      </div>
     </div>
   </div>
 {/if}
@@ -409,5 +461,25 @@
     border: none;
     border-top: 1px solid var(--border);
     margin: 8px 0 4px;
+  }
+
+  .check-updates-btn {
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--btn-bg);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .check-updates-btn:hover {
+    background: var(--btn-hover);
+  }
+
+  .check-updates-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 </style>

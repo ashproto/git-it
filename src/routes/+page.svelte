@@ -9,6 +9,7 @@
   import PrereqBanner from "$lib/components/PrereqBanner.svelte";
   import SettingsPanel from "$lib/components/SettingsPanel.svelte";
   import { settingsPanel } from "$lib/settingsPanel.svelte";
+  import { startupUpdateCheck, manualCheckForUpdates } from "$lib/updater.svelte";
   import ManageRepoModal from "$lib/components/ManageRepoModal.svelte";
   import { manageRepo } from "$lib/manageRepo.svelte";
   import BranchColorDialog from "$lib/components/BranchColorDialog.svelte";
@@ -250,6 +251,17 @@
     if (!inTauri && appState.graphCommits.length === 0) {
       appState.setGraphCommits(SAMPLE_GRAPH);
     }
+    // Desktop: kick off the once-per-launch auto-update check, and route the
+    // macOS app-menu items (emitted by src-tauri/src/lib.rs) to the same flows
+    // the in-app UI uses. Both no-op outside Tauri / in dev.
+    const unlistenMenu: Array<() => void> = [];
+    if (inTauri) {
+      void startupUpdateCheck();
+      import("@tauri-apps/api/event").then(async ({ listen }) => {
+        unlistenMenu.push(await listen("menu:check-updates", () => manualCheckForUpdates()));
+        unlistenMenu.push(await listen("menu:open-settings", () => settingsPanel.openPanel()));
+      });
+    }
     // Reload the graph + working copy + status when the window regains focus /
     // becomes visible — the user may have committed or edited in another app.
     // Complements the filesystem watcher (which handles changes while the window
@@ -262,6 +274,7 @@
     return () => {
       window.removeEventListener("focus", onActivate);
       document.removeEventListener("visibilitychange", onActivate);
+      unlistenMenu.forEach((u) => u());
     };
   });
 
