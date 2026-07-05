@@ -97,6 +97,11 @@ const PRTIMELINE_STORE_KEY = "prTimelineNewestFirst";
 const PULLREBASE_KEY = "gitit.pullRebase.v1";
 const PULLREBASE_STORE_KEY = "pullRebase";
 
+const UPDATE_CHANNEL_KEY = "gitit.updateChannel.v1";
+const UPDATE_CHANNEL_STORE_KEY = "updateChannel";
+const AUTOUPDATE_CHECK_KEY = "gitit.autoUpdateCheck.v1";
+const AUTOUPDATE_CHECK_STORE_KEY = "autoUpdateCheck";
+
 const BRANCHCOLORS_KEY = "gitit.branchColors.v1";
 const BRANCHCOLORS_STORE_KEY = "branchColors";
 
@@ -274,6 +279,26 @@ function loadSyncPullRebase(): boolean {
     return raw === "true";
   } catch {
     return false;
+  }
+}
+
+function loadSyncUpdateChannel(): "stable" | "beta" {
+  if (isTauri()) return "stable";
+  try {
+    if (typeof localStorage === "undefined") return "stable";
+    return localStorage.getItem(UPDATE_CHANNEL_KEY) === "beta" ? "beta" : "stable";
+  } catch {
+    return "stable";
+  }
+}
+
+function loadSyncAutoUpdateCheck(): boolean {
+  if (isTauri()) return true;
+  try {
+    if (typeof localStorage === "undefined") return true;
+    return localStorage.getItem(AUTOUPDATE_CHECK_KEY) !== "false";
+  } catch {
+    return true;
   }
 }
 
@@ -1067,6 +1092,73 @@ function makeState() {
     }
   }
 
+  // ── update settings (updater) ─────────────────────────────────────────────
+  // Release channel the in-app updater tracks: "stable" (default) or "beta".
+  // autoUpdateCheck gates the launch + background update checks (default on).
+  // Both mirror the pullRebase persist pattern exactly.
+  let updateChannel = $state<"stable" | "beta">(loadSyncUpdateChannel());
+  let updateChannelTouched = false;
+  let autoUpdateCheck = $state<boolean>(loadSyncAutoUpdateCheck());
+  let autoUpdateCheckTouched = false;
+
+  const ucHydrate = getStore();
+  if (ucHydrate) {
+    ucHydrate
+      .then((store) => store.get<string>(UPDATE_CHANNEL_STORE_KEY))
+      .then((saved) => {
+        if ((saved === "stable" || saved === "beta") && !updateChannelTouched) {
+          updateChannel = saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load updateChannel setting", e));
+  }
+
+  const aucHydrate = getStore();
+  if (aucHydrate) {
+    aucHydrate
+      .then((store) => store.get<boolean>(AUTOUPDATE_CHECK_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !autoUpdateCheckTouched) {
+          autoUpdateCheck = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load autoUpdateCheck setting", e));
+  }
+
+  function persistUpdateChannel() {
+    const snapshot = updateChannel;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(UPDATE_CHANNEL_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist updateChannel setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(UPDATE_CHANNEL_KEY, snapshot);
+    } catch (e) {
+      console.warn("[gte] could not persist updateChannel setting", e);
+    }
+  }
+
+  function persistAutoUpdateCheck() {
+    const snapshot = autoUpdateCheck;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(AUTOUPDATE_CHECK_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist autoUpdateCheck setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(AUTOUPDATE_CHECK_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist autoUpdateCheck setting", e);
+    }
+  }
+
   // ── prTimelineNewestFirst persisted setting ───────────────────────────────
   // Default sort direction for the PR activity timeline: oldest-first (false,
   // default) or newest-first (true). Mirrors the pullRebase pattern exactly.
@@ -1702,6 +1794,23 @@ function makeState() {
       pullRebaseTouched = true;
       pullRebase = v;
       persistPullRebase();
+    },
+    // ── update settings (updater) ─────────────────────────────────────────────
+    get updateChannel() {
+      return updateChannel;
+    },
+    setUpdateChannel(v: "stable" | "beta") {
+      updateChannelTouched = true;
+      updateChannel = v;
+      persistUpdateChannel();
+    },
+    get autoUpdateCheck() {
+      return autoUpdateCheck;
+    },
+    setAutoUpdateCheck(v: boolean) {
+      autoUpdateCheckTouched = true;
+      autoUpdateCheck = v;
+      persistAutoUpdateCheck();
     },
     // ── prTimelineNewestFirst persisted setting ───────────────────────────────
     get prTimelineNewestFirst() {
