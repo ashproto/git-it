@@ -60,7 +60,7 @@
       "endpoints": [
         "https://github.com/ashproto/git-it/releases/latest/download/latest.json"
       ],
-      "pubkey": "REPLACE_ME_AFTER_RUNNING_TAURI_SIGNER_GENERATE"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMwQUY4QTA0NUU0RjkzRQpSV1ErK2VSRm9QZ0tBL2FWdTAxWFVFc2h5YmM0dEpDb3FVSzZEZ0Nqb25GZ2JPQmdwZ2JGZDRTRgo="
     }
   }
 }
