@@ -1,7 +1,9 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
   import { pickRepoFolder, api } from "../api";
-  import { gapToIndex } from "../reorder";
+  import { reorder, insertionIndex } from "../reorder";
+  import { flip } from "svelte/animate";
+  import { quintOut } from "svelte/easing";
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -73,33 +75,31 @@
     appState.recentRepos.filter((p) => !appState.openRepos.includes(p)),
   );
 
-  // ── Drag-to-reorder tabs (pointer events; no HTML5 DnD) ─────────────────────
+  // ── Drag-to-reorder tabs (pointer events; live reorder + flip + floating clone) ──
   const DRAG_THRESHOLD = 4; // px of horizontal travel before a press becomes a drag
-  let stripEl: HTMLDivElement | undefined = $state();
-  let dragFrom = $state<number | null>(null); // tab index being dragged (threshold crossed)
-  let dropGap = $state<number | null>(null); // insertion gap 0..n while dragging
-  let indicatorLeft = $state(0); // px in the strip's scroll-content coordinates
+  let stripEl = $state<HTMLDivElement>();
+  // Live-reordered copy of openRepos during a drag; null when idle. The strip renders
+  // from `displayRepos` so a splice here animates the neighbors via `flip`.
+  let dragOrder = $state<string[] | null>(null);
+  let dragPath = $state<string | null>(null);
+  // The floating clone that follows the cursor (viewport coords; position: fixed).
+  let ghost = $state<{ x: number; y: number; label: string; width: number } | null>(null);
+  let grabDX = 0; // pointer offset within the grabbed tab, so the clone stays under the cursor
   // Pre-threshold press candidate (non-reactive — nothing renders until drag mode).
-  let candidate: { index: number; startX: number; pointerId: number; el: HTMLElement } | null =
-    null;
+  let candidate: { path: string; startX: number; pointerId: number; el: HTMLElement } | null = null;
   // Set when a drag actually happened, so the click that follows pointerup on the
   // same tab doesn't also activate it. Reset on the next pointerdown.
   let didDrag = false;
 
-  function tabRects(): DOMRect[] {
-    if (!stripEl) return [];
-    return Array.from(stripEl.querySelectorAll<HTMLElement>(".tab"), (el) =>
-      el.getBoundingClientRect(),
-    );
-  }
+  const displayRepos = $derived(dragOrder ?? appState.openRepos);
 
-  function onTabPointerDown(e: PointerEvent, index: number) {
+  function onTabPointerDown(e: PointerEvent, path: string) {
     if (e.button !== 0) return;
     // The close button must not start a drag (its click closes the tab).
     if ((e.target as HTMLElement).closest(".tab-close")) return;
     didDrag = false;
     candidate = {
-      index,
+      path,
       startX: e.clientX,
       pointerId: e.pointerId,
       el: e.currentTarget as HTMLElement,
@@ -112,9 +112,14 @@
 
   function onDragMove(e: PointerEvent) {
     if (!candidate) return;
-    if (dragFrom === null) {
+    if (dragOrder === null) {
       if (Math.abs(e.clientX - candidate.startX) < DRAG_THRESHOLD) return;
-      dragFrom = candidate.index;
+      // Enter drag mode.
+      const rect = candidate.el.getBoundingClientRect();
+      grabDX = candidate.startX - rect.left;
+      dragOrder = [...appState.openRepos];
+      dragPath = candidate.path;
+      ghost = { x: e.clientX - grabDX, y: rect.top, label: basename(candidate.path), width: rect.width };
       didDrag = true;
       try {
         candidate.el.setPointerCapture(candidate.pointerId);
@@ -122,44 +127,43 @@
         /* capture is best-effort (pointer may already be gone) */
       }
     }
-    updateGap(e.clientX);
+    if (ghost) ghost = { ...ghost, x: e.clientX - grabDX };
+    updateTarget(e.clientX);
   }
 
-  // Insertion gap = how many tab midpoints lie left of the pointer; the drop
-  // indicator sits at that gap's boundary edge.
-  function updateGap(pointerX: number) {
-    if (!stripEl) return;
-    const rects = tabRects();
-    if (rects.length === 0) return;
-    let gap = rects.length;
-    for (let i = 0; i < rects.length; i++) {
-      if (pointerX < rects[i].left + rects[i].width / 2) {
-        gap = i;
-        break;
-      }
-    }
-    dropGap = gap;
-    // Client x → the strip's scroll-content x (abs children scroll with content).
-    const originX = stripEl.getBoundingClientRect().left - stripEl.scrollLeft;
-    const edge = gap < rects.length ? rects[gap].left : rects[rects.length - 1].right;
-    indicatorLeft = edge - originX;
+  // Move the dragged path to the slot the pointer is over. Hit-testing uses
+  // offsetLeft/offsetWidth (the RESTING layout box), NOT getBoundingClientRect —
+  // `flip` animates via `transform`, which offsetLeft ignores, so an in-flight
+  // reflow can't jitter the target back and forth.
+  function updateTarget(pointerX: number) {
+    if (!stripEl || dragOrder === null || dragPath === null) return;
+    const tabs = Array.from(stripEl.querySelectorAll<HTMLElement>(".tab"));
+    if (tabs.length === 0) return;
+    const stripRect = stripEl.getBoundingClientRect();
+    const contentX = pointerX - stripRect.left + stripEl.scrollLeft;
+    const mids = tabs.map((el) => el.offsetLeft + el.offsetWidth / 2);
+    const target = insertionIndex(mids, contentX);
+    const cur = dragOrder.indexOf(dragPath);
+    if (target !== cur) dragOrder = reorder(dragOrder, cur, target);
   }
 
   function onDragUp() {
-    if (dragFrom !== null && dropGap !== null) {
-      appState.reorderRepos(dragFrom, gapToIndex(dragFrom, dropGap));
+    if (dragOrder !== null && dragPath !== null) {
+      const from = appState.openRepos.indexOf(dragPath);
+      const to = dragOrder.indexOf(dragPath);
+      if (from !== -1 && from !== to) appState.reorderRepos(from, to);
     }
     endDrag();
   }
 
   function onDragCancel() {
-    endDrag();
+    endDrag(); // abort — dragOrder = null reverts the display to the store order
   }
 
   function onDragKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape" && dragFrom !== null) {
+    if (e.key === "Escape" && dragOrder !== null) {
       e.stopPropagation();
-      endDrag(); // abort — didDrag stays true, so the trailing click is swallowed
+      endDrag(); // abort without committing; didDrag stays true so the trailing click is swallowed
     }
   }
 
@@ -172,8 +176,9 @@
       }
     }
     candidate = null;
-    dragFrom = null;
-    dropGap = null;
+    dragOrder = null;
+    dragPath = null;
+    ghost = null;
     window.removeEventListener("pointermove", onDragMove);
     window.removeEventListener("pointerup", onDragUp);
     window.removeEventListener("pointercancel", onDragCancel);
@@ -219,13 +224,14 @@
 
 <!-- Tab strip — sits flush against --header-bg -->
 <div class="tab-strip" data-no-drag bind:this={stripEl}>
-  {#each appState.openRepos as path, i (path)}
+  {#each displayRepos as path (path)}
     <button
       class="tab"
       class:active={path === appState.repo}
-      class:dragging={dragFrom === i}
+      class:placeholder={path === dragPath}
       title={path}
-      onpointerdown={(e) => onTabPointerDown(e, i)}
+      animate:flip={{ duration: 160, easing: quintOut }}
+      onpointerdown={(e) => onTabPointerDown(e, path)}
       onclick={() => onTabClick(path)}
     >
       <span class="tab-name">{basename(path)}</span>
@@ -242,8 +248,10 @@
     </button>
   {/each}
 
-  {#if dragFrom !== null && dropGap !== null}
-    <div class="drop-indicator" style={`left:${indicatorLeft - 1}px`}></div>
+  {#if ghost}
+    <div class="tab-ghost" style={`left:${ghost.x}px; top:${ghost.y}px; width:${ghost.width}px`}>
+      <span class="tab-name">{ghost.label}</span>
+    </div>
   {/if}
 
   <!-- + button: opens a menu with "Open repository…" + recent repositories -->
@@ -291,7 +299,7 @@
 
 <style>
   .tab-strip {
-    position: relative; /* anchors the drag drop-indicator */
+    position: relative;
     display: flex;
     align-items: stretch;
     gap: 2px;
@@ -334,18 +342,29 @@
     border-bottom-color: var(--accent);
   }
 
-  .tab.dragging {
-    opacity: 0.5;
+  /* The dragged tab keeps its slot as an invisible placeholder that `flip` slides
+     around; the floating clone is what the user sees. */
+  .tab.placeholder {
+    visibility: hidden;
   }
 
-  .drop-indicator {
-    position: absolute;
-    top: 5px;
-    bottom: 5px;
-    width: 2px;
-    border-radius: 1px;
-    background: var(--accent);
+  .tab-ghost {
+    position: fixed;
+    z-index: 3500;
+    display: inline-flex;
+    align-items: center;
+    height: 34px;
+    padding: 0 10px;
+    box-sizing: border-box;
+    background: var(--header-bg);
+    color: var(--text);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+    font-size: 12.5px;
+    white-space: nowrap;
     pointer-events: none;
+    transform: scale(1.02);
   }
 
   .tab-name {

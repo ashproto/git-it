@@ -16,10 +16,13 @@ export function reorder<T>(list: T[], from: number, to: number): T[] {
 }
 
 /**
- * Map a visual insertion GAP (0..n, counting the slots between/around n tabs)
- * to the `to` index `reorder()` expects. Gaps `from` and `from + 1` surround
- * the dragged item itself, so both map to `from` (identity drop).
+ * Insertion index for a pointer at `pointerX` given ascending tab `midpoints`
+ * (x of each tab's centre). Returns the first index whose midpoint is right of
+ * the pointer, clamped to the last index when the pointer is past every tab.
  */
-export function gapToIndex(from: number, gap: number): number {
-  return gap > from ? gap - 1 : gap;
+export function insertionIndex(midpoints: number[], pointerX: number): number {
+  for (let i = 0; i < midpoints.length; i++) {
+    if (pointerX < midpoints[i]) return i;
+  }
+  return Math.max(0, midpoints.length - 1);
 }

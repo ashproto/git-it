@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reorder } from "./reorder";
-import { gapToIndex } from "./reorder";
+import { reorder, insertionIndex } from "./reorder";
 
 describe("reorder", () => {
   it("moves an item forward", () => expect(reorder(["a","b","c","d"], 0, 2)).toEqual(["b","c","a","d"]));
@@ -15,13 +14,19 @@ describe("reorder", () => {
   });
 });
 
-// gapToIndex maps a visual insertion gap (0..n, between tabs) to the `to`
-// index reorder() expects ("lands at index `to` of the result").
-describe("gapToIndex", () => {
-  it("gap past the source shifts down by one", () => expect(gapToIndex(0, 3)).toBe(2));
-  it("gap before the source is unchanged", () => expect(gapToIndex(2, 0)).toBe(0));
-  it("the two gaps surrounding the source map to the source (identity)", () => {
-    expect(gapToIndex(1, 1)).toBe(1);
-    expect(gapToIndex(1, 2)).toBe(1);
+describe("insertionIndex", () => {
+  const mids = [20, 60, 100]; // three tabs, midpoints at x = 20, 60, 100
+  it("returns 0 left of the first midpoint", () => {
+    expect(insertionIndex(mids, 5)).toBe(0);
+  });
+  it("returns the index of the first midpoint to the right of the pointer", () => {
+    expect(insertionIndex(mids, 40)).toBe(1);
+    expect(insertionIndex(mids, 80)).toBe(2);
+  });
+  it("clamps to the last index past the final midpoint", () => {
+    expect(insertionIndex(mids, 999)).toBe(2);
+  });
+  it("returns 0 for an empty list", () => {
+    expect(insertionIndex([], 10)).toBe(0);
   });
 });
