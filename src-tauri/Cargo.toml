@@ -26,3 +26,12 @@ notify = "6"
 # macOS LaunchServices lookup for the "Open With" file menu (see openwith.rs).
 objc2-app-kit = { version = "0.3", features = ["NSWorkspace"] }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSFileManager"] }
+
+# Auto-updater is a desktop-only concern (no mobile targets today, but this
+# mirrors the Tauri convention and keeps any future mobile build clean).
+# `semver` compares the beta and stable manifest versions in the updater's
+# superset check (see src/updater.rs).
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+semver = "1"

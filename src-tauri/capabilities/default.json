@@ -12,6 +12,9 @@
     },
     "dialog:default",
     "core:window:allow-start-dragging",
-    "store:default"
+    "store:default",
+    "updater:default",
+    "process:default",
+    "process:allow-restart"
   ]
 }

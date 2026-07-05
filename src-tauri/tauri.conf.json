@@ -35,7 +35,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["dmg", "app"],
     "category": "DeveloperTool",
     "shortDescription": "A native macOS git client with first-class commit-time editing",
     "longDescription": "Git It is a fast, native macOS git client built with Tauri and Svelte: a commit graph, branch and tag operations, merge/cherry-pick/revert with conflict resolution, reset/amend/rebase/interactive-rebase with one-click undo, a working-copy diff/stage/commit/stash workflow, and remote pull/push — plus the commit-timestamp editing it grew from.",
@@ -47,7 +47,20 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "12.3"
+      "entitlements": "Entitlements.plist",
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "12.3",
+      "providerShortName": null
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/ashproto/git-it/releases/latest/download/latest.json"
+      ],
+      "pubkey": "REPLACE_ME_AFTER_RUNNING_TAURI_SIGNER_GENERATE"
     }
   }
 }
