@@ -1,6 +1,13 @@
 mod commands;
 mod fswatch;
 mod openwith;
+mod updater;
+
+// `Manager` is used by the desktop `app.manage(...)` / `app.handle()` calls in
+// `setup`. Gating to `desktop` keeps it out of any future mobile build without
+// tripping an unused-import warning.
+#[cfg(desktop)]
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +23,59 @@ pub fn run() {
         // Manage the filesystem watcher so the active repo's worktree can be
         // watched for live "Local Changes" updates (see fswatch.rs).
         .manage(fswatch::WatchState::default())
+        .setup(|app| {
+            #[cfg(desktop)]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.manage(updater::PendingUpdate::default());
+            }
+
+            // macOS ONLY: add "Settings…" and "Check for Updates…" to the app
+            // (app-name) menu, under About. We start from the platform default
+            // menu so every standard item (Edit, Window, Hide, Quit, …) is
+            // preserved and only insert the two extra items; each click emits an
+            // event the frontend routes to its existing flow (open Settings /
+            // manual update-check). Windows/Linux reach these through the in-app
+            // Settings panel instead.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::Emitter;
+                let menu = Menu::default(app.handle())?;
+                let settings = MenuItem::with_id(
+                    app.handle(),
+                    "open-settings",
+                    "Settings…",
+                    true,
+                    None::<&str>,
+                )?;
+                let check_updates = MenuItem::with_id(
+                    app.handle(),
+                    "check-updates",
+                    "Check for Updates…",
+                    true,
+                    None::<&str>,
+                )?;
+                let items = menu.items()?;
+                if let Some(app_menu) = items.first().and_then(|item| item.as_submenu()) {
+                    // Insert just under "About" (index 0): Settings…, then Check for Updates…
+                    app_menu.insert(&settings, 1)?;
+                    app_menu.insert(&check_updates, 2)?;
+                }
+                app.set_menu(menu)?;
+                app.on_menu_event(|app_handle, event| match event.id().as_ref() {
+                    "open-settings" => {
+                        let _ = app_handle.emit("menu:open-settings", ());
+                    }
+                    "check-updates" => {
+                        let _ = app_handle.emit("menu:check-updates", ());
+                    }
+                    _ => {}
+                });
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::check_prerequisites,
             commands::is_git_repo,
@@ -118,6 +178,10 @@ pub fn run() {
             commands::github_pr_checkout,
             fswatch::start_watch,
             fswatch::stop_watch,
+            #[cfg(desktop)]
+            updater::check_update_on_channel,
+            #[cfg(desktop)]
+            updater::install_pending_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
