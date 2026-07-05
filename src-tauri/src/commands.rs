@@ -470,6 +470,9 @@ pub async fn pull(
     .map_err(|e| format!("join: {}", e))?
 }
 
+// A Tauri command with named args deserialized from the frontend — grouping
+// them into a struct would obscure the IPC surface, so the arg count is fine.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn push(
     repo: String,

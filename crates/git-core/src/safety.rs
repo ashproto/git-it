@@ -10,9 +10,7 @@ fn rev_parse(repo: &Path, what: &str) -> Result<String, String> {
     // git rev-parse --end-of-options echoes "--end-of-options" on its own line before the
     // resolved sha; take the last non-empty, non-flag line to get just the sha.
     let sha = out
-        .lines()
-        .filter(|l| !l.trim().is_empty() && !l.trim().starts_with('-'))
-        .last()
+        .lines().rfind(|l| !l.trim().is_empty() && !l.trim().starts_with('-'))
         .ok_or_else(|| format!("rev-parse produced no sha for {}", what))?
         .trim()
         .to_string();
