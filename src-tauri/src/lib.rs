@@ -31,6 +31,7 @@ pub fn run() {
             commands::delete_tag,
             commands::fetch,
             commands::fast_forward_branch,
+            commands::delete_remote_branch,
             openwith::apps_for_file,
             commands::branch_subjects,
             commands::merge,

@@ -52,16 +52,25 @@ pub fn delete_branch(
 
     if delete_remote {
         if let (Some(rem), Some(rb)) = (remote, remote_branch) {
-            let mut p = Command::new("git");
-            p.current_dir(repo)
-                .env("GIT_TERMINAL_PROMPT", "0")
-                // Options first, then --end-of-options, so BOTH the remote name and
-                // the branch operand are guarded against leading-dash flag injection.
-                .args(["push", "--delete", "--end-of-options", rem, rb]);
-            git_ops::run(&mut p)
+            delete_remote_branch(repo, rem, rb)
                 .map_err(|e| format!("Deleted local branch, but remote delete failed: {}", e))?;
         }
     }
+    Ok(())
+}
+
+/// Delete a branch on a remote via `git push <remote> --delete <branch>`. This also
+/// removes the local `refs/remotes/<remote>/<branch>` tracking ref, so callers don't
+/// need a separate prune. GIT_TERMINAL_PROMPT=0 so a missing credential fails instead
+/// of hanging.
+pub fn delete_remote_branch(repo: &Path, remote: &str, branch: &str) -> Result<(), String> {
+    let mut p = Command::new("git");
+    p.current_dir(repo)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        // Options first, then --end-of-options, so BOTH the remote name and the branch
+        // operand are guarded against leading-dash flag injection.
+        .args(["push", "--delete", "--end-of-options", remote, branch]);
+    git_ops::run(&mut p)?;
     Ok(())
 }
 
@@ -518,6 +527,64 @@ mod tests {
         assert!(!has_remote, "origin must not have refs/heads/feature after remote delete");
 
         let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn delete_remote_branch_removes_upstream() {
+        // origin = bare repo with main + feature.
+        let bare = unique_dir("delrb-bare");
+        fs::create_dir_all(&bare).unwrap();
+        Command::new("git")
+            .current_dir(&bare)
+            .args(["init", "-q", "--bare"])
+            .output()
+            .unwrap();
+
+        let upstream = TempRepo::new();
+        upstream.commit("a.txt", "c1");
+        upstream.git(&["branch", "feature"]);
+        upstream.git(&["remote", "add", "origin", bare.to_str().unwrap()]);
+        upstream.git(&["push", "-q", "origin", "main", "feature"]);
+
+        let clone_path = unique_dir("delrb-clone");
+        Command::new("git")
+            .args(["clone", "-q", bare.to_str().unwrap(), clone_path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        let clone = TempRepo { path: clone_path.clone() };
+
+        assert!(
+            Command::new("git")
+                .current_dir(&clone.path)
+                .args(["show-ref", "--verify", "--quiet", "refs/remotes/origin/feature"])
+                .status()
+                .unwrap()
+                .success(),
+            "origin/feature should exist before delete"
+        );
+
+        delete_remote_branch(&clone.path, "origin", "feature").unwrap();
+
+        assert!(
+            !Command::new("git")
+                .args(["--git-dir", bare.to_str().unwrap(), "show-ref", "--verify", "--quiet", "refs/heads/feature"])
+                .status()
+                .unwrap()
+                .success(),
+            "feature should be deleted on the remote"
+        );
+        assert!(
+            !Command::new("git")
+                .current_dir(&clone.path)
+                .args(["show-ref", "--verify", "--quiet", "refs/remotes/origin/feature"])
+                .status()
+                .unwrap()
+                .success(),
+            "origin/feature tracking ref should be gone after delete"
+        );
+
+        let _ = fs::remove_dir_all(&bare);
+        let _ = fs::remove_dir_all(&clone_path);
     }
 
     #[test]

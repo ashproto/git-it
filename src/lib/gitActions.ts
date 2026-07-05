@@ -565,6 +565,10 @@ export const gitActions = {
     run(`Delete branch ${name}`, () =>
       api.deleteBranch(appState.repo, name, force, deleteRemote, remote, remoteBranch),
     ),
+  deleteRemoteBranch: (remote: string, branch: string) =>
+    run(`Delete remote branch ${remote}/${branch}`, () =>
+      api.deleteRemoteBranch(appState.repo, remote, branch),
+    ),
   fastForwardBranch: (branch: string, remote: string, remoteBranch: string) =>
     run(`Fast-forward ${branch} → ${remote}/${remoteBranch}`, () =>
       api.fastForwardBranch(appState.repo, branch, remote, remoteBranch),

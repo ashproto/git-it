@@ -194,6 +194,12 @@ pub fn fast_forward_branch(
     ops::fast_forward_branch(&PathBuf::from(repo), &branch, &remote, &remote_branch)
 }
 
+// async: `git push --delete` is a network op (same gotcha as fetch/push).
+#[tauri::command(async)]
+pub fn delete_remote_branch(repo: String, remote: String, branch: String) -> Result<String, String> {
+    ops::delete_remote_branch(&PathBuf::from(repo), &remote, &branch).map(|()| String::new())
+}
+
 // async: shells out to git; best-effort PR title/body prefill for the wizard.
 #[tauri::command(async)]
 pub fn branch_subjects(repo: String, base: String, limit: u32) -> Result<Vec<String>, String> {

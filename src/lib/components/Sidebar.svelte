@@ -155,6 +155,23 @@
           if (n) gitActions.createBranch(n, r.sha);
         },
       });
+      items.push({ separator: true });
+      items.push({
+        label: "Delete remote branch",
+        danger: true,
+        action: async () => {
+          const slash = r.name.indexOf("/");
+          const remote = r.name.slice(0, slash);
+          const branch = r.name.slice(slash + 1);
+          const ok = await dialogs.confirm({
+            title: "Delete remote branch",
+            message: `Delete "${r.name}" on the remote? This removes it for everyone with access to ${remote}.`,
+            confirmLabel: "Delete",
+            danger: true,
+          });
+          if (ok) gitActions.deleteRemoteBranch(remote, branch);
+        },
+      });
     } else {
       items.push({ label: `Checkout ${r.name} (detached)`, action: () => gitActions.checkout(r.name) });
       items.push({ separator: true });
