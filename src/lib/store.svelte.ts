@@ -1812,6 +1812,30 @@ function makeState() {
       autoUpdateCheck = v;
       persistAutoUpdateCheck();
     },
+    // Reads the *persisted* channel (not the in-memory default), so the updater's
+    // first-run seed can tell "user has never chosen" from "user chose stable".
+    // Returns null when no choice has been stored yet.
+    async getPersistedUpdateChannel(): Promise<"stable" | "beta" | null> {
+      const sp = getStore();
+      if (sp) {
+        try {
+          const store = await sp;
+          const v = await store.get<string>(UPDATE_CHANNEL_STORE_KEY);
+          return v === "stable" || v === "beta" ? v : null;
+        } catch {
+          return null;
+        }
+      }
+      try {
+        if (typeof localStorage !== "undefined") {
+          const raw = localStorage.getItem(UPDATE_CHANNEL_KEY);
+          return raw === "stable" || raw === "beta" ? raw : null;
+        }
+      } catch {
+        /* ignore */
+      }
+      return null;
+    },
     // ── prTimelineNewestFirst persisted setting ───────────────────────────────
     get prTimelineNewestFirst() {
       return prTimelineNewestFirst;

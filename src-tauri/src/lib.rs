@@ -28,6 +28,10 @@ pub fn run() {
             {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
+                // The updater's restart step (renderer → @tauri-apps/plugin-process
+                // relaunch → `plugin:process|restart`) needs this plugin registered,
+                // or the final "Restart Now" call rejects and the update never applies.
+                app.handle().plugin(tauri_plugin_process::init())?;
                 app.manage(updater::PendingUpdate::default());
             }
 

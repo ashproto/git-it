@@ -26,9 +26,29 @@ export async function manualCheckForUpdates(): Promise<void> {
 /** Auto-check on launch — desktop + non-dev, gated on the autoUpdateCheck setting. */
 export async function startupUpdateCheck(): Promise<void> {
   if (!isTauri() || isDev) return;
+  // Seed the channel from the build type BEFORE the auto-check gate, so a fresh
+  // beta install lands on the beta channel even if auto-check is later turned off.
+  await seedChannelFromBuild();
   startBackgroundPolling();
   if (!appState.autoUpdateCheck) return;
   await checkForUpdates("startup");
+}
+
+// A beta (pre-release) build tracks the beta channel by default on first run so
+// it receives the rolling `next` pre-releases. Only acts when the user hasn't
+// chosen a channel yet (no persisted value); never overrides a stored choice,
+// and only ever flips stable → beta.
+async function seedChannelFromBuild(): Promise<void> {
+  try {
+    if ((await appState.getPersistedUpdateChannel()) !== null) return;
+    const { getVersion } = await import("@tauri-apps/api/app");
+    const v = await getVersion();
+    if (typeof v === "string" && v.includes("-")) {
+      appState.setUpdateChannel("beta");
+    }
+  } catch {
+    /* non-fatal — falls back to the stable default */
+  }
 }
 
 // Poll for updates every 30 minutes while the app is open. Notify-only, respects
@@ -44,7 +64,12 @@ function startBackgroundPolling(): void {
 
 async function checkForUpdates(source: "manual" | "startup" | "background"): Promise<void> {
   if (!isTauri() || isDev) return;
-  if (checking) return;
+  if (checking) {
+    // A manual click while a check/download is already in flight: acknowledge it
+    // (the background/other flow owns the shared busyOp) instead of doing nothing.
+    if (source === "manual") appState.status = "Already checking for updates…";
+    return;
+  }
   checking = true;
   const manual = source === "manual";
   if (manual) {
@@ -57,10 +82,15 @@ async function checkForUpdates(source: "manual" | "startup" | "background"): Pro
       if (manual) appState.status = "You are on the latest version.";
       return;
     }
-    // Background poll: one prompt per new version, no nagging.
+    // Background poll is notify-only: surface a non-modal status message and
+    // stop, so we never pop a blocking download dialog over the user's work. One
+    // message per new version (deduped). They install via Settings → Updates →
+    // Check for Updates (the manual flow).
     if (source === "background") {
       if (update.version === lastBackgroundVersion) return;
       lastBackgroundVersion = update.version;
+      appState.status = `Update ${update.version} available — Settings → Updates to install.`;
+      return;
     }
     const notes = (update.notes ?? "").trim();
     const proceed = await dialogs.confirm({
