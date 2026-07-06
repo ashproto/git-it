@@ -1,8 +1,20 @@
 # Git It
 
+[![CI](https://github.com/ashproto/git-it/actions/workflows/ci.yml/badge.svg)](https://github.com/ashproto/git-it/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/ashproto/git-it?sort=semver&display_name=tag)](https://github.com/ashproto/git-it/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/ashproto/git-it/total)](https://github.com/ashproto/git-it/releases)
+![Platform](https://img.shields.io/badge/platform-macOS%2012.3%2B-000000?logo=apple&logoColor=white)
+![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202%20%2B%20SvelteKit-24C8DB?logo=tauri&logoColor=white)
+
 A fast, native **macOS git client** — commit graph, branches, merges, rebases, working-copy diffs, and remotes — with **first-class commit-time editing**. Built with [Tauri 2](https://tauri.app) (Rust) and [SvelteKit 5](https://svelte.dev) (runes).
 
 > macOS only. The window uses native vibrancy (frosted-glass panels over the desktop) via `NSVisualEffect`.
+
+## Download
+
+**[⬇ Download the latest release](https://github.com/ashproto/git-it/releases/latest)** — open the `.dmg`, drag **Git It.app** into `/Applications`, and launch. It keeps itself up to date after that (in-app auto-updates, with an optional beta channel in Settings → Updates).
+
+> Requires **macOS 12.3+**. Universal — runs natively on Apple Silicon and Intel.
 
 ## Features
 
