@@ -18,7 +18,7 @@ A fast, native **macOS git client** — commit graph, branches, merges, rebases,
 
 **[⬇ Download the latest release](https://github.com/ashproto/git-it/releases/latest)** — open the `.dmg`, drag **Git It.app** into `/Applications`, and launch. It keeps itself up to date after that (in-app auto-updates, with an optional beta channel in Settings → Updates).
 
-> Requires **macOS 12.3+**. Universal — runs natively on Apple Silicon and Intel.
+> Requires **macOS 12.3+**. The release ships separate **Apple Silicon** and **Intel** builds — download the `.dmg` that matches your Mac (each runs fully native). In-app updates then track the right build automatically.
 
 ## Features
 
