@@ -1,4 +1,5 @@
 mod commands;
+mod filter_repo;
 mod fswatch;
 mod openwith;
 mod updater;
@@ -82,6 +83,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::check_prerequisites,
+            commands::install_command_line_tools,
             commands::is_git_repo,
             commands::load_commits,
             commands::load_graph,
