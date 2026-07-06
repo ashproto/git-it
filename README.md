@@ -6,6 +6,10 @@
 ![Platform](https://img.shields.io/badge/platform-macOS%2012.3%2B-000000?logo=apple&logoColor=white)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202%20%2B%20SvelteKit-24C8DB?logo=tauri&logoColor=white)
 
+<p align="center">
+  <img src="docs/screenshots/commit-graph.png" alt="Git It — the commit graph, refs sidebar, and toolbar" width="900">
+</p>
+
 A fast, native **macOS git client** — commit graph, branches, merges, rebases, working-copy diffs, and remotes — with **first-class commit-time editing**. Built with [Tauri 2](https://tauri.app) (Rust) and [SvelteKit 5](https://svelte.dev) (runes).
 
 > macOS only. The window uses native vibrancy (frosted-glass panels over the desktop) via `NSVisualEffect`.
