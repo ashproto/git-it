@@ -1,8 +1,24 @@
 # Git It
 
+[![CI](https://github.com/ashproto/git-it/actions/workflows/ci.yml/badge.svg)](https://github.com/ashproto/git-it/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/ashproto/git-it?sort=semver&display_name=tag)](https://github.com/ashproto/git-it/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/ashproto/git-it/total)](https://github.com/ashproto/git-it/releases)
+![Platform](https://img.shields.io/badge/platform-macOS%2012.3%2B-000000?logo=apple&logoColor=white)
+![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202%20%2B%20SvelteKit-24C8DB?logo=tauri&logoColor=white)
+
+<p align="center">
+  <img src="docs/screenshots/commit-graph.png" alt="Git It — the commit graph, refs sidebar, and toolbar" width="900">
+</p>
+
 A fast, native **macOS git client** — commit graph, branches, merges, rebases, working-copy diffs, and remotes — with **first-class commit-time editing**. Built with [Tauri 2](https://tauri.app) (Rust) and [SvelteKit 5](https://svelte.dev) (runes).
 
 > macOS only. The window uses native vibrancy (frosted-glass panels over the desktop) via `NSVisualEffect`.
+
+## Download
+
+**[⬇ Download the latest release](https://github.com/ashproto/git-it/releases/latest)** — open the `.dmg`, drag **Git It.app** into `/Applications`, and launch. It keeps itself up to date after that (in-app auto-updates, with an optional beta channel in Settings → Updates).
+
+> Requires **macOS 12.3+**. The release ships separate **Apple Silicon** and **Intel** builds — download the `.dmg` that matches your Mac (each runs fully native). In-app updates then track the right build automatically.
 
 ## Features
 
@@ -15,6 +31,23 @@ A fast, native **macOS git client** — commit graph, branches, merges, rebases,
 - **Remotes** — manage remotes; streamed **pull** (merge or rebase) and **push** (`--force-with-lease`, `--set-upstream`) with live progress, cancel, and an ahead/behind indicator. Credentials are prompted on demand and never stored.
 - **Commit-time editing** — select commits and shift them by an **offset**, set an **exact** time, or **compress** a range proportionally into a new window. Opens in an on-demand drawer; previews before it rewrites.
 - **Multi-repo** — open several repositories at once, as tabs or a sidebar list (your choice).
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/diff-viewer.png" alt="Git It — a commit's changed files and a syntax-highlighted diff" width="900"><br>
+  <em>Inspect any commit — changed files and a syntax-highlighted diff, unified or split, with per-hunk staging.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/github.png" alt="Git It — the built-in GitHub dashboard for a repository" width="900"><br>
+  <em>Built-in GitHub — pull requests, issues, releases, and CI runs, right next to your local history.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" alt="Git It — Settings with graph, date, and auto-update options" width="900"><br>
+  <em>Settings — graph styling, date formatting, and in-app auto-updates with an optional beta channel.</em>
+</p>
 
 ## Prerequisites
 
