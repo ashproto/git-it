@@ -167,7 +167,14 @@ pub fn delete_refs(repo: &Path, refs: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-pub fn check_prerequisites() -> PrerequisiteCheck {
+/// Probe the runtime prerequisites for Git It.
+///
+/// `filter_repo_argv` is the invocation prefix for the bundled git-filter-repo
+/// script (e.g. `["python3", "/…/git-filter-repo"]`), resolved by the desktop
+/// shell. We check: `git --version`, `python3 --version`, and
+/// `<argv-prefix> --version` (the bundled script, which needs python3 + the
+/// script file to be present and runnable).
+pub fn check_prerequisites(filter_repo_argv: &[String]) -> PrerequisiteCheck {
     let git_version = Command::new("git")
         .arg("--version")
         .output()
@@ -175,16 +182,38 @@ pub fn check_prerequisites() -> PrerequisiteCheck {
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
 
-    let filter_repo_version = Command::new("git-filter-repo")
+    let python3_version = Command::new("python3")
         .arg("--version")
         .output()
         .ok()
         .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+        // python3 prints its version to stdout on modern releases, but older ones
+        // used stderr; fall back so we don't report an empty string.
+        .map(|o| {
+            let out = String::from_utf8_lossy(&o.stdout);
+            let trimmed = out.trim();
+            if trimmed.is_empty() {
+                String::from_utf8_lossy(&o.stderr).trim().to_string()
+            } else {
+                trimmed.to_string()
+            }
+        });
+
+    let filter_repo_version = filter_repo_argv.split_first().and_then(|(program, args)| {
+        Command::new(program)
+            .args(args)
+            .arg("--version")
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    });
 
     PrerequisiteCheck {
         git: git_version.is_some(),
         git_version,
+        python3: python3_version.is_some(),
+        python3_version,
         filter_repo: filter_repo_version.is_some(),
         filter_repo_version,
     }
