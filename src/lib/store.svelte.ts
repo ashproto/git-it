@@ -61,6 +61,9 @@ function graphToCommit(g: GraphCommit): Commit {
 const LINESTYLE_KEY = "gitit.graphLineStyle.v1";
 const LINESTYLE_STORE_KEY = "graphLineStyle";
 
+const THEME_KEY = "gitit.theme.v1";       // localStorage (also read synchronously by themeMode.ts)
+const THEME_STORE_KEY = "theme";          // Tauri store (durable)
+
 const MERGEINSTYLE_KEY = "gitit.graphMergeInStyle.v1";
 const MERGEINSTYLE_STORE_KEY = "graphMergeInStyle";
 
@@ -176,6 +179,24 @@ function loadSyncLineStyle(): "curved" | "angular" {
   } catch {
     return "curved";
   }
+}
+
+// DEVIATION vs loadSyncLineStyle: reads localStorage UNCONDITIONALLY (incl. under
+// Tauri) so the store seed matches what themeMode.ts already painted pre-paint.
+function loadSyncTheme(): "classic" | "nerv" {
+  try {
+    if (typeof localStorage === "undefined") return "classic";
+    return localStorage.getItem(THEME_KEY) === "nerv" ? "nerv" : "classic";
+  } catch {
+    return "classic";
+  }
+}
+
+// Reflect the theme onto <html> imperatively — NO $effect (module-scope factory).
+function applyThemeAttr(t: "classic" | "nerv"): void {
+  if (typeof document === "undefined") return;
+  if (t === "nerv") document.documentElement.setAttribute("data-theme", "nerv");
+  else document.documentElement.removeAttribute("data-theme");
 }
 
 function loadSyncMergeInStyle(): MergeInStyle {
@@ -683,6 +704,40 @@ function makeState() {
       if (typeof localStorage !== "undefined") localStorage.setItem(LINESTYLE_KEY, snapshot);
     } catch (e) {
       console.warn("[gte] could not persist line style", e);
+    }
+  }
+
+  let theme = $state<"classic" | "nerv">(loadSyncTheme());
+  let themeTouched = false;
+
+  const themeHydrate = getStore();
+  if (themeHydrate) {
+    themeHydrate
+      .then((store) => store.get<string>(THEME_STORE_KEY))
+      .then((saved) => {
+        if ((saved === "classic" || saved === "nerv") && !themeTouched) {
+          theme = saved;
+          applyThemeAttr(saved);
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load theme", e));
+  }
+
+  function persistTheme() {
+    const snapshot = theme;
+    // DEVIATION vs persistLineStyle: write localStorage in BOTH branches so
+    // themeMode.ts's synchronous pre-paint read is always current.
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(THEME_KEY, snapshot);
+    } catch (e) {
+      console.warn("[gte] could not persist theme (localStorage)", e);
+    }
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(THEME_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist theme (store)", e));
     }
   }
 
@@ -1531,6 +1586,15 @@ function makeState() {
       graphLineStyleTouched = true;
       graphLineStyle = v;
       persistLineStyle();
+    },
+    get theme() {
+      return theme;
+    },
+    setTheme(v: "classic" | "nerv") {
+      themeTouched = true;
+      theme = v;
+      applyThemeAttr(v);
+      persistTheme();
     },
     get graphMergeInStyle() {
       return graphMergeInStyle;
