@@ -72,4 +72,56 @@
   font-weight: 400; /* Anton ships a single 400 weight; avoid faux-bold synthesis */
 }
 
-/* ── Phase B decoration goes below (all rules :root[data-theme="nerv"] …) ── */
+/* ══ Phase B — HUD decoration (all rules bare :root[data-theme="nerv"], NEVER :global()
+   which is Svelte-only and dead in this plain .css; pointer-events:none/additive; Classic
+   untouched). Blueprint: docs/superpowers/plans/2026-07-07-nerv-spike-findings.md ══ */
+
+/* B1 — scanline + grid overlay. Single fixed root ::after painting STATIC gradients:
+   composites once, no per-frame backdrop re-sample, so it does NOT reintroduce the
+   backdrop-filter framerate wall (+page.svelte:777-785). Tiny alphas = texture, not scrim. */
+:root[data-theme="nerv"]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 3px),
+    linear-gradient(rgba(242, 84, 45, 0.015), rgba(242, 84, 45, 0.015));
+}
+/* Static by design; reduced-motion is a no-op but kept explicit for intent. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="nerv"]::after { animation: none; }
+}
+
+/* B3 — corner brackets on the shared .panel / .dialog DOM classes (Svelte keeps the plain
+   DOM class, so these global rules reach every host). One ::after paints all four L-marks,
+   FLUSH-INSET (inset:0, at the padding-box corners) so overflow:hidden/auto hosts never clip
+   them. position:relative is verified layout-neutral (no abs descendant resolves to the root). */
+:root[data-theme="nerv"] .panel,
+:root[data-theme="nerv"] .dialog {
+  position: relative;
+}
+:root[data-theme="nerv"] .panel::after,
+:root[data-theme="nerv"] .dialog::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  --b: 14px;
+  --w: 1.5px;
+  --c: var(--accent);
+  background:
+    linear-gradient(var(--c), var(--c)) 0 0 / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 0 0 / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 100% 0 / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 100% 0 / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 0 100% / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 0 100% / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 100% 100% / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 100% 100% / var(--w) var(--b);
+  background-repeat: no-repeat;
+}
+/* GitHub screen is tokens-only — suppress its one .panel (ReviewBar) frame. */
+:root[data-theme="nerv"] .gh .panel::after { content: none; }
