@@ -43,11 +43,12 @@ body{margin:0;}
 }
 .wrap{max-width:1240px;margin:0 auto;padding:0 clamp(20px,4vw,48px);position:relative;z-index:5;}
 
-/* ---- nav (Task 2) ---- */
-nav{position:sticky;top:0;z-index:20;
+/* ---- nav (Task 2) — scoped to the primary header nav so the footer
+   nav (nav.foot-cols[aria-label="Footer"]) doesn't inherit sticky/z-index ---- */
+nav[aria-label="Primary"]{position:sticky;top:0;z-index:20;
   backdrop-filter:blur(8px);background:linear-gradient(var(--void),rgba(10,12,15,.72));
   border-bottom:1px solid transparent;transition:border-color .2s;}
-nav.is-scrolled{border-bottom-color:var(--line);}
+nav[aria-label="Primary"].is-scrolled{border-bottom-color:var(--line);}
 .nav-in{display:flex;align-items:center;justify-content:space-between;gap:20px;
   height:60px;}
 .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-mono);
