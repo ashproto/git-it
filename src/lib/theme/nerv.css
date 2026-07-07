@@ -57,4 +57,19 @@
   color: var(--on-accent);
 }
 
+/* ── Phase A: NERV display type (Anton) ─────────────────────────────────────
+   Anton is applied SPARINGLY — only to chrome headers and section labels, never
+   to content (e.g. commit-subject .title, of which there are ~46). Classic is
+   unaffected (data-theme-scoped). These selectors are the panel/section/dialog
+   headers scouted in the components. font-size/weight stay as the component set
+   them (density preserved); only the family + a touch of tracking change. */
+:global(:root[data-theme="nerv"]) .panel-header,
+:global(:root[data-theme="nerv"]) .group-label,
+:global(:root[data-theme="nerv"]) .section-title,
+:global(:root[data-theme="nerv"]) .dialog .header h3 {
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  font-weight: 400; /* Anton ships a single 400 weight; avoid faux-bold synthesis */
+}
+
 /* ── Phase B decoration goes below (all rules :global(:root[data-theme="nerv"]) …) ── */
