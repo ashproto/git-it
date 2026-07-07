@@ -125,3 +125,41 @@
 }
 /* GitHub screen is tokens-only — suppress its one .panel (ReviewBar) frame. */
 :root[data-theme="nerv"] .gh .panel::after { content: none; }
+
+/* B2 — status bar as a mono console readout (uppercase, tracked, mono). */
+:root[data-theme="nerv"] .status-bar {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+/* Op spinner → phosphor "● LIVE" blink dot (only visible during an operation). */
+:root[data-theme="nerv"] .spinner {
+  border: none;
+  border-radius: 50%;
+  background: var(--status-add);
+  animation: nerv-live-blink 1.2s steps(1, end) infinite;
+}
+@keyframes nerv-live-blink { 50% { opacity: 0.2; } }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="nerv"] .spinner { animation: none; }
+}
+
+/* B4 — console header sigil (◇) on panel + dialog titles (Anton already applied in
+   Phase A). Sparingly: only the shared panel-header <h2> and dialog <h3>. */
+:root[data-theme="nerv"] .panel-header h2::before,
+:root[data-theme="nerv"] .dialog h3::before {
+  content: "◇ ";
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+/* Hazard-stripe divider under panel headers — replaces the 1px border with a thin
+   orange/void diagonal band (the primary, highest-reach section divider). Kept subtle
+   so it reads alongside the corner brackets rather than fighting them. */
+:root[data-theme="nerv"] .panel:not(.collapsed) .panel-header {
+  border-bottom-color: transparent;
+  background-image: repeating-linear-gradient(
+    -45deg, rgba(242, 84, 45, 0.35) 0 5px, transparent 5px 10px);
+  background-repeat: no-repeat;
+  background-position: bottom left;
+  background-size: 100% 2px;
+}
