@@ -59,6 +59,23 @@
       <p class="group-label">Appearance</p>
 
       <div class="seg-row">
+        <span class="seg-label">Theme</span>
+        <div class="seg" role="group" aria-label="App theme">
+          <button
+            type="button"
+            class:active={appState.theme === "classic"}
+            onclick={() => appState.setTheme("classic")}
+            aria-pressed={appState.theme === "classic"}
+          >Classic</button><button
+            type="button"
+            class:active={appState.theme === "nerv"}
+            onclick={() => appState.setTheme("nerv")}
+            aria-pressed={appState.theme === "nerv"}
+          >NERV</button>
+        </div>
+      </div>
+
+      <div class="seg-row">
         <span class="seg-label">Graph lines</span>
         <div class="seg" role="group" aria-label="Graph lines style">
           <button
