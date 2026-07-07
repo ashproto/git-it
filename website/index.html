@@ -1,0 +1,875 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Git It — a native macOS git client</title>
+<meta name="description" content="Git It is a fast, native git client for macOS — commit graph, branches, merges, per-hunk diffs, remotes, and a built-in GitHub dashboard. Everything runs locally.">
+<link rel="canonical" href="https://git-it.app/">
+<meta name="theme-color" content="#0A0C0F">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://git-it.app/">
+<meta property="og:title" content="Git It — a native macOS git client">
+<meta property="og:description" content="A fast, native git client for macOS — commit graph, branches, merges, per-hunk diffs, remotes, and a built-in GitHub dashboard. Everything runs locally.">
+<meta property="og:image" content="https://git-it.app/assets/img/og.png">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Git It — a native macOS git client">
+<meta name="twitter:description" content="A fast, native git client for macOS — commit graph, branches, merges, per-hunk diffs, remotes, and a built-in GitHub dashboard. Everything runs locally.">
+<meta name="twitter:image" content="https://git-it.app/assets/img/og.png">
+
+<!-- Icons -->
+<link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/assets/img/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+
+<!-- Fonts first (self-hosted, no third-party requests), then styles -->
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="assets/fonts/fonts.css">
+<link rel="stylesheet" href="assets/css/styles.css">
+
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Git It",
+ "description":"A fast, native git client for macOS — commit graph, branches, merges, per-hunk diffs, remotes, and a built-in GitHub dashboard. Everything runs locally.",
+ "image":"https://git-it.app/assets/img/og.png",
+ "applicationCategory":"DeveloperApplication","operatingSystem":"macOS 12.3+",
+ "offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},
+ "url":"https://git-it.app/","downloadUrl":"https://github.com/ashproto/git-it/releases/latest"}
+</script>
+
+<div class="page">
+  <nav aria-label="Primary">
+    <div class="wrap nav-in">
+      <a class="brand" href="/">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 1.6 22 7.3v9.4L12 22.4 2 16.7V7.3z" stroke="#F2542D" stroke-width="1.4"/>
+          <circle cx="8" cy="14.5" r="1.7" fill="#8A94A0"/>
+          <circle cx="12" cy="9.5" r="1.7" fill="#F2542D"/>
+          <circle cx="16" cy="13" r="1.7" fill="#46E88B"/>
+          <path d="M8 14.5 12 9.5 16 13" stroke="#EAE6DA" stroke-width="1.3"/>
+        </svg>
+        Git It
+      </a>
+      <div class="nav-links">
+        <a class="hide-sm" href="/#features">Features</a>
+        <a class="hide-sm" href="/#download">Download</a>
+        <a class="hide-sm" href="/guides.html">Guides</a>
+        <a href="https://github.com/ashproto/git-it">GitHub</a>
+        <a class="nav-dl" href="/#download">↓ Download</a>
+      </div>
+    </div>
+  </nav>
+  <main id="top">
+    <div class="wrap">
+      <section class="hero">
+        <div class="hero-copy">
+          <span class="eyebrow reveal d1">◇ native macOS git client · Apple&nbsp;Silicon&nbsp;+&nbsp;Intel</span>
+
+          <h1 class="headline reveal d2">
+            <span class="line l1"><span>Bend the</span></span>
+            <span class="line l2"><span><em>timeline.</em></span></span>
+          </h1>
+
+          <p class="anno reveal d3"><b>Commit-time editing</b> — shift, set, or compress any range. Preview, then undo.</p>
+
+          <p class="subhead reveal d4">A <span class="strong">fast, native git client for macOS</span> — commit graph, branches, merges, per-hunk diffs, remotes, and a built-in GitHub dashboard. Local-first: no account, no analytics, no tracking.</p>
+
+          <p class="microline reveal d4"><a href="https://github.com/ashproto/git-it">Real app, shipping — see it on GitHub ↗</a></p>
+
+          <div class="cta-row reveal d5">
+            <a class="btn btn-primary" href="#download">↓ Download for macOS</a>
+            <a class="btn btn-ghost" href="https://github.com/ashproto/git-it">View on GitHub ↗</a>
+          </div>
+
+          <div class="readout reveal d6">
+            <span>No account</span>
+            <span>No tracking</span>
+            <span>Native — no Electron</span>
+            <span><span class="g">●</span> Auto-updates</span>
+          </div>
+        </div>
+
+        <div class="console reveal d4" aria-hidden="true">
+          <i class="brk tl"></i><i class="brk tr"></i><i class="brk bl"></i><i class="brk br"></i>
+          <div class="con-head">
+            <span>◇ MAGI // Commit Graph</span>
+            <span class="live"><span class="dot"></span>LIVE</span>
+          </div>
+          <div class="con-body">
+            <svg class="con-hex" viewBox="0 0 100 100" fill="none" aria-hidden="true">
+              <path d="M50 3 92 27v46L50 97 8 73V27z" stroke="#F2542D" stroke-width="1"/>
+              <path d="M50 15 81 33v34L50 85 19 67V33z" stroke="#46E88B" stroke-width=".6"/>
+            </svg>
+            <svg class="graph" viewBox="0 0 440 300" fill="none" aria-hidden="true">
+              <!-- edges -->
+              <path d="M40 36 V96" stroke="#3A434E" stroke-width="2"/>
+              <path d="M40 96 C40 126 92 116 92 146" stroke="#46E88B" stroke-width="2"/>
+              <path d="M92 146 V206" stroke="#46E88B" stroke-width="2"/>
+              <path d="M40 96 V206" stroke="#3A434E" stroke-width="2"/>
+              <path d="M92 206 C92 236 40 226 40 256" stroke="#46E88B" stroke-width="2"/>
+              <path d="M40 206 V256" stroke="#3A434E" stroke-width="2"/>
+              <!-- nodes -->
+              <circle cx="40" cy="36" r="6.5" fill="#0E1216" stroke="#F2542D" stroke-width="2.4"/>
+              <circle cx="40" cy="96" r="6" fill="#0E1216" stroke="#8A94A0" stroke-width="2"/>
+              <circle cx="92" cy="146" r="6" fill="#0E1216" stroke="#46E88B" stroke-width="2"/>
+              <circle cx="40" cy="206" r="6" fill="#0E1216" stroke="#8A94A0" stroke-width="2"/>
+              <circle cx="40" cy="256" r="6" fill="#0E1216" stroke="#8A94A0" stroke-width="2"/>
+              <!-- labels -->
+              <text x="112" y="40" fill="#EAE6DA" font-size="12" letter-spacing="1">HEAD → main</text>
+              <text x="112" y="100" fill="#8A94A0" font-size="11.5">feat(rewrite): epochs</text>
+              <text x="112" y="150" fill="#8A94A0" font-size="11.5">feat(graph): lanes</text>
+              <text x="112" y="210" fill="#8A94A0" font-size="11.5">feat(diff): hunk stage</text>
+              <text x="112" y="260" fill="#8A94A0" font-size="11.5">chore: bootstrap</text>
+              <!-- rewrite annotation (own column, right of labels) -->
+              <path d="M296 96 H332" stroke="#F2542D" stroke-width="1.2"/>
+              <text x="332" y="76" fill="#F2542D" font-size="10.5" letter-spacing="1.5">REWRITE ⟳</text>
+              <text x="332" y="100" fill="#5A636E" font-size="10.5" text-decoration="line-through">14:22</text>
+              <text x="380" y="100" fill="#8A94A0" font-size="10.5">→</text>
+              <text x="394" y="100" fill="#46E88B" font-size="10.5">09:05</text>
+            </svg>
+          </div>
+          <div class="con-foot">
+            <span><b>150</b> commits</span>
+            <span>3 branches · 2 remotes</span>
+            <span style="color:var(--phosphor)">clean</span>
+          </div>
+        </div>
+        <p class="visually-hidden">Diagram: a commit graph with one commit's timestamp being rewritten from 14:22 to 09:05.</p>
+      </section>
+    </div>
+
+    <div class="hazard" data-label="// WHY GIT IT" aria-hidden="true"></div>
+
+    <div class="wrap">
+      <section class="why" aria-labelledby="why-h">
+        <h2 id="why-h" class="visually-hidden">Why Git It</h2>
+        <div class="why-grid">
+          <article class="why-item" data-reveal>
+            <span class="tag">01</span>
+            <h3>Commit-time editing</h3>
+            <p>Reshape <em>when</em> history happened, right in the client. A rarity in any git GUI.</p>
+          </article>
+          <article class="why-item" data-reveal>
+            <span class="tag">02</span>
+            <h3>A safety net for every rewrite</h3>
+            <p>Automatic backup (a git bundle) + one-click undo before any destructive op, plus a reflog browser.</p>
+          </article>
+          <article class="why-item" data-reveal>
+            <span class="tag">03</span>
+            <h3>Local-first &amp; free</h3>
+            <p>No account, no analytics; native (no Electron); source-available for noncommercial use.</p>
+          </article>
+        </div>
+      </section>
+    </div>
+
+    <div class="hazard" data-label="// SYSTEM SPEC" aria-hidden="true"></div>
+
+    <div class="wrap">
+      <section class="spec" aria-label="System specifications">
+        <div class="cell"><div class="lbl">Platform</div><div class="val">macOS 12.3+</div></div>
+        <div class="cell"><div class="lbl">Architecture</div><div class="val">Apple Silicon · Intel</div></div>
+        <div class="cell"><div class="lbl">Engine</div><div class="val">Rust · Tauri 2 · Svelte 5 (no Electron)</div></div>
+        <div class="cell"><div class="lbl">Price</div><div class="val o">Free · Source-available</div></div>
+      </section>
+    </div>
+
+    <div class="hazard" data-label="// FEATURES" aria-hidden="true"></div>
+
+    <div class="wrap">
+      <section id="features" aria-label="Features">
+
+        <!-- ============ OP // GRAPH ============ -->
+        <div class="op-panel" data-reveal>
+          <div class="op-copy">
+            <span class="op-code">OP // GRAPH</span>
+            <h2>Read history at a glance.</h2>
+            <p>Multi-lane commit graph with curved or angular edges, ref badges (branches, tags, remotes, <code>HEAD</code>), infinite-scroll loading, right-click checkout / branch / tag / fetch.</p>
+            <ul class="op-list">
+              <li>Curved &amp; angular lanes</li>
+              <li>Ref badges — branch · tag · remote · HEAD</li>
+              <li>Infinite-scroll history</li>
+              <li>Right-click: checkout · branch · tag · fetch</li>
+            </ul>
+          </div>
+          <div class="op-illo">
+            <div class="console" aria-hidden="true">
+              <i class="brk tl"></i><i class="brk tr"></i><i class="brk bl"></i><i class="brk br"></i>
+              <div class="con-head">
+                <span>◇ MAGI // Commit Graph</span>
+                <span class="live"><span class="dot"></span>LIVE</span>
+              </div>
+              <div class="con-body">
+                <svg class="graph" viewBox="0 0 490 340" fill="none" aria-hidden="true">
+                  <!-- selected row highlight (row 2, y=92) -->
+                  <rect x="6" y="76" width="478" height="32" fill="#F2542D" opacity=".08"/>
+                  <rect x="6" y="76" width="3" height="32" fill="#F2542D"/>
+                  <!-- edges: lane A x=44, lane B x=104 -->
+                  <path d="M44 44 V92" stroke="#3A434E" stroke-width="2"/>
+                  <path d="M44 92 C44 116 104 116 104 140" stroke="#46E88B" stroke-width="2"/>
+                  <path d="M104 140 V188" stroke="#46E88B" stroke-width="2"/>
+                  <path d="M44 92 V236" stroke="#3A434E" stroke-width="2"/>
+                  <path d="M104 188 L44 236" stroke="#46E88B" stroke-width="2"/>
+                  <path d="M44 236 V284" stroke="#3A434E" stroke-width="2"/>
+                  <!-- nodes -->
+                  <circle cx="44" cy="44" r="7" fill="#0E1216" stroke="#F2542D" stroke-width="2.6"/>
+                  <circle cx="44" cy="92" r="6.5" fill="#0E1216" stroke="#8A94A0" stroke-width="2.2"/>
+                  <circle cx="104" cy="140" r="6.5" fill="#0E1216" stroke="#46E88B" stroke-width="2.2"/>
+                  <circle cx="104" cy="188" r="6.5" fill="#0E1216" stroke="#46E88B" stroke-width="2.2"/>
+                  <circle cx="44" cy="236" r="6.5" fill="#0E1216" stroke="#8A94A0" stroke-width="2.2"/>
+                  <circle cx="44" cy="284" r="6.5" fill="#0E1216" stroke="#8A94A0" stroke-width="2.2"/>
+                  <!-- commit messages (labels), x=126 ; longest ≈150px ends ~276 -->
+                  <text x="126" y="48" fill="#EAE6DA" font-size="12.5" letter-spacing=".5">ship: release v1.0</text>
+                  <text x="126" y="96" fill="#EAE6DA" font-size="12">feat(graph): lanes</text>
+                  <text x="126" y="144" fill="#8A94A0" font-size="12">feat(rewrite): epochs</text>
+                  <text x="126" y="192" fill="#8A94A0" font-size="12">feat(diff): hunk stage</text>
+                  <text x="126" y="240" fill="#8A94A0" font-size="12">fix(merge): conflicts</text>
+                  <text x="126" y="288" fill="#8A94A0" font-size="12">chore: bootstrap</text>
+                  <!-- ref-badge chips: right column, x≥300 (labels end ~276) -->
+                  <!-- row 1: HEAD + main -->
+                  <g font-size="10" letter-spacing="1">
+                    <rect x="300" y="35" width="44" height="16" rx="2" fill="#0E1216" stroke="#F2542D"/>
+                    <text x="307" y="46" fill="#F2542D">HEAD</text>
+                    <rect x="350" y="35" width="42" height="16" rx="2" fill="#0E1216" stroke="#8A94A0"/>
+                    <text x="356" y="46" fill="#EAE6DA">main</text>
+                    <!-- row 1: origin/main -->
+                    <rect x="398" y="35" width="80" height="16" rx="2" fill="#0E1216" stroke="#46E88B"/>
+                    <text x="404" y="46" fill="#46E88B">origin/main</text>
+                    <!-- row 6 (bootstrap): v1.0 tag -->
+                    <rect x="300" y="275" width="40" height="16" rx="2" fill="#0E1216" stroke="#8A94A0"/>
+                    <text x="306" y="286" fill="#8A94A0">v1.0</text>
+                  </g>
+                </svg>
+              </div>
+              <div class="con-foot">
+                <span><b>150</b> commits</span>
+                <span>3 branches · 2 remotes</span>
+                <span style="color:var(--phosphor)">clean</span>
+              </div>
+            </div>
+            <p class="visually-hidden">Diagram: a multi-lane commit graph. The tip commit "ship: release v1.0" carries HEAD, main, and origin/main badges; a second lane branches and rejoins with green edges; the base commit is tagged v1.0. One row is highlighted as selected.</p>
+          </div>
+        </div>
+
+        <!-- ============ OP // TIME (signature — richest) ============ -->
+        <div class="op-panel op-panel--wide" data-reveal>
+          <div class="op-copy">
+            <span class="op-code">OP // TIME</span>
+            <h2>Commit-time editing.</h2>
+            <p>Select a range and shift by an offset, set an exact time, or compress the range proportionally into a new window. Preview before it rewrites; undo in one click. Powered by a bundled <code>git-filter-repo</code>.</p>
+            <ul class="op-list">
+              <li>OFFSET — shift the whole range</li>
+              <li>EXACT — set a precise timestamp</li>
+              <li>COMPRESS — squeeze into a new window</li>
+              <li>Preview → apply → one-click undo</li>
+            </ul>
+          </div>
+          <div class="op-illo">
+            <div class="console" aria-hidden="true">
+              <i class="brk tl"></i><i class="brk tr"></i><i class="brk bl"></i><i class="brk br"></i>
+              <div class="con-head">
+                <span>◇ MAGI // Rewrite Time</span>
+                <span class="live"><span class="dot"></span>ARMED</span>
+              </div>
+              <div class="con-body">
+                <svg class="graph" viewBox="0 0 560 400" fill="none" aria-hidden="true">
+                  <!-- SELECTED range bracket (rows 2-4) : left gutter x=26 -->
+                  <path d="M40 92 H26 V236 H40" stroke="#F2542D" stroke-width="1.4"/>
+                  <text x="8" y="168" fill="#F2542D" font-size="10" letter-spacing="1.5"
+                        transform="rotate(-90 8 168)">SELECTED</text>
+
+                  <!-- timeline spine x=64, rows every 48px from y=44 -->
+                  <path d="M64 44 V332" stroke="#3A434E" stroke-width="2"/>
+                  <!-- selected segment of spine highlighted -->
+                  <path d="M64 92 V236" stroke="#F2542D" stroke-width="2"/>
+
+                  <!-- nodes -->
+                  <circle cx="64" cy="44"  r="6.5" fill="#0E1216" stroke="#8A94A0" stroke-width="2.2"/>
+                  <circle cx="64" cy="92"  r="7"   fill="#0E1216" stroke="#F2542D" stroke-width="2.6"/>
+                  <circle cx="64" cy="140" r="7"   fill="#0E1216" stroke="#F2542D" stroke-width="2.6"/>
+                  <circle cx="64" cy="188" r="7"   fill="#0E1216" stroke="#F2542D" stroke-width="2.6"/>
+                  <circle cx="64" cy="236" r="7"   fill="#0E1216" stroke="#F2542D" stroke-width="2.6"/>
+                  <circle cx="64" cy="284" r="6.5" fill="#0E1216" stroke="#8A94A0" stroke-width="2.2"/>
+                  <circle cx="64" cy="332" r="6.5" fill="#0E1216" stroke="#8A94A0" stroke-width="2.2"/>
+
+                  <!-- timestamps column x=86 ; msg column x=150 -->
+                  <text x="86" y="48"  fill="#5A636E" font-size="11">17:40</text>
+                  <text x="150" y="48" fill="#8A94A0" font-size="11.5">docs: readme</text>
+
+                  <!-- row 2 morph: 14:22 → 09:05 -->
+                  <text x="86" y="96"  fill="#5A636E" font-size="11" text-decoration="line-through">14:22</text>
+                  <text x="122" y="96" fill="#8A94A0" font-size="11">→</text>
+                  <text x="136" y="96" fill="#46E88B" font-size="11">09:05</text>
+                  <text x="188" y="96" fill="#EAE6DA" font-size="11.5">feat: epochs</text>
+
+                  <text x="86" y="144" fill="#5A636E" font-size="11">13:10</text>
+                  <text x="150" y="144" fill="#EAE6DA" font-size="11.5">feat: lanes</text>
+
+                  <!-- row 4 morph: 11:58 → 08:30 -->
+                  <text x="86" y="192"  fill="#5A636E" font-size="11" text-decoration="line-through">11:58</text>
+                  <text x="122" y="192" fill="#8A94A0" font-size="11">→</text>
+                  <text x="136" y="192" fill="#46E88B" font-size="11">08:30</text>
+                  <text x="188" y="192" fill="#EAE6DA" font-size="11.5">fix: hunks</text>
+
+                  <text x="86" y="240" fill="#5A636E" font-size="11">10:04</text>
+                  <text x="150" y="240" fill="#EAE6DA" font-size="11.5">test: graph</text>
+
+                  <text x="86" y="288" fill="#5A636E" font-size="11">09:12</text>
+                  <text x="150" y="288" fill="#8A94A0" font-size="11.5">chore: deps</text>
+
+                  <text x="86" y="336" fill="#5A636E" font-size="11">08:00</text>
+                  <text x="150" y="336" fill="#8A94A0" font-size="11.5">init</text>
+
+                  <!-- REWRITE control panel : right column, x=360..540 -->
+                  <rect x="360" y="40" width="184" height="120" rx="2" fill="#0E1216" stroke="#2E3742"/>
+                  <text x="374" y="66" fill="#F2542D" font-size="11" letter-spacing="2">REWRITE ⟳</text>
+                  <!-- three mode chips: OFFSET (active) · EXACT · COMPRESS -->
+                  <rect x="374" y="80" width="58" height="20" rx="2" fill="#0E1216" stroke="#F2542D"/>
+                  <text x="384" y="94" fill="#F2542D" font-size="10" letter-spacing="1">OFFSET</text>
+                  <rect x="440" y="80" width="50" height="20" rx="2" fill="#0E1216" stroke="#3A434E"/>
+                  <text x="449" y="94" fill="#8A94A0" font-size="10" letter-spacing="1">EXACT</text>
+                  <rect x="374" y="108" width="82" height="20" rx="2" fill="#0E1216" stroke="#3A434E"/>
+                  <text x="384" y="122" fill="#8A94A0" font-size="10" letter-spacing="1">COMPRESS</text>
+                  <!-- delta readout -->
+                  <text x="374" y="150" fill="#8A94A0" font-size="10.5" letter-spacing=".5">Δ −5h 17m · 3 commits</text>
+
+                  <!-- connector from selected range to control -->
+                  <path d="M300 164 H360" stroke="#3A434E" stroke-width="1.2" stroke-dasharray="3 3"/>
+
+                  <!-- PREVIEW / UNDO footer strip inside the diagram -->
+                  <line x1="360" y1="188" x2="544" y2="188" stroke="#232A31" stroke-width="1"/>
+                  <rect x="360" y="200" width="88" height="24" rx="2" fill="#0E1216" stroke="#46E88B"/>
+                  <text x="373" y="216" fill="#46E88B" font-size="10.5" letter-spacing="1">PREVIEW ✓</text>
+                  <rect x="456" y="200" width="60" height="24" rx="2" fill="#0E1216" stroke="#8A94A0"/>
+                  <text x="468" y="216" fill="#EAE6DA" font-size="10.5" letter-spacing="1">UNDO ↺</text>
+                  <text x="360" y="248" fill="#5A636E" font-size="10">auto-backup: bundle written</text>
+                </svg>
+              </div>
+              <div class="con-foot">
+                <span>range <b>3</b> commits</span>
+                <span>offset −5h 17m</span>
+                <span style="color:var(--phosphor)">preview ready</span>
+              </div>
+            </div>
+            <p class="visually-hidden">Diagram: a vertical timeline of seven commits, each with a timestamp. A bracket labeled SELECTED marks a three-commit range; two of those commits show their times being rewritten — 14:22 to 09:05 and 11:58 to 08:30, old times struck through, new times in green. A REWRITE control offers three modes — OFFSET (active), EXACT, and COMPRESS — with a delta of minus five hours seventeen minutes, and a PREVIEW / UNDO strip below, noting an automatic backup bundle was written.</p>
+          </div>
+        </div>
+
+        <!-- ============ OP // MERGE ============ -->
+        <div class="op-panel reverse" data-reveal>
+          <div class="op-copy">
+            <span class="op-code">OP // MERGE</span>
+            <h2>Integrate, and resolve.</h2>
+            <p>Merge (plain or <code>--no-ff</code>), cherry-pick, and revert — with an in-app conflict resolver: use-ours, use-theirs, continue, or abort, file by file.</p>
+            <ul class="op-list">
+              <li>Merge · cherry-pick · revert</li>
+              <li>Plain or <code>--no-ff</code></li>
+              <li>Resolver: ours / theirs / continue / abort</li>
+              <li>File-by-file, in-app</li>
+            </ul>
+          </div>
+          <div class="op-illo">
+            <div class="console" aria-hidden="true">
+              <i class="brk tl"></i><i class="brk tr"></i><i class="brk bl"></i><i class="brk br"></i>
+              <div class="con-head">
+                <span>◇ MAGI // Merge &amp; Resolve</span>
+                <span class="live"><span class="dot"></span>PAUSED</span>
+              </div>
+              <div class="con-body">
+                <svg class="graph" viewBox="0 0 520 360" fill="none" aria-hidden="true">
+                  <!-- lane labels -->
+                  <text x="38" y="30" fill="#8A94A0" font-size="10" letter-spacing="1.5">OURS</text>
+                  <text x="118" y="30" fill="#8A94A0" font-size="10" letter-spacing="1.5">THEIRS</text>
+
+                  <!-- edges: OURS spine x=54, THEIRS lane x=142 converge into merge node x=54 y=196 -->
+                  <path d="M54 44 V196" stroke="#3A434E" stroke-width="2"/>
+                  <path d="M142 44 V88" stroke="#46E88B" stroke-width="2"/>
+                  <path d="M142 88 C142 140 54 148 54 196" stroke="#46E88B" stroke-width="2"/>
+
+                  <!-- OURS nodes -->
+                  <circle cx="54" cy="44"  r="6.5" fill="#0E1216" stroke="#8A94A0" stroke-width="2.2"/>
+                  <circle cx="54" cy="88"  r="6.5" fill="#0E1216" stroke="#8A94A0" stroke-width="2.2"/>
+                  <!-- THEIRS nodes -->
+                  <circle cx="142" cy="44" r="6.5" fill="#0E1216" stroke="#46E88B" stroke-width="2.2"/>
+                  <circle cx="142" cy="88" r="6.5" fill="#0E1216" stroke="#46E88B" stroke-width="2.2"/>
+                  <!-- merge node (armed / orange) -->
+                  <circle cx="54" cy="196" r="7.5" fill="#0E1216" stroke="#F2542D" stroke-width="2.6"/>
+
+                  <!-- commit messages: label column x=168 (lanes/nodes end ~150) -->
+                  <text x="168" y="48"  fill="#8A94A0" font-size="11.5">main: base</text>
+                  <text x="168" y="92"  fill="#EAE6DA" font-size="11.5">feat: your work</text>
+                  <text x="168" y="200" fill="#EAE6DA" font-size="11.5">merge — 1 conflict</text>
+
+                  <!-- second-lane label -->
+                  <text x="168" y="132" fill="#8A94A0" font-size="11.5">feature: their work</text>
+
+                  <!-- conflict marker on the merge row (single alert-red use) -->
+                  <text x="168" y="222" fill="#FF4438" font-size="10" letter-spacing="1.5">CONFLICT · 1 file</text>
+
+                  <!-- ============ conflict resolver panel : x=308..508 ============ -->
+                  <rect x="308" y="40" width="200" height="248" rx="2" fill="#0E1216" stroke="#2E3742"/>
+                  <text x="322" y="64" fill="#EAE6DA" font-size="10.5" letter-spacing="1">RESOLVE ▸ src/app.rs</text>
+                  <line x1="308" y1="76" x2="508" y2="76" stroke="#232A31" stroke-width="1"/>
+
+                  <!-- hunk: ours block -->
+                  <text x="322" y="98"  fill="#5A636E" font-size="9.5">&lt;&lt;&lt;&lt;&lt;&lt;&lt; OURS</text>
+                  <rect x="318" y="104" width="182" height="18" rx="1" fill="#46E88B" opacity=".08"/>
+                  <text x="322" y="117" fill="#46E88B" font-size="10">let timeout = 30;</text>
+                  <text x="322" y="138" fill="#5A636E" font-size="9.5">=======</text>
+                  <!-- theirs block -->
+                  <rect x="318" y="144" width="182" height="18" rx="1" fill="#8A94A0" opacity=".10"/>
+                  <text x="322" y="157" fill="#8A94A0" font-size="10">let timeout = 60;</text>
+                  <text x="322" y="178" fill="#5A636E" font-size="9.5">&gt;&gt;&gt;&gt;&gt;&gt;&gt; THEIRS</text>
+
+                  <!-- toggle chips: USE OURS (active) · USE THEIRS -->
+                  <rect x="318" y="196" width="88" height="24" rx="2" fill="#0E1216" stroke="#F2542D"/>
+                  <text x="330" y="212" fill="#F2542D" font-size="10" letter-spacing=".5">USE OURS</text>
+                  <rect x="414" y="196" width="88" height="24" rx="2" fill="#0E1216" stroke="#3A434E"/>
+                  <text x="422" y="212" fill="#8A94A0" font-size="10" letter-spacing=".5">USE THEIRS</text>
+
+                  <!-- continue / abort strip -->
+                  <line x1="308" y1="234" x2="508" y2="234" stroke="#232A31" stroke-width="1"/>
+                  <rect x="318" y="246" width="86" height="24" rx="2" fill="#0E1216" stroke="#46E88B"/>
+                  <text x="330" y="262" fill="#46E88B" font-size="10" letter-spacing=".5">CONTINUE</text>
+                  <rect x="412" y="246" width="70" height="24" rx="2" fill="#0E1216" stroke="#8A94A0"/>
+                  <text x="424" y="262" fill="#8A94A0" font-size="10" letter-spacing=".5">ABORT</text>
+                </svg>
+              </div>
+              <div class="con-foot">
+                <span>merge <b>--no-ff</b></span>
+                <span>1 file · 1 hunk</span>
+                <span style="color:var(--phosphor)">resolvable</span>
+              </div>
+            </div>
+            <p class="visually-hidden">Diagram: two branch lanes, OURS and THEIRS, converging into a single merge commit that reports one conflict. A conflict resolver panel for the file src/app.rs shows the two conflicting versions with use-ours and use-theirs toggle chips (use-ours selected), plus continue and abort controls.</p>
+          </div>
+        </div>
+
+        <!-- ============ OP // REWRITE ============ -->
+        <div class="op-panel" data-reveal>
+          <div class="op-copy">
+            <span class="op-code">OP // REWRITE</span>
+            <h2>Rewrite history — safely.</h2>
+            <p>Soft/mixed/hard reset, amend, rebase-onto, and interactive rebase (reorder / squash / drop / reword). Every destructive op takes a configurable auto-backup (a git bundle) first, with one-click undo and a reflog browser.</p>
+            <ul class="op-list">
+              <li>Reset · amend · rebase-onto</li>
+              <li>Interactive: reorder / squash / drop / reword</li>
+              <li>Auto-backup bundle before every op</li>
+              <li>One-click undo · reflog browser</li>
+            </ul>
+          </div>
+          <div class="op-illo">
+            <div class="console" aria-hidden="true">
+              <i class="brk tl"></i><i class="brk tr"></i><i class="brk bl"></i><i class="brk br"></i>
+              <div class="con-head">
+                <span>◇ MAGI // Interactive Rebase</span>
+                <span class="live"><span class="dot"></span>ARMED</span>
+              </div>
+              <div class="con-body">
+                <svg class="graph" viewBox="0 0 520 360" fill="none" aria-hidden="true">
+                  <!-- rebase list: 5 rows every 44px from y=40 ; columns:
+                       handle x=24 · action chip x=44 (w=72) · hash x=132 · message x=196 -->
+
+                  <!-- row 1 : pick -->
+                  <text x="20" y="52" fill="#3A434E" font-size="13">⠿</text>
+                  <rect x="40" y="40" width="72" height="22" rx="2" fill="#0E1216" stroke="#3A434E"/>
+                  <text x="52" y="55" fill="#8A94A0" font-size="10.5" letter-spacing="1">pick</text>
+                  <text x="132" y="55" fill="#5A636E" font-size="11">a1b2c3d</text>
+                  <text x="196" y="55" fill="#EAE6DA" font-size="11.5">feat: graph lanes</text>
+
+                  <!-- row 2 : reword -->
+                  <text x="20" y="96" fill="#3A434E" font-size="13">⠿</text>
+                  <rect x="40" y="84" width="72" height="22" rx="2" fill="#0E1216" stroke="#3A434E"/>
+                  <text x="52" y="99" fill="#8A94A0" font-size="10.5" letter-spacing="1">reword</text>
+                  <text x="132" y="99" fill="#5A636E" font-size="11">e4f5a6b</text>
+                  <text x="196" y="99" fill="#EAE6DA" font-size="11.5">fix: edge curves</text>
+
+                  <!-- row 3 : squash (active/orange) -->
+                  <text x="20" y="140" fill="#3A434E" font-size="13">⠿</text>
+                  <rect x="40" y="128" width="72" height="22" rx="2" fill="#0E1216" stroke="#F2542D"/>
+                  <text x="52" y="143" fill="#F2542D" font-size="10.5" letter-spacing="1">squash</text>
+                  <text x="132" y="143" fill="#5A636E" font-size="11">c7d8e9f</text>
+                  <text x="196" y="143" fill="#EAE6DA" font-size="11.5">wip: tidy lanes</text>
+
+                  <!-- row 4 : drop (struck through) -->
+                  <text x="20" y="184" fill="#3A434E" font-size="13">⠿</text>
+                  <rect x="40" y="172" width="72" height="22" rx="2" fill="#0E1216" stroke="#8A94A0"/>
+                  <text x="56" y="187" fill="#8A94A0" font-size="10.5" letter-spacing="1">drop</text>
+                  <text x="132" y="187" fill="#5A636E" font-size="11" text-decoration="line-through">b9c0d1e</text>
+                  <text x="196" y="187" fill="#5A636E" font-size="11.5" text-decoration="line-through">debug: logging</text>
+
+                  <!-- row 5 : pick -->
+                  <text x="20" y="228" fill="#3A434E" font-size="13">⠿</text>
+                  <rect x="40" y="216" width="72" height="22" rx="2" fill="#0E1216" stroke="#3A434E"/>
+                  <text x="52" y="231" fill="#8A94A0" font-size="10.5" letter-spacing="1">pick</text>
+                  <text x="132" y="231" fill="#5A636E" font-size="11">f2a3b4c</text>
+                  <text x="196" y="231" fill="#EAE6DA" font-size="11.5">docs: readme</text>
+
+                  <!-- divider -->
+                  <line x1="16" y1="256" x2="504" y2="256" stroke="#232A31" stroke-width="1"/>
+
+                  <!-- BACKUP CREATED readout (phosphor) -->
+                  <text x="20" y="284" fill="#46E88B" font-size="11" letter-spacing="1">BACKUP CREATED ✓</text>
+                  <text x="20" y="302" fill="#5A636E" font-size="10">pre-rebase-2f9c.bundle</text>
+
+                  <!-- UNDO control -->
+                  <rect x="400" y="270" width="104" height="26" rx="2" fill="#0E1216" stroke="#8A94A0"/>
+                  <text x="418" y="287" fill="#EAE6DA" font-size="10.5" letter-spacing="1">UNDO ↺</text>
+                </svg>
+              </div>
+              <div class="con-foot">
+                <span>5 commits · 1 drop</span>
+                <span>1 squash</span>
+                <span style="color:var(--phosphor)">backup ready</span>
+              </div>
+            </div>
+            <p class="visually-hidden">Diagram: an interactive-rebase todo list of five commits, each with a drag handle and an action chip — pick, reword, squash (highlighted), drop (struck through), and pick. Below, a green BACKUP CREATED confirmation names a pre-rebase git bundle, alongside a one-click UNDO control.</p>
+          </div>
+        </div>
+
+        <!-- ============ OP // DIFF ============ -->
+        <div class="op-panel" data-reveal>
+          <div class="op-copy">
+            <span class="op-code">OP // DIFF</span>
+            <h2>Stage exactly what you mean.</h2>
+            <p>A working-copy file list with whole-file and <code>per-hunk</code> stage / unstage / discard, syntax-highlighted diffs (unified or split, highlighted offline via bundled Shiki), a commit composer, and stash.</p>
+            <ul class="op-list">
+              <li>Per-hunk stage · unstage · discard</li>
+              <li>Unified or split view</li>
+              <li>Offline syntax highlighting</li>
+              <li>Commit composer · stash</li>
+            </ul>
+          </div>
+          <div class="op-illo">
+            <div class="console" aria-hidden="true">
+              <i class="brk tl"></i><i class="brk tr"></i><i class="brk bl"></i><i class="brk br"></i>
+              <div class="con-head">
+                <span>◇ MAGI // Split Diff</span>
+                <span class="live"><span class="dot"></span>STAGING</span>
+              </div>
+              <div class="con-body">
+                <svg class="graph" viewBox="0 0 520 360" fill="none" aria-hidden="true">
+                  <!-- split columns: OLD [16..252] · NEW [268..504] · divider x=260 -->
+                  <text x="20"  y="26" fill="#8A94A0" font-size="10" letter-spacing="1.5">OLD</text>
+                  <text x="272" y="26" fill="#8A94A0" font-size="10" letter-spacing="1.5">NEW</text>
+                  <line x1="260" y1="16" x2="260" y2="344" stroke="#232A31" stroke-width="1"/>
+
+                  <!-- ===== HUNK 1 : @@ -14 +14 @@  (STAGE chip, unstaged) ===== -->
+                  <rect x="16" y="40" width="488" height="18" rx="1" fill="#2E3742" opacity=".35"/>
+                  <text x="24"  y="53" fill="#8A94A0" font-size="10">@@ -14,3 +14,4 @@ fn open()</text>
+                  <rect x="424" y="40" width="76" height="18" rx="2" fill="#0E1216" stroke="#3A434E"/>
+                  <text x="436" y="53" fill="#8A94A0" font-size="9.5" letter-spacing="1">STAGE +</text>
+
+                  <!-- context row -->
+                  <text x="24"  y="78" fill="#5A636E" font-size="10">13</text>
+                  <text x="44"  y="78" fill="#8A94A0" font-size="10.5">  let cfg = load();</text>
+                  <text x="276" y="78" fill="#5A636E" font-size="10">13</text>
+                  <text x="298" y="78" fill="#8A94A0" font-size="10.5">  let cfg = load();</text>
+
+                  <!-- removed line (OLD, alert red) -->
+                  <rect x="16" y="86" width="236" height="18" rx="1" fill="#FF4438" opacity=".10"/>
+                  <text x="24"  y="99" fill="#5A636E" font-size="10">14</text>
+                  <text x="40"  y="99" fill="#FF4438" font-size="10.5">- timeout(30);</text>
+
+                  <!-- added line (NEW, phosphor green) -->
+                  <rect x="268" y="86" width="236" height="18" rx="1" fill="#46E88B" opacity=".10"/>
+                  <text x="276" y="99" fill="#5A636E" font-size="10">14</text>
+                  <text x="292" y="99" fill="#46E88B" font-size="10.5">+ timeout(60);</text>
+
+                  <!-- added line 2 (NEW) -->
+                  <rect x="268" y="106" width="236" height="18" rx="1" fill="#46E88B" opacity=".10"/>
+                  <text x="276" y="119" fill="#5A636E" font-size="10">15</text>
+                  <text x="292" y="119" fill="#46E88B" font-size="10.5">+ retry(3);</text>
+
+                  <!-- ===== HUNK 2 : @@ -40 +42 @@  (STAGED ✓) ===== -->
+                  <rect x="16" y="150" width="488" height="18" rx="1" fill="#46E88B" opacity=".12"/>
+                  <text x="24"  y="163" fill="#8A94A0" font-size="10">@@ -40,2 +42,3 @@ fn save()</text>
+                  <rect x="420" y="150" width="80" height="18" rx="2" fill="#0E1216" stroke="#46E88B"/>
+                  <text x="431" y="163" fill="#46E88B" font-size="9.5" letter-spacing="1">STAGED ✓</text>
+
+                  <text x="24"  y="188" fill="#5A636E" font-size="10">40</text>
+                  <text x="44"  y="188" fill="#8A94A0" font-size="10.5">  flush();</text>
+                  <text x="276" y="188" fill="#5A636E" font-size="10">42</text>
+                  <text x="298" y="188" fill="#8A94A0" font-size="10.5">  flush();</text>
+
+                  <!-- added line in staged hunk (NEW) -->
+                  <rect x="268" y="196" width="236" height="18" rx="1" fill="#46E88B" opacity=".10"/>
+                  <text x="276" y="209" fill="#5A636E" font-size="10">43</text>
+                  <text x="292" y="209" fill="#46E88B" font-size="10.5">+ fsync();</text>
+
+                  <!-- divider + composer footer inside diagram -->
+                  <line x1="16" y1="232" x2="504" y2="232" stroke="#232A31" stroke-width="1"/>
+                  <text x="20" y="256" fill="#8A94A0" font-size="10.5" letter-spacing="1">COMMIT ▸ 1 hunk staged</text>
+                  <rect x="16" y="266" width="488" height="28" rx="2" fill="#0E1216" stroke="#2E3742"/>
+                  <text x="28" y="284" fill="#5A636E" font-size="10.5">fix(io): raise timeout, add retry…</text>
+                  <rect x="396" y="304" width="108" height="26" rx="2" fill="#0E1216" stroke="#F2542D"/>
+                  <text x="410" y="321" fill="#F2542D" font-size="10.5" letter-spacing="1">COMMIT ⏎</text>
+                  <rect x="16" y="304" width="80" height="26" rx="2" fill="#0E1216" stroke="#8A94A0"/>
+                  <text x="30" y="321" fill="#8A94A0" font-size="10.5" letter-spacing="1">STASH</text>
+                </svg>
+              </div>
+              <div class="con-foot">
+                <span>2 hunks · <b>1</b> staged</span>
+                <span>split view</span>
+                <span style="color:var(--phosphor)">highlighted offline</span>
+              </div>
+            </div>
+            <p class="visually-hidden">Diagram: a side-by-side split diff of a file. The first hunk is unstaged with a STAGE chip: a removed line "timeout(30)" in red on the old side, and two added lines "timeout(60)" and "retry(3)" in green on the new side. The second hunk is already staged (STAGED chip) with an added "fsync()" line. Below, a commit composer shows one hunk staged, with commit and stash controls.</p>
+          </div>
+        </div>
+
+        <!-- ============ OP // REMOTE ============ -->
+        <div class="op-panel reverse" data-reveal>
+          <div class="op-copy">
+            <span class="op-code">OP // REMOTE</span>
+            <h2>Push, pull, and GitHub — in one place.</h2>
+            <p>Streamed pull (merge or rebase) and push (<code>--force-with-lease</code>, <code>--set-upstream</code>) with live progress, cancel, and an ahead/behind indicator. Plus a built-in GitHub dashboard: pull requests, issues, releases, and CI runs. Credentials are prompted on demand and never stored (a transient <code>0600</code> file, deleted immediately after).</p>
+            <ul class="op-list">
+              <li>Streamed pull &amp; push — live progress</li>
+              <li>Ahead / behind indicator</li>
+              <li>GitHub: PRs · issues · releases · CI</li>
+              <li>Credentials never stored on disk</li>
+            </ul>
+          </div>
+          <div class="op-illo">
+            <div class="console" aria-hidden="true">
+              <i class="brk tl"></i><i class="brk tr"></i><i class="brk bl"></i><i class="brk br"></i>
+              <div class="con-head">
+                <span>◇ MAGI // Sync &amp; GitHub</span>
+                <span class="live"><span class="dot"></span>PUSHING</span>
+              </div>
+              <div class="con-body">
+                <svg class="graph" viewBox="0 0 520 360" fill="none" aria-hidden="true">
+                  <!-- ahead/behind counter (top-left) -->
+                  <text x="20" y="34" fill="#8A94A0" font-size="11" letter-spacing="1">origin/main</text>
+                  <text x="140" y="34" fill="#46E88B" font-size="12" letter-spacing="1">↑2</text>
+                  <text x="168" y="34" fill="#F2542D" font-size="12" letter-spacing="1">↓1</text>
+
+                  <!-- streaming progress readout -->
+                  <text x="20" y="66"  fill="#5A636E" font-size="10.5">$ git push --force-with-lease</text>
+                  <text x="20" y="86"  fill="#8A94A0" font-size="10.5">Enumerating objects: 48, done.</text>
+                  <text x="20" y="106" fill="#8A94A0" font-size="10.5">Counting objects: 100% (48/48)</text>
+                  <text x="20" y="126" fill="#46E88B" font-size="10.5">Compressing: 100% (31/31)</text>
+
+                  <!-- progress bar -->
+                  <text x="20" y="156" fill="#8A94A0" font-size="10.5">Writing objects</text>
+                  <rect x="20"  y="164" width="360" height="12" rx="2" fill="#0E1216" stroke="#2E3742"/>
+                  <rect x="22"  y="166" width="248" height="8"  rx="1" fill="#46E88B" opacity=".85"/>
+                  <text x="392" y="174" fill="#46E88B" font-size="10.5">69%</text>
+
+                  <!-- cancel control -->
+                  <rect x="20" y="192" width="88" height="24" rx="2" fill="#0E1216" stroke="#8A94A0"/>
+                  <text x="34" y="208" fill="#EAE6DA" font-size="10" letter-spacing="1">CANCEL ✕</text>
+                  <text x="120" y="208" fill="#5A636E" font-size="10">creds: 0600, transient</text>
+
+                  <!-- divider -->
+                  <line x1="16" y1="234" x2="504" y2="234" stroke="#232A31" stroke-width="1"/>
+
+                  <!-- ===== mini GitHub panel ===== -->
+                  <text x="20" y="258" fill="#EAE6DA" font-size="10.5" letter-spacing="1.5">GITHUB ▸ git-it</text>
+                  <!-- PR chip -->
+                  <rect x="20" y="270" width="120" height="26" rx="2" fill="#0E1216" stroke="#3A434E"/>
+                  <text x="32" y="287" fill="#8A94A0" font-size="10">PR #42 · open</text>
+                  <!-- ISSUE chip -->
+                  <rect x="150" y="270" width="120" height="26" rx="2" fill="#0E1216" stroke="#3A434E"/>
+                  <text x="162" y="287" fill="#8A94A0" font-size="10">ISSUE #17</text>
+                  <!-- CI chip (phosphor) -->
+                  <rect x="280" y="270" width="96" height="26" rx="2" fill="#0E1216" stroke="#46E88B"/>
+                  <text x="292" y="287" fill="#46E88B" font-size="10" letter-spacing=".5">CI ✓ pass</text>
+
+                  <!-- second GitHub row -->
+                  <text x="20" y="326" fill="#5A636E" font-size="10">release v1.0 · 3 checks green</text>
+                </svg>
+              </div>
+              <div class="con-foot">
+                <span>push <b>--force-with-lease</b></span>
+                <span>↑2 ↓1</span>
+                <span style="color:var(--phosphor)">CI passing</span>
+              </div>
+            </div>
+            <p class="visually-hidden">Diagram: a remote sync readout for origin/main showing an ahead-by-two, behind-by-one indicator, a streaming git push log with a progress bar at 69% and a cancel control, and a note that credentials are a transient 0600 file. Below, a mini GitHub dashboard shows a pull-request chip, an issue chip, and a green CI-passing chip.</p>
+          </div>
+        </div>
+
+      </section>
+
+      <p class="multi-repo">Also — open several repos at once, as tabs or a sidebar list, your choice.</p>
+    </div>
+
+    <div class="hazard" data-label="// DOWNLOAD" aria-hidden="true"></div>
+
+    <div class="wrap">
+      <section id="download" class="dl" aria-labelledby="dl-h">
+        <span class="op-code" data-reveal>OP // DOWNLOAD</span>
+        <h2 id="dl-h" class="dl-head" data-reveal>Download Git It.</h2>
+        <p class="dl-sub" data-reveal>Open the <code>.dmg</code>, drag Git It into Applications, launch. It keeps itself up to date after that — with an optional beta channel in Settings → Updates.</p>
+
+        <!-- Buttons point at /releases/latest. SWAP POINT: if the app-repo pipeline
+             adds arch-stable asset names, change each href to
+             …/releases/latest/download/Git-It-aarch64.dmg (Apple Silicon) and
+             …/releases/latest/download/Git-It-x64.dmg (Intel). Otherwise keep /releases/latest. -->
+        <div class="dl-btns" data-reveal>
+          <a class="btn btn-primary dl-btn" href="https://github.com/ashproto/git-it/releases/latest">Apple Silicon (.dmg)</a>
+          <a class="btn btn-ghost dl-btn" href="https://github.com/ashproto/git-it/releases/latest">Intel (.dmg)</a>
+        </div>
+        <p class="dl-note" data-reveal>each runs fully native; in-app updates track the right build.</p>
+
+        <p class="dl-trust" data-reveal>Signed &amp; notarized by Apple — opens with a normal double-click.</p>
+
+        <div class="dl-req" data-reveal>macOS 12.3+ · needs git + python3 on PATH (xcode-select --install)</div>
+      </section>
+    </div>
+
+    <div class="hazard" data-label="// GUIDES" aria-hidden="true"></div>
+
+    <div class="wrap">
+      <section id="guides" aria-labelledby="guides-h">
+        <span class="op-code" data-reveal>OP // GUIDES</span>
+        <h2 id="guides-h" class="guides-head" data-reveal>Get up and running.</h2>
+        <div class="guide-cards">
+          <a class="guide-card console" href="guides.html#getting-started" data-reveal>
+            <i class="brk tl"></i><i class="brk tr"></i><i class="brk bl"></i><i class="brk br"></i>
+            <div class="con-head">
+              <span>◇ MAGI // Briefing 01</span>
+              <span class="live"><span class="dot"></span>READ</span>
+            </div>
+            <div class="guide-card-body">
+              <h3>Getting started</h3>
+              <p>Install prerequisites, grab the build, open your first repo.</p>
+              <span class="guide-card-go">Open guide ›</span>
+            </div>
+          </a>
+          <a class="guide-card console" href="guides.html#commit-time-editing" data-reveal>
+            <i class="brk tl"></i><i class="brk tr"></i><i class="brk bl"></i><i class="brk br"></i>
+            <div class="con-head">
+              <span>◇ MAGI // Briefing 02</span>
+              <span class="live"><span class="dot"></span>READ</span>
+            </div>
+            <div class="guide-card-body">
+              <h3>Commit-time editing</h3>
+              <p>Shift, set, or compress commit times — with a preview and one-click undo.</p>
+              <span class="guide-card-go">Open guide ›</span>
+            </div>
+          </a>
+        </div>
+      </section>
+    </div>
+
+    <div class="hazard" data-label="// FAQ" aria-hidden="true"></div>
+
+    <div class="wrap">
+      <section id="faq" aria-labelledby="faq-h">
+        <span class="op-code" data-reveal>OP // FAQ</span>
+        <h2 id="faq-h" class="faq-head" data-reveal>Questions, answered.</h2>
+        <div class="faq-list" data-reveal>
+          <details class="faq-item">
+            <summary>Is it really private?</summary>
+            <div class="faq-a"><p>No account, no backend, no analytics. Your repos and credentials stay on your Mac. The only network calls are the git/GitHub operations you trigger, plus a version check for updates. Credentials are prompted on demand and never written to disk beyond a transient 0600 file that's deleted right after.</p></div>
+          </details>
+          <details class="faq-item">
+            <summary>Do I have to bypass Gatekeeper?</summary>
+            <div class="faq-a"><p>No — the release is signed and notarized by Apple; it opens with a normal double-click. (Only self-built ad-hoc copies trigger the Gatekeeper prompt.)</p></div>
+          </details>
+          <details class="faq-item">
+            <summary>Why macOS only?</summary>
+            <div class="faq-a"><p>Native vibrancy and title-bar handling are macOS-specific. Apple Silicon and Intel builds are both fully native (no Electron).</p></div>
+          </details>
+          <details class="faq-item">
+            <summary>Is rewriting history safe?</summary>
+            <div class="faq-a"><p>Destructive ops take an automatic git-bundle backup first, force-push is always --force-with-lease, and there's one-click undo plus a reflog browser.</p></div>
+          </details>
+          <details class="faq-item">
+            <summary>What do I need installed?</summary>
+            <div class="faq-a"><p>git and python3 — both from the Xcode Command Line Tools (xcode-select --install). git-filter-repo is bundled.</p></div>
+          </details>
+          <details class="faq-item">
+            <summary>How do updates work?</summary>
+            <div class="faq-a"><p>In-app auto-updates, with an optional beta channel in Settings → Updates.</p></div>
+          </details>
+          <details class="faq-item">
+            <summary>Apple Silicon or Intel?</summary>
+            <div class="faq-a"><p>Download the .dmg that matches your Mac; each runs fully native. Updates then track the right build.</p></div>
+          </details>
+          <details class="faq-item">
+            <summary>What's the license?</summary>
+            <div class="faq-a"><p>Free and source-available under CC BY-NC-SA 4.0 — use it for any work (including at your job); you just can't resell or repackage the app itself, and forks stay under the same license. Not an OSI open-source license.</p></div>
+          </details>
+        </div>
+      </section>
+    </div>
+
+    <div class="hazard" data-label="// BUILT IN THE OPEN" aria-hidden="true"></div>
+
+    <div class="wrap">
+      <section id="community" aria-labelledby="community-h">
+        <span class="op-code" data-reveal>OP // COMMUNITY</span>
+        <h2 id="community-h" class="community-head" data-reveal>Built in the open.</h2>
+        <p class="community-lede" data-reveal>Git It is developed in public. Read the source, file an issue, or open a pull request — everything happens on GitHub.</p>
+        <div class="community-links" data-reveal>
+          <a class="btn btn-primary" href="https://github.com/ashproto/git-it">Source ↗</a>
+          <a class="btn btn-ghost" href="https://github.com/ashproto/git-it/issues">Issues ↗</a>
+        </div>
+        <p class="community-note" data-reveal>
+          Source-available under <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> — not an OSI open-source license.<br>
+          Contributions welcome — accepted under the project's CC BY-NC-SA 4.0 license.
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot" aria-labelledby="footer-h">
+    <div class="wrap">
+      <h2 id="footer-h" class="visually-hidden">Footer</h2>
+      <nav class="foot-cols" aria-label="Footer">
+        <div class="foot-col">
+          <h2>Product</h2>
+          <ul>
+            <li><a href="/#features">Features</a></li>
+            <li><a href="/#download">Download</a></li>
+            <li><a href="/guides.html">Guides</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <h2>Source</h2>
+          <ul>
+            <li><a href="https://github.com/ashproto/git-it">GitHub ↗</a></li>
+            <li><a href="https://github.com/ashproto/git-it/releases">Releases ↗</a></li>
+            <li><a href="https://github.com/ashproto/git-it/issues">Issues ↗</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <h2>Legal</h2>
+          <ul>
+            <li><a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">License ↗</a></li>
+            <li><a href="/#faq">Privacy</a></li>
+          </ul>
+        </div>
+      </nav>
+      <div class="foot-bar">
+        <span class="foot-brand">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 1.6 22 7.3v9.4L12 22.4 2 16.7V7.3z" stroke="#F2542D" stroke-width="1.4"/>
+            <circle cx="8" cy="14.5" r="1.7" fill="#8A94A0"/>
+            <circle cx="12" cy="9.5" r="1.7" fill="#F2542D"/>
+            <circle cx="16" cy="13" r="1.7" fill="#46E88B"/>
+            <path d="M8 14.5 12 9.5 16 13" stroke="#EAE6DA" stroke-width="1.3"/>
+          </svg>
+          Git It
+        </span>
+        <span class="sep">·</span>
+        <span class="foot-priv">This site collects nothing — no analytics, no cookies, no third-party requests.</span>
+        <span class="sep">·</span>
+        <span class="foot-priv">Bundles git-filter-repo (MIT).</span>
+        <span class="sep">·</span>
+        <span>Made for macOS</span>
+        <span class="sep">·</span>
+        <span>© 2026</span>
+        <span class="sep">·</span>
+        <span>git-it.app</span>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script defer src="assets/js/app.js"></script>
