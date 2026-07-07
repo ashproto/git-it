@@ -51,19 +51,15 @@ A fast, native **macOS git client** — commit graph, branches, merges, rebases,
 
 ## Prerequisites
 
-Git It shells out to the system `git`, so you need it on `PATH`:
+Git It needs `git` and `python3`, both of which ship with the **Xcode Command Line Tools**:
 
 ```sh
-brew install git
+xcode-select --install
 ```
 
-The **commit-time editing** feature additionally uses [`git-filter-repo`](https://github.com/newren/git-filter-repo):
+[`git-filter-repo`](https://github.com/newren/git-filter-repo) — used by the **commit-time editing** feature — is bundled inside the app and run with the host's `python3`, so there is nothing extra to install.
 
-```sh
-brew install git-filter-repo
-```
-
-The app shows a startup banner if `git` (or, for time editing, `git-filter-repo`) is missing. No Python interpreter is bundled — `git-filter-repo` is the only Python dependency and runs on the host.
+If `git` or `python3` is missing, the app shows a startup banner with an **Install Command Line Tools** button (it runs `xcode-select --install` for you). No Python interpreter is bundled — only the interpreter is host-provided; the `git-filter-repo` script itself ships with the app.
 
 ## Install (end users)
 
@@ -123,7 +119,7 @@ For zero-friction installs, sign with an Apple Developer ID and notarize — `ta
 ## Known limitations
 
 - macOS only (the vibrancy/glass and titlebar handling are macOS-specific).
-- `git` must be on `PATH`; `git-filter-repo` too if you use commit-time editing. The startup banner surfaces this.
+- `git` and `python3` must be present (both come with the Xcode Command Line Tools); commit-time editing runs the bundled `git-filter-repo` via the host `python3`. The startup banner surfaces a missing prerequisite and offers to install the tools.
 - Ad-hoc-signed builds trigger a Gatekeeper warning on first launch.
 - Very large histories load incrementally but aren't yet DOM-virtualized.
 

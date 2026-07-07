@@ -36,6 +36,7 @@
   "bundle": {
     "active": true,
     "targets": ["dmg", "app"],
+    "resources": ["resources/git-filter-repo/*"],
     "category": "DeveloperTool",
     "shortDescription": "A native macOS git client with first-class commit-time editing",
     "longDescription": "Git It is a fast, native macOS git client built with Tauri and Svelte: a commit graph, branch and tag operations, merge/cherry-pick/revert with conflict resolution, reset/amend/rebase/interactive-rebase with one-click undo, a working-copy diff/stage/commit/stash workflow, and remote pull/push — plus the commit-timestamp editing it grew from.",

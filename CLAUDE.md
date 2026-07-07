@@ -28,7 +28,7 @@ Frontend-only changes hot-reload under `npm run tauri dev`. **Vitest and the bro
 cannot exercise Tauri-only paths** (anything behind `invoke`: native dialogs, working-copy
 staging, reword, real git). Those require a running `tauri dev`/`build`.
 
-Requires system `git` on `PATH`. Commit-time editing additionally shells out to `git-filter-repo`.
+Requires system `git` and `python3` on `PATH` (both ship with the Xcode Command Line Tools). Commit-time editing runs the **bundled** `git-filter-repo` script (`src-tauri/resources/git-filter-repo/`) via the host `python3` — it is not a `PATH` binary.
 
 ## Architecture
 
