@@ -3,7 +3,7 @@
 import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
-import { computeLanes, laneColor, type MergeInStyle } from "./graph";
+import { computeLanes, laneColor, LANE_PALETTE, NERV_LANE_PALETTE, type MergeInStyle } from "./graph";
 import { reorder } from "./reorder";
 
 // Preferences persist via the Tauri Store plugin (a JSON file written by Rust) so
@@ -1544,15 +1544,17 @@ function makeState() {
     colorForRef(name: string, sha: string): string {
       const ov = branchColors[repo]?.[name];
       if (ov) return ov;
+      const palette = theme === "nerv" ? NERV_LANE_PALETTE : LANE_PALETTE;
       const idx = colorBySha.get(sha);
-      if (idx === undefined) return laneColor(0, null, {});
-      return overrideByIndex.get(idx) ?? laneColor(idx, null, {});
+      if (idx === undefined) return laneColor(0, null, {}, palette);
+      return overrideByIndex.get(idx) ?? laneColor(idx, null, {}, palette);
     },
     // The colour for a lane (by colorIndex): an override wins if a ref tip on that
     // lane has one, else the palette colour. Used by the gutter so an override
     // recolours the descending lane line, not just the sidebar dot.
     colorForIndex(idx: number): string {
-      return overrideByIndex.get(idx) ?? laneColor(idx, null, {});
+      const palette = theme === "nerv" ? NERV_LANE_PALETTE : LANE_PALETTE;
+      return overrideByIndex.get(idx) ?? laneColor(idx, null, {}, palette);
     },
     setBranchColor(name: string, hex: string) {
       branchColorsTouched = true;

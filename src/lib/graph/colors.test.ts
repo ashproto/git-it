@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { LANE_PALETTE, laneColor } from "./colors";
+import { LANE_PALETTE, NERV_LANE_PALETTE, laneColor } from "./colors";
 
 describe("laneColor", () => {
   it("returns the palette color for a color index", () => {
@@ -27,5 +27,13 @@ describe("laneColor", () => {
   it("wraps a negative color index into range", () => {
     expect(laneColor(-1, null, {})).toBe(LANE_PALETTE[LANE_PALETTE.length - 1]);
     expect(laneColor(-LANE_PALETTE.length, null, {})).toBe(LANE_PALETTE[0]);
+  });
+
+  it("uses a provided palette when passed", () => {
+    expect(laneColor(0, null, {}, NERV_LANE_PALETTE)).toBe(NERV_LANE_PALETTE[0]);
+    expect(laneColor(NERV_LANE_PALETTE.length, null, {}, NERV_LANE_PALETTE)).toBe(NERV_LANE_PALETTE[0]);
+  });
+  it("defaults to the classic palette when no palette is passed", () => {
+    expect(laneColor(3, null, {})).toBe(LANE_PALETTE[3]);
   });
 });
