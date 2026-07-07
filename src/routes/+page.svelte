@@ -628,6 +628,17 @@
     --danger: #dc2626;
     --danger-hover: #b91c1c;
     --err: #b45309;
+    /* Type + shape + on-accent + diff tokens. Classic values == the current literals
+       (Classic renders identically); NERV overrides them in its block below.
+       Diff sigils are constant today (no @media dark override) — keep them constant. */
+    --on-accent: #fff;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-display: var(--font-sans);
+    --radius-sm: 4px; --radius-md: 6px; --radius-lg: 10px; --radius-dialog: 8px;
+    --diff-add-bg: rgba(46, 160, 67, 0.18);      --diff-del-bg: rgba(210, 35, 35, 0.18);
+    --diff-add-bg-dark: rgba(46, 160, 67, 0.24); --diff-del-bg-dark: rgba(210, 35, 35, 0.24);
+    --diff-add-fg: #2da44e;                      --diff-del-fg: #cf222e;
     /* File-status glyph colours (A/M/D…), keyed by what the change MEANS:
        add = green, modify = yellow/amber (a legible gold on white), remove = red. */
     --status-add: #2da44e;
@@ -635,9 +646,7 @@
     --status-del: #cf222e;
     /* tells native form controls (spinners, scrollbars, etc.) to follow light/dark */
     color-scheme: light;
-    font-family:
-      -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue",
-      sans-serif;
+    font-family: var(--font-sans);
     font-size: 14px;
   }
 
@@ -701,6 +710,53 @@
       --border-subtle: rgba(90, 100, 112, 0.22);
       --row-hover: rgba(28, 32, 39, 0.22);
     }
+  }
+
+  /* ===== NERV theme tokens — MUST remain AFTER both [data-tauri] glass blocks
+     (equal specificity → later source order wins). NERV is dark-only + opaque and
+     ignores prefers-color-scheme; it re-declares the full token superset. ===== */
+  :global(:root[data-theme="nerv"]) {
+    --bg: #0A0C0F;
+    --panel-bg: #12171C;
+    --popover-bg: #0E1216;
+    --header-bg: #0E1216;
+    --input-bg: #0E1216;
+    --btn-bg: #0E1216;
+    --btn-hover: #14181d;
+    --border: #2E3742;
+    --border-subtle: #232A31;
+    --text: #EAE6DA;
+    --text-muted: #8A94A0;
+    --row-hover: rgba(242, 84, 45, 0.06);
+    --row-selected: rgba(242, 84, 45, 0.10);
+    --row-selected-border: #F2542D;
+    --accent: #F2542D;
+    --accent-hover: #ff6a44;
+    --on-accent: #0A0C0F;                        /* dark text on orange (AA) */
+    --danger: #FF4438;
+    --danger-hover: #ff5a4f;
+    --err: #F2542D;                              /* NERV warning = orange; red = hazard only */
+    --status-add: #46E88B;
+    --status-mod: #F2542D;
+    --status-del: #FF4438;
+    /* diff — BOTH tiers (NERV is dark-only but @media dark still matches on a dark-mode Mac) */
+    --diff-add-bg: rgba(70, 232, 139, 0.15);      --diff-add-bg-dark: rgba(70, 232, 139, 0.15);
+    --diff-del-bg: rgba(255, 68, 56, 0.15);       --diff-del-bg-dark: rgba(255, 68, 56, 0.15);
+    --diff-add-fg: #46E88B;                       --diff-del-fg: #FF4438;
+    /* type */
+    --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-display: "Anton", "Arial Narrow", Impact, sans-serif;
+    /* shape — near-sharp */
+    --radius-sm: 0px; --radius-md: 2px; --radius-lg: 2px; --radius-dialog: 2px;
+    color-scheme: dark;
+    font-family: var(--font-sans);
+  }
+  /* opaque-over-glass: cover BOTH root and body (the transparent reset ~715-718 targets
+     body too). Combined selectors (0,3,0)/(0,3,1) → order-independent for this rule. */
+  :global(:root[data-theme="nerv"][data-tauri="true"]),
+  :global(:root[data-theme="nerv"][data-tauri="true"] body) {
+    background: var(--bg);
   }
 
   :global(html, body) {
