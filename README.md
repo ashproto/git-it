@@ -125,4 +125,12 @@ For zero-friction installs, sign with an Apple Developer ID and notarize — `ta
 
 ## License
 
-Not yet decided. Until a license is chosen, all rights are reserved — please don't redistribute. A license will be added before any public release.
+**Free · source-available · noncommercial** — Git It is licensed under [Creative Commons Attribution-NonCommercial-ShareAlike 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) (CC BY-NC-SA 4.0). See [`LICENSE`](LICENSE) for the full terms.
+
+- **Use it for anything, including at work.** Managing your repositories with Git It — personal or commercial — is fine. The noncommercial term is about the app itself, not the work you produce with it.
+- **Don't commercialize the app.** No reselling, repackaging-and-selling, or offering it as a paid hosted service.
+- **ShareAlike.** Distribute modified versions under these same terms.
+
+Want a commercial arrangement this license doesn't cover? Open an issue. This is a source-available, noncommercial license — **not** an OSI-approved open-source license.
+
+Git It bundles [`git-filter-repo`](https://github.com/newren/git-filter-repo) under the MIT License; its notice ships at [`src-tauri/resources/git-filter-repo/COPYING.mit`](src-tauri/resources/git-filter-repo/COPYING.mit).
