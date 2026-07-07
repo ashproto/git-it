@@ -39,7 +39,9 @@
     });
   }
 
-  const activeTheme = $derived(darkMode ? "github-dark" : "github-light");
+  const activeTheme = $derived(
+    appState.theme === "nerv" ? "nerv" : darkMode ? "github-dark" : "github-light",
+  );
 
   // ─── Parsed diff ──────────────────────────────────────────────────────────────
 

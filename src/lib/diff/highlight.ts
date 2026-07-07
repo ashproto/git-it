@@ -1,4 +1,5 @@
 import { createHighlighter, type Highlighter } from "shiki";
+import { nervShikiTheme } from "./nervShikiTheme";
 
 // Curated language list — bounds the bundle size by not loading every grammar.
 // Must match the `language` values produced by parse.ts's EXT_LANG map + "text".
@@ -38,7 +39,7 @@ let hp: Promise<Highlighter> | null = null;
 export function getHighlighter(): Promise<Highlighter> {
   if (!hp) {
     hp = createHighlighter({
-      themes: ["github-light", "github-dark"],
+      themes: ["github-light", "github-dark", nervShikiTheme],
       langs: [...LANGS],
     }).catch((e) => {
       // If Shiki fails to initialise (e.g. in SSR / test env), reset so a
