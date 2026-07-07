@@ -23,13 +23,13 @@
 
 /* Sidebar detached-HEAD row — swap the Classic amber (#d97706) for the NERV
    warning orange so the row reads on the void and matches the palette. */
-:global(:root[data-theme="nerv"]) .ref.detached {
+:root[data-theme="nerv"] .ref.detached {
   background: color-mix(in srgb, #F2542D 10%, transparent);
 }
-:global(:root[data-theme="nerv"]) .ref.detached .rn {
+:root[data-theme="nerv"] .ref.detached .rn {
   color: color-mix(in srgb, #F2542D 75%, var(--text));
 }
-:global(:root[data-theme="nerv"]) .ref.detached .warn-icon {
+:root[data-theme="nerv"] .ref.detached .warn-icon {
   color: #F2542D;
 }
 
@@ -37,22 +37,22 @@
    red backgrounds to NERV equivalents. The glyph text colour already themes via
    var(--status-*); only the background literals are stuck. .glyph.s-{add,mod,del}
    is a compound selector unique to WorkingCopyView. */
-:global(:root[data-theme="nerv"]) .glyph.s-add { background: rgba(70, 232, 139, 0.1); }
-:global(:root[data-theme="nerv"]) .glyph.s-mod { background: rgba(242, 84, 45, 0.1); }
-:global(:root[data-theme="nerv"]) .glyph.s-del { background: rgba(255, 68, 56, 0.1); }
+:root[data-theme="nerv"] .glyph.s-add { background: rgba(70, 232, 139, 0.1); }
+:root[data-theme="nerv"] .glyph.s-mod { background: rgba(242, 84, 45, 0.1); }
+:root[data-theme="nerv"] .glyph.s-del { background: rgba(255, 68, 56, 0.1); }
 
 /* PrereqBanner — the Classic amber (#b45309 heading / #fde68a border) is low
    contrast on the void; use the NERV orange for the heading + border and give
    the CTA the standard on-accent (dark) text. Body <p> already inherits
    var(--text). .banner is unique to PrereqBanner. */
-:global(:root[data-theme="nerv"]) .banner {
+:root[data-theme="nerv"] .banner {
   background: rgba(242, 84, 45, 0.08);
   border-color: #F2542D;
 }
-:global(:root[data-theme="nerv"]) .banner strong {
+:root[data-theme="nerv"] .banner strong {
   color: #F2542D;
 }
-:global(:root[data-theme="nerv"]) .banner .actions button {
+:root[data-theme="nerv"] .banner .actions button {
   background: #F2542D;
   color: var(--on-accent);
 }
@@ -63,13 +63,13 @@
    unaffected (data-theme-scoped). These selectors are the panel/section/dialog
    headers scouted in the components. font-size/weight stay as the component set
    them (density preserved); only the family + a touch of tracking change. */
-:global(:root[data-theme="nerv"]) .panel-header,
-:global(:root[data-theme="nerv"]) .group-label,
-:global(:root[data-theme="nerv"]) .section-title,
-:global(:root[data-theme="nerv"]) .dialog .header h3 {
+:root[data-theme="nerv"] .panel-header,
+:root[data-theme="nerv"] .group-label,
+:root[data-theme="nerv"] .section-title,
+:root[data-theme="nerv"] .dialog .header h3 {
   font-family: var(--font-display);
   letter-spacing: 0.06em;
   font-weight: 400; /* Anton ships a single 400 weight; avoid faux-bold synthesis */
 }
 
-/* ── Phase B decoration goes below (all rules :global(:root[data-theme="nerv"]) …) ── */
+/* ── Phase B decoration goes below (all rules :root[data-theme="nerv"] …) ── */
