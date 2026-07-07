@@ -1,5 +1,8 @@
 /* Self-hosted fonts — zero third-party requests at runtime.
-   Anton (OFL), IBM Plex Sans + IBM Plex Mono (OFL). */
+   Anton (© 2020 The Anton Project Authors) and IBM Plex Sans + IBM Plex Mono
+   (© 2017 IBM Corp., Reserved Font Name "Plex") are licensed under the SIL Open
+   Font License 1.1. Full license + notices: Anton-OFL.txt and IBMPlex-OFL.txt
+   (this directory), shipped with the font binaries per the OFL. */
 
 @font-face {
   font-family: "Anton";
