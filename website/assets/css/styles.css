@@ -65,9 +65,17 @@ nav[aria-label="Primary"].is-scrolled{border-bottom-color:var(--line);}
 .nav-links a:hover::before{content:"›";opacity:1;}
 .nav-links a:focus-visible{outline:2px solid var(--orange);outline-offset:3px;color:var(--bone);}
 .nav-dl{color:var(--bone)!important;border:1px solid var(--orange);padding:8px 14px!important;
-  background:rgba(242,84,45,.08);}
+  background:rgba(242,84,45,.08);white-space:nowrap;}
 .nav-dl:hover{background:var(--orange);color:var(--void)!important;}
 @media(max-width:720px){.hide-sm{display:none;}}
+@media(max-width:400px){
+  /* very narrow phones: also hide the plain GitHub link (still reachable from the
+     hero + footer), tighten the gap, and keep the CTA compact so the brand + CTA
+     never exceed the ~280px content area and overflow/clip. */
+  .nav-links a:not(.hide-sm):not(.nav-dl){display:none;}
+  .nav-links{gap:14px;}
+  .nav-dl{padding:8px 12px!important;}
+}
 
 /* ---- button components (Task 2) ---- */
 .btn{font-family:var(--font-mono);font-size:13px;letter-spacing:.12em;text-transform:uppercase;
