@@ -127,7 +127,7 @@
     max-width: calc(100vw - 32px);
     background: var(--popover-bg, var(--panel-bg));
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     padding: 16px 18px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
     backdrop-filter: blur(20px) saturate(140%);
@@ -195,7 +195,7 @@
   .swatch {
     width: 100%;
     aspect-ratio: 1;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     cursor: pointer;
     padding: 0;
@@ -217,7 +217,7 @@
   .hex-preview {
     width: 22px;
     height: 22px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -225,7 +225,7 @@
     flex: 1;
     min-width: 0;
     padding: 5px 8px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--input-bg, var(--btn-bg));
     color: var(--text);
@@ -237,7 +237,7 @@
   }
   .apply {
     padding: 5px 12px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--accent);
     background: var(--accent);
     color: #fff;
@@ -255,7 +255,7 @@
   }
   .reset {
     padding: 5px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);

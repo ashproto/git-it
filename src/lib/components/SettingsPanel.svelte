@@ -335,7 +335,7 @@
     overflow-y: auto;
     background: var(--popover-bg, var(--panel-bg));
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     padding: 16px 18px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
     backdrop-filter: blur(20px) saturate(140%);
@@ -412,7 +412,7 @@
     display: flex;
     align-items: center;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
     flex-shrink: 0;
   }
@@ -483,7 +483,7 @@
   .check-updates-btn {
     padding: 4px 12px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--btn-bg);
     color: var(--text);
     font-size: 12px;

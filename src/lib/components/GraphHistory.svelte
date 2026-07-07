@@ -567,7 +567,7 @@
   }
   button {
     padding: 4px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);
@@ -578,7 +578,7 @@
     background: var(--btn-hover);
   }
   .wrap {
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     overflow: auto;
     /* Fill the (fill-mode) panel body so the graph occupies the full timeline
@@ -760,7 +760,7 @@
     flex: 0 0 auto;
     margin-left: 6px;
     padding: 0 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--accent);
     color: var(--accent);
     font-size: 11px;
@@ -776,7 +776,7 @@
     flex: 0 0 auto;
     font-size: 11px;
     padding: 0 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--ref-color, var(--border));
     color: var(--ref-color, var(--text-muted));
     white-space: nowrap;

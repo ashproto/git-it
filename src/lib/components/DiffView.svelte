@@ -864,7 +864,7 @@
   /* ── Stage/unstage hunk buttons ─────────────────────────────────────────────── */
   .hunk-btn {
     padding: 1px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);

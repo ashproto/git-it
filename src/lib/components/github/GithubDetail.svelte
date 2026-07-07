@@ -379,7 +379,7 @@
   .meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
   .label { font-size: 10.5px; padding: 0 7px; border-radius: 999px; border: 1px solid var(--lc); color: var(--lc); }
   .m { font-size: 12px; color: var(--text-muted); }
-  .body { position: relative; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--panel-bg); }
+  .body { position: relative; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; background: var(--panel-bg); }
   .body-acts { position: absolute; top: 8px; right: 12px; }
   /* Reveal own-comment/description actions on hover (GitHub-style). */
   .body:hover :global(.cacts),
@@ -421,7 +421,7 @@
   .diffstat { color: var(--text-muted); }
   .add { color: var(--status-add, #2ea043); }
   .del { color: var(--err, #c0392b); }
-  .block { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+  .block { border: 1px solid var(--border); border-radius: var(--radius-dialog); padding: 6px 10px; }
   .block summary { cursor: pointer; font-size: 12.5px; }
   .checks { list-style: none; margin: 8px 0 0; padding: 0; }
   .checks li { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12px; }
@@ -432,7 +432,7 @@
     display: flex;
     align-items: center;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
     flex-shrink: 0;
   }
@@ -465,7 +465,7 @@
   .ck-sum .sep { color: var(--text-muted); margin: 0 2px; }
   .ck-label { color: var(--text-muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; }
   .comments h3, .activity h3 { font-size: 13px; margin: 6px 0; }
-  .comment { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel-bg); }
+  .comment { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px 12px; margin-bottom: 8px; background: var(--panel-bg); }
   .chead { font-size: 12.5px; margin-bottom: 4px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
   .when { color: var(--text-muted); }
   .mono { font-family: var(--font-mono); font-size: 11.5px; }

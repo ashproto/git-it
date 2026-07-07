@@ -159,7 +159,7 @@
     padding: 4px 8px;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text);
     font-size: 12.5px;
     cursor: pointer;

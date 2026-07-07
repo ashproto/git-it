@@ -576,7 +576,7 @@
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     background: var(--panel-bg);
     overflow: hidden;
     /* Fill the available vertical space in the main column (the parent flex chain

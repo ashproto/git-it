@@ -358,7 +358,7 @@
     box-sizing: border-box;
     background: var(--header-bg);
     color: var(--text);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
     font-size: 12.5px;
@@ -407,7 +407,7 @@
     flex-shrink: 0;
     margin-left: 0;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--btn-bg);
     color: var(--text-muted);
     font-size: 18px;
@@ -440,7 +440,7 @@
     padding: 4px;
     background: var(--popover-bg, var(--panel-bg));
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     backdrop-filter: blur(20px) saturate(140%);
     -webkit-backdrop-filter: blur(20px) saturate(140%);

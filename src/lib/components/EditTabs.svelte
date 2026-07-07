@@ -315,12 +315,12 @@
     display: flex;
     gap: 2px;
     background: var(--input-bg);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 2px;
   }
   .mode-tabs button {
     padding: 4px 10px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -367,7 +367,7 @@
   .num {
     width: 4rem;
     padding: 4px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--input-bg);
     color: var(--text);
@@ -389,7 +389,7 @@
   }
   button {
     padding: 5px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);

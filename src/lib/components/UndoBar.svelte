@@ -24,7 +24,7 @@
     align-items: center;
     gap: 10px;
     padding: 6px 12px;
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     border: 1px solid var(--accent);
     background: var(--panel-bg);
     font-size: 12.5px;
@@ -40,7 +40,7 @@
   }
   .undo-btn {
     padding: 4px 12px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--accent);
     background: var(--accent);
     color: #fff;
@@ -54,7 +54,7 @@
   }
   .dismiss-btn {
     padding: 2px 7px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text-muted);

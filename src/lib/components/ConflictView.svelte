@@ -98,7 +98,7 @@
 <style>
   .conflict {
     border: 1px solid var(--err);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     padding: 10px 12px;
     background: var(--panel-bg);
     display: flex;
@@ -142,7 +142,7 @@
     align-items: center;
     gap: 8px;
     padding: 4px 6px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
   .files li:hover {
     background: var(--row-hover);
@@ -175,7 +175,7 @@
   }
   button {
     padding: 4px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);

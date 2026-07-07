@@ -951,7 +951,7 @@
   .fetch-btn {
     align-self: center;
     padding: 4px 12px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);

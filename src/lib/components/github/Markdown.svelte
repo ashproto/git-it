@@ -36,12 +36,12 @@
     font-size: 11.5px;
     background: var(--btn-bg);
     padding: 1px 4px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
   .md :global(pre) {
     background: var(--btn-bg);
     padding: 10px 12px;
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     overflow-x: auto;
   }
   .md :global(pre code) {

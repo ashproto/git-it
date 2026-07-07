@@ -193,14 +193,14 @@
     display: flex;
     gap: 2px;
     background: var(--input-bg);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 2px;
     width: fit-content;
     margin-bottom: 8px;
   }
   .mode-tabs button {
     padding: 4px 10px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -225,7 +225,7 @@
   }
   button {
     padding: 5px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);
@@ -250,7 +250,7 @@
     padding: 0;
     max-height: 200px;
     overflow: auto;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
   }
   .list li {

@@ -323,7 +323,7 @@
     margin-bottom: 2px;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text);
     font-size: 12.5px;
     font-weight: 500;
@@ -392,7 +392,7 @@
     padding: 5px 8px 5px 18px;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text);
     font-size: 12.5px;
     cursor: pointer;
@@ -410,7 +410,7 @@
      and commits made here are easy to lose). */
   .ref.detached {
     background: color-mix(in srgb, #d97706 10%, transparent);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
   .ref.detached .rn {
     color: color-mix(in srgb, #d97706 75%, var(--text));

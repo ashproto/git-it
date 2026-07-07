@@ -225,7 +225,7 @@
     width: 100%;
     box-sizing: border-box;
     padding: 6px 8px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--input-bg);
     color: var(--text);
@@ -252,7 +252,7 @@
        height-capped) view and clip the Commit button beneath it. */
     max-height: 300px;
     padding: 6px 8px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--input-bg);
     color: var(--text);
@@ -293,7 +293,7 @@
   .commit-btn {
     margin-left: auto;
     padding: 5px 16px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--accent);
     background: var(--accent);
     color: #fff;

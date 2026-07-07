@@ -254,7 +254,7 @@
     height: clamp(320px, 58vh, 820px);
     margin-top: 4px;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     background: var(--panel-bg);
     padding: 6px;
   }
@@ -280,7 +280,7 @@
     padding: 4px 8px;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text);
     font-size: 12.5px;
     cursor: pointer;
@@ -339,7 +339,7 @@
   .composer {
     margin-top: 8px;
     border: 1px solid var(--accent);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     background: var(--panel-bg);
     padding: 8px 10px;
     display: flex;
@@ -377,7 +377,7 @@
     line-height: 1.5;
     padding: 7px 9px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     background: var(--input-bg, var(--panel-bg));
     color: var(--text);
   }

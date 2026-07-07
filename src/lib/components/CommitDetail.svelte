@@ -228,7 +228,7 @@
     color: var(--text-muted);
     padding: 2px 8px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
   /* Metadata grid + description side by side. flex-wrap drops the body below the grid
      when the panel is too narrow to fit both; align-items:flex-start keeps the grid
@@ -271,7 +271,7 @@
     gap: 3px;
     font-size: 11px;
     padding: 0 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--ref-color, var(--border));
     color: var(--ref-color, var(--text-muted));
   }
@@ -331,7 +331,7 @@
   /* Edit toggle in the panel header (Edit ⇄ Done). */
   .edit-btn {
     padding: 3px 12px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);

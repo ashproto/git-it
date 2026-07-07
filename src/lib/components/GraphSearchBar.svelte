@@ -134,7 +134,7 @@
     gap: 6px;
     padding: 5px 8px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--panel-bg);
     font-size: 12px;
   }
@@ -147,7 +147,7 @@
     min-width: 120px;
     padding: 3px 8px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--input-bg);
     color: var(--text);
     font-size: 12px;
@@ -164,7 +164,7 @@
   button {
     flex: 0 0 auto;
     padding: 2px 8px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);
