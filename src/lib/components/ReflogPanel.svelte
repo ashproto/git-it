@@ -172,6 +172,6 @@
   }
   button.danger:hover {
     background: var(--err, #c0392b);
-    color: white;
+    color: var(--on-accent);
   }
 </style>
