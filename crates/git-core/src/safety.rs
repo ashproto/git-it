@@ -19,13 +19,18 @@ fn rev_parse(repo: &Path, what: &str) -> Result<String, String> {
 
 /// Current branch name, or None if HEAD is detached.
 pub fn current_branch(repo: &Path) -> Result<Option<String>, String> {
+    // NOT `--short`: it abbreviates to the shortest unambiguous name, so a
+    // same-named tag (e.g. a rolling `next` release tag) yields "heads/next"
+    // rather than "next" — which would break undo (it moves the wrong ref).
     let out = Command::new("git")
         .current_dir(repo)
-        .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .args(["symbolic-ref", "--quiet", "HEAD"])
         .output()
         .map_err(|e| format!("Failed to spawn git: {}", e))?;
     if out.status.success() {
-        Ok(Some(String::from_utf8_lossy(&out.stdout).trim().to_string()))
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let name = s.strip_prefix("refs/heads/").unwrap_or(&s).to_string();
+        Ok(if name.is_empty() { None } else { Some(name) })
     } else {
         Ok(None) // detached HEAD
     }
