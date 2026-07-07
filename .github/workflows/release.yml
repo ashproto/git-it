@@ -167,7 +167,7 @@ jobs:
 
       - name: Normalize macOS artifact filenames
         shell: bash
-        working-directory: src-tauri/target/${{ matrix.target }}/release/bundle
+        working-directory: target/${{ matrix.target }}/release/bundle
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -186,9 +186,9 @@ jobs:
         with:
           name: release-macos-${{ matrix.arch }}
           path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+            target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
 
   release:
