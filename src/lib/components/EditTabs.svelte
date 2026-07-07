@@ -372,7 +372,7 @@
     background: var(--input-bg);
     color: var(--text);
     font-size: 12px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .spacer {
     width: 6px;
@@ -384,7 +384,7 @@
     overflow-wrap: anywhere;
   }
   .preview-line .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     color: var(--text);
   }
   button {

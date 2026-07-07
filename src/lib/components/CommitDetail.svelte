@@ -324,7 +324,7 @@
     font-size: 13px;
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 11.5px;
   }
 

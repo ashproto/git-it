@@ -606,5 +606,5 @@
   .g.fail { color: var(--err, #c0392b); }
   .g.pending { color: var(--status-mod, #d29922); }
   .g.neutral { color: var(--text-muted); }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+  .mono { font-family: var(--font-mono); font-size: 11.5px; }
 </style>

@@ -61,7 +61,7 @@
     border-radius: 6px;
     border: 1px solid var(--border);
     background: var(--input-bg);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.45;
   }

@@ -602,7 +602,7 @@
   .diff-view {
     display: flex;
     flex-direction: column;
-    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Code", monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.5;
     overflow: auto;
@@ -659,7 +659,7 @@
     gap: 6px;
     margin-left: 8px;
     font-size: 11px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .tot-add {
     color: var(--diff-add-fg, #2da44e);
@@ -672,7 +672,7 @@
     min-width: 1.4ch;
     text-align: center;
     font-size: 11px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     color: var(--text);
   }
 
@@ -855,7 +855,7 @@
   }
 
   .hunk-range {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--accent);
     margin-right: auto;
@@ -937,6 +937,6 @@
 
   /* ── Mono utility ───────────────────────────────────────────────────────────── */
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Code", monospace;
+    font-family: var(--font-mono);
   }
 </style>

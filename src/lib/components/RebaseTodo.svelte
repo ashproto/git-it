@@ -228,7 +228,7 @@
     color: var(--text-muted);
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .note {
     margin: 0;
@@ -295,7 +295,7 @@
     background: var(--input-bg);
     color: var(--text);
     font-size: 12px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     cursor: pointer;
   }
   .sha {

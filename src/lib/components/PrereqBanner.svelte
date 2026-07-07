@@ -96,7 +96,7 @@
     opacity: 0.85;
   }
   code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     background: #00000010;
     padding: 1px 5px;
     border-radius: 4px;

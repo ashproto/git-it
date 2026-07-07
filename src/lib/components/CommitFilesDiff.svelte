@@ -175,7 +175,7 @@
     flex-shrink: 0;
     width: 12px;
     text-align: center;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 700;
   }

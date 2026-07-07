@@ -146,7 +146,7 @@
     white-space: nowrap;
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .entry-actions {
     display: flex;

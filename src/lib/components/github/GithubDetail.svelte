@@ -468,7 +468,7 @@
   .comment { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel-bg); }
   .chead { font-size: 12.5px; margin-bottom: 4px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
   .when { color: var(--text-muted); }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+  .mono { font-family: var(--font-mono); font-size: 11.5px; }
   .note { margin: 8px 2px; color: var(--text-muted); font-size: 12.5px; }
   .note.err { color: var(--err, #c0392b); }
 </style>

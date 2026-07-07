@@ -788,7 +788,7 @@
     background: color-mix(in srgb, var(--ref-color, var(--accent)) 16%, transparent);
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
   }
   .empty {

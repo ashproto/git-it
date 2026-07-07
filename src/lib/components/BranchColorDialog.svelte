@@ -266,6 +266,6 @@
     background: var(--btn-hover);
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
 </style>

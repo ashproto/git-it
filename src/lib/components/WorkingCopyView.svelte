@@ -773,7 +773,7 @@
     text-align: center;
     font-size: 11px;
     font-weight: 700;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     border-radius: 3px;
     padding: 1px 3px;
   }
@@ -821,7 +821,7 @@
   }
 
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
 
   /* Stacked/narrow layout: the shell is content-sized (no full-height chain), so

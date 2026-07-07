@@ -153,7 +153,7 @@
     border-radius: 4px;
   }
   .readme :global(code) {
-    font-family: ui-monospace, monospace;
+    font-family: var(--font-mono);
     font-size: 0.85em;
     background: var(--code-bg, rgba(128,128,128,0.12));
     padding: 0.1em 0.35em;

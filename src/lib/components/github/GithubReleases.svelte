@@ -335,7 +335,7 @@
     font-variant-numeric: tabular-nums;
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .note {
     margin: 14px 2px;

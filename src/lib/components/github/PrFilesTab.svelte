@@ -312,7 +312,7 @@
     margin-left: auto;
     flex-shrink: 0;
     font-size: 11.5px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .add {
     color: var(--status-add, #2ea043);
@@ -359,7 +359,7 @@
     white-space: nowrap;
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 11.5px;
   }
   .c-editing {

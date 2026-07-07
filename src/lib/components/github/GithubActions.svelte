@@ -102,7 +102,7 @@
     color: var(--text-muted);
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
   }
   .note {
