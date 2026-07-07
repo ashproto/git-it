@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Git It** — a native macOS git client (commit graph, branches, merges, rebases, working-copy
 diffs, remotes) with first-class commit-time editing. Also hosts the headless **agent** that
 lets the sibling iOS app drive local git remotely. Tauri 2 (Rust) + SvelteKit 5 (runes).
-macOS only; window uses native `NSVisualEffect` vibrancy (glass panels). Private; `UNLICENSED`
-— licensing is intentionally undecided, do not add a LICENSE.
+macOS only; window uses native `NSVisualEffect` vibrancy (glass panels). Licensed
+**CC BY-NC-SA 4.0** (source-available, noncommercial — see `LICENSE`); **not** OSI
+open source, so never describe it as "open source".
 
 ## Commands
 
