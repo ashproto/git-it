@@ -640,7 +640,7 @@
   .mode-btn.active {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .mode-btn:disabled {
     opacity: 0.45;
@@ -879,7 +879,7 @@
   .hunk-btn.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .hunk-btn.primary:hover {
     opacity: 0.88;
@@ -912,7 +912,7 @@
     border: none;
     border-radius: 3px;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 11px;
     line-height: 15px;
     text-align: center;

@@ -296,7 +296,7 @@
     border-radius: var(--radius-md);
     border: 1px solid var(--accent);
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;

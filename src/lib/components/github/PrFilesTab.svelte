@@ -243,7 +243,7 @@
   .ft-toggle.active {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .ft-toggle:hover {
     background: var(--btn-hover);
@@ -415,7 +415,7 @@
   }
   .c-save {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     border: none;
     border-radius: 7px;
     padding: 4px 14px;

@@ -92,7 +92,7 @@
   }
   .post {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     border: none;
     border-radius: 7px;
     padding: 5px 16px;

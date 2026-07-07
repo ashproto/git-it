@@ -167,7 +167,7 @@
   .finish {
     background: var(--accent);
     border: 1px solid var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-weight: 500;
   }
   .finish:hover {
@@ -271,7 +271,7 @@
   .submit {
     background: var(--accent);
     border: none;
-    color: #fff;
+    color: var(--on-accent);
     font-weight: 500;
   }
   .submit:hover:not(:disabled) {

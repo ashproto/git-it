@@ -448,7 +448,7 @@
   }
   .seg button + button { border-left: 1px solid var(--border); }
   .seg button:hover { background: var(--btn-hover); color: var(--text); }
-  .seg button.active { background: var(--accent); color: #fff; }
+  .seg button.active { background: var(--accent); color: var(--on-accent); }
   .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .g { width: 14px; text-align: center; font-weight: 700; }
   .g.pass { color: var(--status-add, #2ea043); }

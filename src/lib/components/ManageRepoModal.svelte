@@ -215,7 +215,7 @@
 
   .nav-item.active {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
 
   .nav-item:focus-visible {

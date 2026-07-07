@@ -159,7 +159,7 @@
     border-radius: 7px;
     border: 1px solid var(--border);
     background: var(--accent, #2563eb);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;

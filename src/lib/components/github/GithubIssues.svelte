@@ -105,7 +105,7 @@
     border: 1px solid var(--accent);
     border-radius: 999px;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 12px;
     cursor: pointer;
   }
@@ -143,7 +143,7 @@
     cursor: pointer;
   }
   .chip.active {
-    color: #fff;
+    color: var(--on-accent);
     background: var(--accent);
     border-color: var(--accent);
   }

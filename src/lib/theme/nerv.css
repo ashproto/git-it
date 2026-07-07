@@ -14,4 +14,47 @@
 @font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap;
   src: url("/fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); }
 
+/* ── Phase A: stuck-in-Classic color fixes ──────────────────────────────────
+   Theme-scoped overrides only (all selectors gated by :root[data-theme="nerv"]),
+   so Classic — which never sets data-theme — renders byte-identically. Each rule
+   retargets an existing component class whose hardcoded Classic literal would
+   read wrong on the NERV void. Selectors were checked to be unique to their
+   component (StatusBar uses .left.detached, not .ref.detached). */
+
+/* Sidebar detached-HEAD row — swap the Classic amber (#d97706) for the NERV
+   warning orange so the row reads on the void and matches the palette. */
+:global(:root[data-theme="nerv"]) .ref.detached {
+  background: color-mix(in srgb, #F2542D 10%, transparent);
+}
+:global(:root[data-theme="nerv"]) .ref.detached .rn {
+  color: color-mix(in srgb, #F2542D 75%, var(--text));
+}
+:global(:root[data-theme="nerv"]) .ref.detached .warn-icon {
+  color: #F2542D;
+}
+
+/* WorkingCopyView status-glyph tints — retint the hardcoded Classic green/amber/
+   red backgrounds to NERV equivalents. The glyph text colour already themes via
+   var(--status-*); only the background literals are stuck. .glyph.s-{add,mod,del}
+   is a compound selector unique to WorkingCopyView. */
+:global(:root[data-theme="nerv"]) .glyph.s-add { background: rgba(70, 232, 139, 0.1); }
+:global(:root[data-theme="nerv"]) .glyph.s-mod { background: rgba(242, 84, 45, 0.1); }
+:global(:root[data-theme="nerv"]) .glyph.s-del { background: rgba(255, 68, 56, 0.1); }
+
+/* PrereqBanner — the Classic amber (#b45309 heading / #fde68a border) is low
+   contrast on the void; use the NERV orange for the heading + border and give
+   the CTA the standard on-accent (dark) text. Body <p> already inherits
+   var(--text). .banner is unique to PrereqBanner. */
+:global(:root[data-theme="nerv"]) .banner {
+  background: rgba(242, 84, 45, 0.08);
+  border-color: #F2542D;
+}
+:global(:root[data-theme="nerv"]) .banner strong {
+  color: #F2542D;
+}
+:global(:root[data-theme="nerv"]) .banner .actions button {
+  background: #F2542D;
+  color: var(--on-accent);
+}
+
 /* ── Phase B decoration goes below (all rules :global(:root[data-theme="nerv"]) …) ── */

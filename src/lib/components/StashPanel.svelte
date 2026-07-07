@@ -170,7 +170,7 @@
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: white;
+    color: var(--on-accent);
     padding: 4px 12px;
     font-size: 12px;
   }

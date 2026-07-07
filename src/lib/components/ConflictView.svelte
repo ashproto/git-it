@@ -192,7 +192,7 @@
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   button.danger {
     margin-left: auto;

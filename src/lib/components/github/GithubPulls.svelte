@@ -142,7 +142,7 @@
     cursor: pointer;
   }
   .chip.active {
-    color: #fff;
+    color: var(--on-accent);
     background: var(--accent);
     border-color: var(--accent);
   }

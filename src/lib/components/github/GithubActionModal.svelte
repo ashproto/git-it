@@ -157,7 +157,7 @@
   .actions .primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .err {
     margin: 0;

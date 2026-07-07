@@ -1079,7 +1079,7 @@
     border-radius: 7px;
     border: none;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;

@@ -356,7 +356,7 @@
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   button.primary.danger {
     background: var(--danger, #dc2626);

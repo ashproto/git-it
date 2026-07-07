@@ -439,7 +439,7 @@
 
   .seg button.active {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
 
   .seg button:focus-visible {

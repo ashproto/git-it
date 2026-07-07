@@ -126,7 +126,7 @@
   .ft-toggle.active {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .ft-toggle:hover {
     background: var(--btn-hover);
