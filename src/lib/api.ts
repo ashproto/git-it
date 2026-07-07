@@ -54,6 +54,7 @@ export async function pickRepoFolder(initial?: string): Promise<string | null> {
 
 export const api = {
   checkPrerequisites: () => invoke<PrerequisiteCheck>("check_prerequisites"),
+  installCommandLineTools: () => invoke<string>("install_command_line_tools"),
   isGitRepo: (repo: string) => invoke<boolean>("is_git_repo", { repo }),
   // ── auto-updater (desktop only) ──────────────────────────────────────────
   checkUpdateOnChannel: (channel: "stable" | "beta") =>
