@@ -144,31 +144,32 @@
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* Corner-bracket draw-in — brackets settle in with a brief scale+opacity pop,
-   slightly staggered after the sweep starts. */
+/* Per-panel cascade — each .panel fades + slides in, staggered by the
+   ascending --boot-i set on launch (themeMode.ts) / toggle (store.svelte.ts
+   setTheme) and cleared once [data-boot] lifts. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel {
+    animation: nerv-boot-panel 380ms ease-out both;
+    animation-delay: calc(var(--boot-i, 0) * 70ms);
+  }
+}
+@keyframes nerv-boot-panel {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Corner-bracket draw-on — arms extend from zero (--b, registered in nerv.css)
+   out to their resting 14px, staggered a touch after each panel's cascade. */
 @media (prefers-reduced-motion: no-preference) {
   :root[data-theme="nerv"][data-motion="on"][data-boot] .panel::after,
   :root[data-theme="nerv"][data-motion="on"][data-boot] .dialog::after {
-    animation: nerv-boot-brackets 400ms ease-out 100ms both;
+    animation: nerv-boot-draw 320ms ease-out both;
+    animation-delay: calc(var(--boot-i, 0) * 70ms + 120ms);
   }
 }
-@keyframes nerv-boot-brackets {
-  from { transform: scale(0.9); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
-
-/* Shell fade/scale-up — the whole rendered app (header, panels, status bar)
-   fades and settles into place. Targets <body> rather than a specific
-   component class so this file stays Svelte-free, matching the rest of the
-   file's global, plain-CSS approach. */
-@media (prefers-reduced-motion: no-preference) {
-  :root[data-theme="nerv"][data-motion="on"][data-boot] body {
-    animation: nerv-boot-shell 500ms ease-out both;
-  }
-}
-@keyframes nerv-boot-shell {
-  from { transform: scale(0.98); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+@keyframes nerv-boot-draw {
+  from { --b: 0px; opacity: 0; }
+  to { --b: 14px; opacity: 1; }
 }
 
 /* ── One-shot timeline "graph builds itself" reveal (Task 9) ───────────────

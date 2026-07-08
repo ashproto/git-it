@@ -218,11 +218,16 @@ function applyThemeAttr(t: "classic" | "nerv"): void {
 // pulse for the Classic→NERV toggle path. Caller is responsible for only invoking
 // this when motion is on (see setTheme). CSS keyframes gated on [data-boot] +
 // reduced-motion live in nerv-motion.css.
+// Task 7: panels get an ascending --boot-i so nerv-motion.css can stagger the
+// per-panel cascade + bracket draw-on.
 function pulseBootReveal(): void {
   if (typeof document === "undefined") return;
   document.documentElement.dataset.boot = "";
+  const panels = document.querySelectorAll(".panel");
+  panels.forEach((el, i) => (el as HTMLElement).style.setProperty("--boot-i", String(i)));
   setTimeout(() => {
     delete document.documentElement.dataset.boot;
+    panels.forEach((el) => (el as HTMLElement).style.removeProperty("--boot-i"));
   }, 600);
 }
 

@@ -63,14 +63,19 @@ function applySavedMotion(): void {
 // saved theme AND motion is on (data-motion="on", set by applySavedMotion
 // just above). CSS keyframes gated on [data-boot] live in nerv-motion.css;
 // reduced-motion is handled there too, so no need to duplicate that check.
+// Task 7: panels get an ascending --boot-i so nerv-motion.css can stagger the
+// per-panel cascade + bracket draw-on.
 function pulseBootReveal(): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   if (root.getAttribute("data-theme") !== "nerv") return;
   if (root.dataset.motion !== "on") return;
   root.dataset.boot = "";
+  const panels = document.querySelectorAll(".panel");
+  panels.forEach((el, i) => (el as HTMLElement).style.setProperty("--boot-i", String(i)));
   setTimeout(() => {
     delete root.dataset.boot;
+    panels.forEach((el) => (el as HTMLElement).style.removeProperty("--boot-i"));
   }, 600);
 }
 
