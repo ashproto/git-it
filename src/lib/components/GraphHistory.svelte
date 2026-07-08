@@ -445,7 +445,7 @@
           {rows}
           {heads}
           {rowHeight}
-          lineStyle={appState.graphLineStyle}
+          lineStyle={appState.effectiveGraphLineStyle}
           mergeInStyle={appState.graphMergeInStyle}
           curviness={appState.graphCurviness}
           renderStart={winStart}

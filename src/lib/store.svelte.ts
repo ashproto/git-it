@@ -170,14 +170,14 @@ function loadSyncRepoMode(): "tabs" | "sidebar" {
   }
 }
 
-function loadSyncLineStyle(): "curved" | "angular" {
-  if (isTauri()) return "curved";
+function loadSyncLineStyle(): "auto" | "curved" | "angular" {
+  if (isTauri()) return "auto";
   try {
-    if (typeof localStorage === "undefined") return "curved";
+    if (typeof localStorage === "undefined") return "auto";
     const raw = localStorage.getItem(LINESTYLE_KEY);
-    return raw === "angular" ? "angular" : "curved";
+    return raw === "auto" || raw === "angular" || raw === "curved" ? raw : "auto";
   } catch {
-    return "curved";
+    return "auto";
   }
 }
 
@@ -672,7 +672,7 @@ function makeState() {
     return m;
   });
 
-  let graphLineStyle = $state<"curved" | "angular">(loadSyncLineStyle());
+  let graphLineStyle = $state<"auto" | "curved" | "angular">(loadSyncLineStyle());
   let graphLineStyleTouched = false;
 
   // Working-copy/op status from repo_status; null in browser/sample mode (no op).
@@ -683,7 +683,10 @@ function makeState() {
     lsHydrate
       .then((store) => store.get<string>(LINESTYLE_STORE_KEY))
       .then((saved) => {
-        if ((saved === "curved" || saved === "angular") && !graphLineStyleTouched) {
+        if (
+          (saved === "auto" || saved === "curved" || saved === "angular") &&
+          !graphLineStyleTouched
+        ) {
           graphLineStyle = saved;
         }
       })
@@ -1584,7 +1587,11 @@ function makeState() {
     get graphLineStyle() {
       return graphLineStyle;
     },
-    setGraphLineStyle(v: "curved" | "angular") {
+    get effectiveGraphLineStyle(): "curved" | "angular" {
+      if (graphLineStyle === "curved" || graphLineStyle === "angular") return graphLineStyle;
+      return theme === "nerv" ? "angular" : "curved"; // "auto"
+    },
+    setGraphLineStyle(v: "auto" | "curved" | "angular") {
       graphLineStyleTouched = true;
       graphLineStyle = v;
       persistLineStyle();
