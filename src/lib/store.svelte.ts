@@ -228,7 +228,9 @@ function pulseBootReveal(): void {
   setTimeout(() => {
     delete document.documentElement.dataset.boot;
     panels.forEach((el) => (el as HTMLElement).style.removeProperty("--boot-i"));
-  }, 600);
+    // 1100ms so the staggered panel cascade + bracket draw-on completes before the
+    // window closes (keyframes end at the resting state, so overshoot degrades gracefully).
+  }, 1100);
 }
 
 // Own-property check (not `in`) so a malformed localStorage/store value like

@@ -76,7 +76,10 @@ function pulseBootReveal(): void {
   setTimeout(() => {
     delete root.dataset.boot;
     panels.forEach((el) => (el as HTMLElement).style.removeProperty("--boot-i"));
-  }, 600);
+    // 1100ms so the staggered panel cascade + bracket draw-on (up to ~maxIndex*70+440ms
+    // for ~8-9 panels) completes before the window closes; the keyframes end at the
+    // resting state so any overshoot degrades gracefully (panel just appears static).
+  }, 1100);
 }
 
 applySavedTheme();
