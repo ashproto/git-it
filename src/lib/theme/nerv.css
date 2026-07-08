@@ -1,6 +1,19 @@
 /* NERV theme — global, data-theme-scoped. @font-face declarations are unconditional
    but cost nothing until NERV actually renders these families. SIL OFL notices ship
    in static/fonts/{Anton-OFL,IBMPlex-OFL}.txt. */
+
+/* Registers --b (the B3 corner-bracket arm length) as an interpolatable
+   <length-percentage> custom property. Without this, --b is a plain custom
+   property and the browser can only discretely swap it — no transition is
+   possible, which is why panel-hover previously had to fake motion with
+   filter:brightness alone. Must be a top-level @property (not nested) —
+   registered once here, ahead of the B3 rules that consume --b. */
+@property --b {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 14px;
+}
+
 @font-face { font-family: "Anton"; font-style: normal; font-weight: 400; font-display: swap;
   src: url("/fonts/anton-latin-400-normal.woff2") format("woff2"); }
 @font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400; font-display: swap;

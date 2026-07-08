@@ -39,17 +39,18 @@
 }
 
 /* ── Interaction motion ───────────────────────────────────────────────────
-   Corner brackets (nerv.css B3) brighten on hover — filter:brightness is a
-   real animatable property (unlike the `--c` custom property feeding the
-   gradients, which won't interpolate without @property registration). */
+   Corner brackets (nerv.css B3) grow + brighten on hover. --b is registered
+   via @property in nerv.css (syntax <length-percentage>), which is what
+   makes it interpolatable — a plain custom property can only be swapped
+   discretely, not transitioned. */
 @media (prefers-reduced-motion: no-preference) {
   :root[data-theme="nerv"][data-motion="on"] .panel::after,
   :root[data-theme="nerv"][data-motion="on"] .dialog::after {
-    transition: filter 150ms ease;
+    transition: --b 180ms ease, filter 180ms ease;
   }
   :root[data-theme="nerv"][data-motion="on"] .panel:hover::after,
   :root[data-theme="nerv"][data-motion="on"] .dialog:hover::after {
-    filter: brightness(1.4);
+    --b: 22px; filter: brightness(1.5);
   }
 
   /* Active-segment (SettingsPanel .seg buttons) + row-selection (GraphHistory
