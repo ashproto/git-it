@@ -106,6 +106,24 @@
 }
 @keyframes nerv-live-blink { 50% { opacity: 0.2; } }
 
+/* ── Persistent live-dot pulse ─────────────────────────────────────────────
+   Idle: gentle slow pulse (~2s). Busy: faster pulse (~0.8s) — the compound
+   `.live-dot.busy` selector is more specific than the idle rule, so it wins
+   the cascade whenever both classes are present. Motion-off or
+   reduced-motion falls back to the static dot from nerv.css. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"] .live-dot {
+    animation: nerv-live-dot-pulse 2s ease-in-out infinite;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .live-dot.busy {
+    animation: nerv-live-dot-pulse 0.8s ease-in-out infinite;
+  }
+}
+@keyframes nerv-live-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(0.8); }
+}
+
 /* ── One-shot "boot reveal" on NERV activation (Task 8) ───────────────────
    Pulsed via a brief [data-boot] attribute on <html> (~600ms, set by
    themeMode.ts on launch-with-NERV-saved and store.svelte.ts's setTheme on

@@ -73,6 +73,7 @@
       {@const opLabel = appState.busyOp ? `${appState.busyOp} in progress` : "Operation in progress"}
       <span class="spinner" aria-label={opLabel} title={opLabel}></span>
     {/if}
+    <span class="live-dot" class:busy={!!appState.busyOp} aria-hidden="true"></span>
     <span class="status-text" title={appState.status}>{appState.status}</span>
   </span>
 </div>
@@ -159,6 +160,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+  }
+
+  /* Persistent "system alive" indicator — NERV-only (styled in nerv.css);
+     Classic never sets data-theme, so this stays hidden there. */
+  .live-dot {
+    display: none;
   }
 
   /* Pulsing dot — signals an in-flight operation (remote or rewrite) */

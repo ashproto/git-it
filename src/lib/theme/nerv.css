@@ -167,6 +167,22 @@
   background: var(--status-add);
 }
 
+/* Persistent "live" dot — always present in NERV (unlike .spinner above,
+   which only renders during an in-flight op), signalling the console is
+   live at idle too. Base display:none lives in StatusBar.svelte so Classic
+   never shows it. Idle: phosphor green; busy: switches to the scheme accent.
+   The pulse animation itself is gated in nerv-motion.css. */
+:root[data-theme="nerv"] .live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-add);
+}
+:root[data-theme="nerv"] .live-dot.busy {
+  background: var(--accent);
+}
+
 /* B4 — console header sigil (◇) on panel + dialog titles (Anton already applied in
    Phase A). Sparingly: only the shared panel-header <h2> and dialog <h3>. */
 :root[data-theme="nerv"] .panel-header h2::before,
