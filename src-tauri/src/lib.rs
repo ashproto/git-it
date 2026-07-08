@@ -24,6 +24,20 @@ pub fn run() {
         // Manage the filesystem watcher so the active repo's worktree can be
         // watched for live "Local Changes" updates (see fswatch.rs).
         .manage(fswatch::WatchState::default())
+        // Reveal the main window (launched hidden via visible:false in tauri.conf.json)
+        // once its page has loaded and painted the themed background. This is what kills
+        // the native NSVisualEffect glass flash: the window stays ordered-out until the
+        // webview has a real frame, so the glass is never on screen before the first
+        // paint. Driven off the native page-load event, NOT a webview timer — WebKit
+        // throttles JS timers/rAF while a window is ordered-out, so a frontend-timed
+        // reveal fired late (the window only appeared on the setup() backstop below,
+        // which felt sluggish). show() is idempotent, so this and the backstop can't
+        // conflict.
+        .on_page_load(|webview, payload| {
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                let _ = webview.window().show();
+            }
+        })
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -80,13 +94,11 @@ pub fn run() {
                 });
             }
 
-            // The main window launches hidden (visible:false in tauri.conf.json) so the
-            // native glass never flashes before the webview paints. The frontend reveals
-            // it after the first composited frame (+page.svelte onMount). This is the
-            // backstop: if that path never runs (JS bundle fails to load, throws before
-            // mount), force the window visible after a short delay so the app can never
-            // launch to a permanently-invisible window. show() is idempotent, so the
-            // normal frontend reveal and this one can't conflict.
+            // Backstop for the on_page_load reveal above: if the page never fires its
+            // load event (a resource hangs, the bundle fails to load), force the window
+            // visible after a short delay so the app can never launch to a permanently
+            // invisible window. In the normal case on_page_load fires first and this is
+            // a no-op (show() is idempotent).
             #[cfg(desktop)]
             if let Some(win) = app.get_webview_window("main") {
                 std::thread::spawn(move || {

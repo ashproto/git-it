@@ -275,25 +275,9 @@
     // the in-app UI uses. Both no-op outside Tauri / in dev.
     const unlistenMenu: Array<() => void> = [];
     if (inTauri) {
-      // The window launches hidden (visible:false in tauri.conf.json) so the native
-      // glass never flashes before WebKit paints — reveal it only after a composited
-      // frame with the resolved theme background. Double rAF lands after a real paint;
-      // the setTimeout is a fallback because WebKit throttles rAF while the window is
-      // ordered-out, so the frames might not arrive — without it we'd wait on lib.rs's
-      // 1.2s backstop and every launch would feel sluggish. show() is idempotent and
-      // the `shown` guard skips the redundant reveal, so whichever fires first wins.
-      let shown = false;
-      const revealWindow = () => {
-        if (shown) return;
-        shown = true;
-        void import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
-          getCurrentWindow()
-            .show()
-            .catch(() => {}),
-        );
-      };
-      requestAnimationFrame(() => requestAnimationFrame(revealWindow));
-      setTimeout(revealWindow, 250);
+      // NOTE: the hidden window (visible:false) is revealed natively from lib.rs's
+      // on_page_load hook, NOT here — WebKit throttles JS timers/rAF while a window is
+      // ordered-out, so any webview-side reveal is unreliable and lands late.
       void startupUpdateCheck();
       import("@tauri-apps/api/event").then(async ({ listen }) => {
         unlistenMenu.push(await listen("menu:check-updates", () => manualCheckForUpdates()));
