@@ -687,10 +687,11 @@ function makeState() {
   // before the last row's animation ends, that row would snap to its resting state.
   const REVEAL_MS = 1100;
   // On a repo switch the NERV panels play the "materialize" boot (square→outline→
-  // brackets, ~see nerv-motion.css). Per the chosen choreography the timeline draws
-  // AFTER the commits frame settles, so armReveal is called with this delay on a
-  // repo switch. A view switch (Local Changes→Timeline, no materialize) passes 0.
-  const REVEAL_AFTER_MAT_MS = 780;
+  // brackets, then the panel box + content fade in — see nerv-motion.css). Per the
+  // chosen choreography the timeline draws AFTER the commits frame + its content have
+  // faded in (commits is the last-staggered panel, ~i*105 + ~508ms ≈ 930ms), so
+  // armReveal gets this delay on a repo switch. A view switch (no materialize) passes 0.
+  const REVEAL_AFTER_MAT_MS = 950;
   function armReveal(delayMs = 0) {
     revealSeq++;
     const seq = revealSeq;

@@ -204,6 +204,57 @@
   100% { --b: 14px; opacity: 1; }
 }
 
+/* Collapsed panels keep their full outline (--b:51%) — they must NOT retract to
+   brackets (hence :not(.collapsed) above) — but still fade that outline IN with the
+   frame, so a collapsed panel is part of the "nothing → materialize" sequence instead
+   of showing a static outline from t=0 during the seed phase. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel.collapsed::after {
+    animation: nerv-boot-draw-collapsed 400ms cubic-bezier(0.45, 0, 0.15, 1) both;
+    animation-delay: calc(var(--boot-i, 0) * 105ms + 340ms);
+  }
+}
+@keyframes nerv-boot-draw-collapsed {
+  0%   { --b: 51%; opacity: 0; }
+  18%  { --b: 51%; opacity: 1; }
+  100% { --b: 51%; opacity: 1; }
+}
+
+/* Panel BOX reveal — the panel's own background + border start invisible so at t=0
+   there is genuinely NOTHING (no dark panel box), only the materialize square on the
+   app backdrop. The box fades in as the ::before fill drains into the outline (~46-70%
+   of 720ms), so the frame appears to "deposit" the panel. Animates .panel's own
+   background/border only — the ::before/::after overlays are unaffected. The keyframe
+   ends at the resting tokens, so when [data-boot] lifts the base rule takes over seamlessly. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel {
+    animation: nerv-boot-box 720ms ease-out both;
+    animation-delay: calc(var(--boot-i, 0) * 105ms);
+  }
+}
+@keyframes nerv-boot-box {
+  0%, 46% { background-color: transparent; border-color: transparent; }
+  70%     { background-color: var(--panel-bg); border-color: var(--border); }
+  100%    { background-color: var(--panel-bg); border-color: var(--border); }
+}
+
+/* Panel CONTENT reveal — the header + body (`.panel > *`, which excludes the ::before/
+   ::after materialize pseudos) start hidden and fade+rise in AFTER the frame has
+   materialized, so the sequence reads: nothing → red square/frame → content. Staggered
+   per panel by the same --boot-i. `both` holds opacity:0 through the delay (no flash of
+   content) and opacity:1 after (until [data-boot] lifts → base takes over). */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel > * {
+    animation: nerv-boot-content 820ms ease-out both;
+    animation-delay: calc(var(--boot-i, 0) * 105ms);
+  }
+}
+@keyframes nerv-boot-content {
+  0%, 62% { opacity: 0; transform: translateY(4px); }
+  82%     { opacity: 1; transform: none; }
+  100%    { opacity: 1; transform: none; }
+}
+
 /* ── One-shot timeline "graph builds itself" reveal ────────────────────────
    Armed exactly once per repo-identity change / same-repo Local Changes→Timeline
    switch (store.svelte.ts → appState.revealing). NOT a clip-path mask over the
