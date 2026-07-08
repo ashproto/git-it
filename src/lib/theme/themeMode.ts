@@ -6,6 +6,12 @@
 // so this synchronous read is current on the next launch.
 const THEME_KEY = "gitit.theme.v1";
 
+// Same pre-paint mechanism for the NERV color scheme preset (see store.svelte.ts
+// persistScheme, Task 4). Setting data-scheme unconditionally (even "orange", the
+// default) is harmless — it's only consumed by CSS when data-theme="nerv" is also set.
+const SCHEME_KEY = "gitit.scheme.v1";
+const VALID_SCHEMES = new Set(["orange", "phosphor", "steel", "amber", "violet", "crimson"]);
+
 function applySavedTheme(): void {
   if (typeof document === "undefined") return;
   try {
@@ -19,4 +25,16 @@ function applySavedTheme(): void {
   }
 }
 
+function applySavedScheme(): void {
+  if (typeof document === "undefined") return;
+  try {
+    if (typeof localStorage === "undefined") return;
+    const saved = localStorage.getItem(SCHEME_KEY);
+    document.documentElement.dataset.scheme = saved && VALID_SCHEMES.has(saved) ? saved : "orange";
+  } catch {
+    // ignore — "orange" is a safe default
+  }
+}
+
 applySavedTheme();
+applySavedScheme();

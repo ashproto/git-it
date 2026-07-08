@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { LANE_PALETTE, NERV_LANE_PALETTE, laneColor } from "./colors";
+import { LANE_PALETTE, NERV_LANE_PALETTE, laneColor, schemeLanePalette } from "./colors";
 
 describe("laneColor", () => {
   it("returns the palette color for a color index", () => {
@@ -35,5 +35,15 @@ describe("laneColor", () => {
   });
   it("defaults to the classic palette when no palette is passed", () => {
     expect(laneColor(3, null, {})).toBe(LANE_PALETTE[3]);
+  });
+});
+
+describe("schemeLanePalette", () => {
+  it("returns the scheme's lead-accent palette", () => {
+    expect(schemeLanePalette("phosphor")[0]).toBe("#46E88B");
+  });
+
+  it("returns the same NERV_LANE_PALETTE reference for orange (no allocation)", () => {
+    expect(schemeLanePalette("orange")).toBe(NERV_LANE_PALETTE);
   });
 });

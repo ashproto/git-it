@@ -3,7 +3,16 @@
 import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
-import { computeLanes, laneColor, LANE_PALETTE, NERV_LANE_PALETTE, type MergeInStyle } from "./graph";
+import {
+  computeLanes,
+  laneColor,
+  LANE_PALETTE,
+  NERV_LANE_PALETTE,
+  NERV_SCHEME_PALETTES,
+  schemeLanePalette,
+  type MergeInStyle,
+  type Scheme,
+} from "./graph";
 import { reorder } from "./reorder";
 
 // Preferences persist via the Tauri Store plugin (a JSON file written by Rust) so
@@ -63,6 +72,9 @@ const LINESTYLE_STORE_KEY = "graphLineStyle";
 
 const THEME_KEY = "gitit.theme.v1";       // localStorage (also read synchronously by themeMode.ts)
 const THEME_STORE_KEY = "theme";          // Tauri store (durable)
+
+const SCHEME_KEY = "gitit.scheme.v1";     // localStorage (also read synchronously by themeMode.ts)
+const SCHEME_STORE_KEY = "scheme";        // Tauri store (durable)
 
 const MERGEINSTYLE_KEY = "gitit.graphMergeInStyle.v1";
 const MERGEINSTYLE_STORE_KEY = "graphMergeInStyle";
@@ -197,6 +209,32 @@ function applyThemeAttr(t: "classic" | "nerv"): void {
   if (typeof document === "undefined") return;
   if (t === "nerv") document.documentElement.setAttribute("data-theme", "nerv");
   else document.documentElement.removeAttribute("data-theme");
+}
+
+// Own-property check (not `in`) so a malformed localStorage/store value like
+// "__proto__" can't resolve through the prototype chain instead of failing validation.
+function isScheme(v: unknown): v is Scheme {
+  return typeof v === "string" && Object.prototype.hasOwnProperty.call(NERV_SCHEME_PALETTES, v);
+}
+
+// DEVIATION vs loadSyncLineStyle: reads localStorage UNCONDITIONALLY (incl. under
+// Tauri) so the store seed matches what themeMode.ts already painted pre-paint.
+function loadSyncScheme(): Scheme {
+  try {
+    if (typeof localStorage === "undefined") return "orange";
+    const raw = localStorage.getItem(SCHEME_KEY);
+    return isScheme(raw) ? raw : "orange";
+  } catch {
+    return "orange";
+  }
+}
+
+// Reflect the scheme onto <html> imperatively — NO $effect (module-scope factory).
+// Always set (even "orange") — harmless, and keeps the attribute present for CSS
+// that may later key off it regardless of value.
+function applySchemeAttr(s: Scheme): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.scheme = s;
 }
 
 function loadSyncMergeInStyle(): MergeInStyle {
@@ -741,6 +779,40 @@ function makeState() {
         await store.set(THEME_STORE_KEY, snapshot);
         await store.save();
       }).catch((e) => console.warn("[gte] could not persist theme (store)", e));
+    }
+  }
+
+  let scheme = $state<Scheme>(loadSyncScheme());
+  let schemeTouched = false;
+
+  const schemeHydrate = getStore();
+  if (schemeHydrate) {
+    schemeHydrate
+      .then((store) => store.get<string>(SCHEME_STORE_KEY))
+      .then((saved) => {
+        if (isScheme(saved) && !schemeTouched) {
+          scheme = saved;
+          applySchemeAttr(saved);
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load scheme", e));
+  }
+
+  function persistScheme() {
+    const snapshot = scheme;
+    // DEVIATION vs persistLineStyle: write localStorage in BOTH branches so
+    // themeMode.ts's synchronous pre-paint read is always current.
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(SCHEME_KEY, snapshot);
+    } catch (e) {
+      console.warn("[gte] could not persist scheme (localStorage)", e);
+    }
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(SCHEME_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist scheme (store)", e));
     }
   }
 
@@ -1547,7 +1619,7 @@ function makeState() {
     colorForRef(name: string, sha: string): string {
       const ov = branchColors[repo]?.[name];
       if (ov) return ov;
-      const palette = theme === "nerv" ? NERV_LANE_PALETTE : LANE_PALETTE;
+      const palette = theme === "nerv" ? schemeLanePalette(scheme) : LANE_PALETTE;
       const idx = colorBySha.get(sha);
       if (idx === undefined) return laneColor(0, null, {}, palette);
       return overrideByIndex.get(idx) ?? laneColor(idx, null, {}, palette);
@@ -1556,7 +1628,7 @@ function makeState() {
     // lane has one, else the palette colour. Used by the gutter so an override
     // recolours the descending lane line, not just the sidebar dot.
     colorForIndex(idx: number): string {
-      const palette = theme === "nerv" ? NERV_LANE_PALETTE : LANE_PALETTE;
+      const palette = theme === "nerv" ? schemeLanePalette(scheme) : LANE_PALETTE;
       return overrideByIndex.get(idx) ?? laneColor(idx, null, {}, palette);
     },
     setBranchColor(name: string, hex: string) {
@@ -1604,6 +1676,15 @@ function makeState() {
       theme = v;
       applyThemeAttr(v);
       persistTheme();
+    },
+    get scheme() {
+      return scheme;
+    },
+    setScheme(v: Scheme) {
+      schemeTouched = true;
+      scheme = v;
+      applySchemeAttr(v);
+      persistScheme();
     },
     get graphMergeInStyle() {
       return graphMergeInStyle;
