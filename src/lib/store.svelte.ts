@@ -214,6 +214,18 @@ function applyThemeAttr(t: "classic" | "nerv"): void {
   else document.documentElement.removeAttribute("data-theme");
 }
 
+// One-shot NERV "boot reveal" pulse (Task 8) — mirrors themeMode.ts's launch-time
+// pulse for the Classic→NERV toggle path. Caller is responsible for only invoking
+// this when motion is on (see setTheme). CSS keyframes gated on [data-boot] +
+// reduced-motion live in nerv-motion.css.
+function pulseBootReveal(): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.boot = "";
+  setTimeout(() => {
+    delete document.documentElement.dataset.boot;
+  }, 600);
+}
+
 // Own-property check (not `in`) so a malformed localStorage/store value like
 // "__proto__" can't resolve through the prototype chain instead of failing validation.
 function isScheme(v: unknown): v is Scheme {
@@ -1736,6 +1748,7 @@ function makeState() {
       theme = v;
       applyThemeAttr(v);
       persistTheme();
+      if (v === "nerv" && motion) pulseBootReveal();
     },
     get scheme() {
       return scheme;

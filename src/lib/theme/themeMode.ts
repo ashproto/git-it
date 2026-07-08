@@ -59,6 +59,22 @@ function applySavedMotion(): void {
   }
 }
 
+// One-shot NERV "boot reveal" pulse (Task 8) — plays only when NERV is the
+// saved theme AND motion is on (data-motion="on", set by applySavedMotion
+// just above). CSS keyframes gated on [data-boot] live in nerv-motion.css;
+// reduced-motion is handled there too, so no need to duplicate that check.
+function pulseBootReveal(): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (root.getAttribute("data-theme") !== "nerv") return;
+  if (root.dataset.motion !== "on") return;
+  root.dataset.boot = "";
+  setTimeout(() => {
+    delete root.dataset.boot;
+  }, 600);
+}
+
 applySavedTheme();
 applySavedScheme();
 applySavedMotion();
+pulseBootReveal();

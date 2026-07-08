@@ -71,3 +71,50 @@
   }
 }
 @keyframes nerv-live-blink { 50% { opacity: 0.2; } }
+
+/* ── One-shot "boot reveal" on NERV activation (Task 8) ───────────────────
+   Pulsed via a brief [data-boot] attribute on <html> (~600ms, set by
+   themeMode.ts on launch-with-NERV-saved and store.svelte.ts's setTheme on
+   Classic→NERV toggle). Same double-gate as the rest of this file
+   ([data-motion="on"] + reduced-motion); transform/opacity only. */
+
+/* Scanline sweep — reuses the ambient-drift ::before pseudo (added [data-boot]
+   attribute selector makes this MORE specific than the drift rule above, so
+   it wins for the boot window and the infinite drift resumes once [data-boot]
+   is removed). */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot]::before {
+    animation: nerv-boot-sweep 550ms ease-out both;
+  }
+}
+@keyframes nerv-boot-sweep {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Corner-bracket draw-in — brackets settle in with a brief scale+opacity pop,
+   slightly staggered after the sweep starts. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel::after,
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .dialog::after {
+    animation: nerv-boot-brackets 400ms ease-out 100ms both;
+  }
+}
+@keyframes nerv-boot-brackets {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Shell fade/scale-up — the whole rendered app (header, panels, status bar)
+   fades and settles into place. Targets <body> rather than a specific
+   component class so this file stays Svelte-free, matching the rest of the
+   file's global, plain-CSS approach. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] body {
+    animation: nerv-boot-shell 500ms ease-out both;
+  }
+}
+@keyframes nerv-boot-shell {
+  from { transform: scale(0.98); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
