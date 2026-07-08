@@ -134,7 +134,10 @@
     animation: nerv-graph-grow 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 }
-@keyframes nerv-graph-grow {          /* reveal edge sweeps UP: bottom-only → full */
-  from { clip-path: inset(92% 0 0 0); }
+@keyframes nerv-graph-grow {          /* reveal edge sweeps UP: content-bottom → full */
+  /* --reveal-start is set by GraphHistory to the content's extent as a % of the
+     viewport (capped 95%), so the sweep spans the actual commits and a short graph
+     doesn't dwell on the empty space below it. Falls back to 92% if unset. */
+  from { clip-path: inset(var(--reveal-start, 92%) 0 0 0); }
   to   { clip-path: inset(0 0 0 0); }
 }

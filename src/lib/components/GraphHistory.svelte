@@ -47,6 +47,30 @@
   let wrapEl = $state<HTMLElement>();
   let headEl = $state<HTMLElement>();
   let histEl = $state<HTMLElement>();
+
+  // NERV timeline reveal (nerv-motion.css `.nerv-graph-reveal` → nerv-graph-grow wipe).
+  // Driven imperatively (not via `class:`) so `--reveal-start` is set BEFORE the class
+  // is added — otherwise the clip-path `from` reads its 92% default on the first frame.
+  // --reveal-start = the content's bottom as a % of the viewport (capped 95%), so the
+  // bottom→top sweep spans exactly the commits instead of dwelling on empty space below
+  // a short graph. Gating (data-motion/reduced-motion/theme) lives in the CSS, so this
+  // safely no-ops in Classic / motion-off (the class is inert there).
+  $effect(() => {
+    if (!revealing || !wrapEl || !histEl) return;
+    const el = wrapEl;
+    const vh = el.clientHeight;
+    if (vh <= 0) return;
+    const contentBottomPx = histEl.getBoundingClientRect().bottom - el.getBoundingClientRect().top;
+    const pct = Math.min(95, Math.max(10, (contentBottomPx / vh) * 100));
+    el.style.setProperty("--reveal-start", `${pct.toFixed(1)}%`);
+    el.classList.add("nerv-graph-reveal");
+    const t = setTimeout(() => el.classList.remove("nerv-graph-reveal"), 800);
+    return () => {
+      clearTimeout(t);
+      el.classList.remove("nerv-graph-reveal");
+    };
+  });
+
   let winStart = $state(0);
   // Seed a generous initial window so the very first paint shows rows before the
   // geometry effect refines the range (avoids an empty flash on mount).
@@ -400,7 +424,6 @@
 
   <div
     class="wrap"
-    class:nerv-graph-reveal={revealing}
     bind:this={wrapEl}
     onscroll={onWrapScroll}
     style={colVars}
