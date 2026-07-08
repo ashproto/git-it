@@ -9,7 +9,7 @@ export const LANE_PALETTE: string[] = [
   "#5F5E5A",
 ];
 
-export const NERV_LANE_PALETTE: string[] = [
+export const NERV_LANE_PALETTE: readonly string[] = Object.freeze([
   "#F2542D", // orange (lead)
   "#46E88B", // phosphor
   "#5AA9E6", // steel-cyan
@@ -18,7 +18,7 @@ export const NERV_LANE_PALETTE: string[] = [
   "#E0608A", // pink
   "#EAE6DA", // bone
   "#8A94A0", // haze
-];
+]);
 
 export type Scheme = "orange" | "phosphor" | "steel" | "amber" | "violet" | "crimson";
 // Each leads with the scheme accent; the rest are shared NERV secondaries (tuned in QA).

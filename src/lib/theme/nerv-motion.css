@@ -18,7 +18,10 @@
    drift-cycle (-4px) so translating down never reveals a seam at the edge.
    The pattern's period is 4px (1px line + 3px gap), matching the 4px drift
    distance, so the loop is seamless. */
-:root[data-theme="nerv"]::before {
+/* Gated on [data-motion="on"] so motion-off NERV renders NO extra scanline layer
+   and matches nerv.css's base static appearance; the drift animation below adds
+   the same [prefers-reduced-motion] gate. */
+:root[data-theme="nerv"][data-motion="on"]::before {
   content: "";
   position: fixed;
   inset: -4px 0 0 0;
