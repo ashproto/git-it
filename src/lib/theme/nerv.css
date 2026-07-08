@@ -187,6 +187,54 @@
   background-size: 100% 2px;
 }
 
+/* B5 — toolbar buttons (Fetch/Pull/Push [+ split push-main/push-arrow], Manage/
+   Settings gears) styled as website-style ghost console buttons — mirrors
+   website/assets/css/styles.css .btn-ghost (mono, uppercase, tracked, hairline
+   border, corner-bracket L-marks). Compact toolbar sizing (padding/font-size/
+   gear dimensions) is UNCHANGED — set in +page.svelte's untouched Classic rules
+   (~958-1044) and simply inherited here; only family/case/tracking/border/fill/
+   radius/pseudo-marks are added. All buttons stay ghost (no accent fill) for a
+   uniform, clean toolbar. Verified: .fetch-btn/.push-main/.push-arrow/.gear-btn
+   have no pre-existing ::before/::after in Classic, so no collision. The bracket
+   marks are opacity:0 at rest; the gated hover reveal + lift live in
+   nerv-motion.css (same selectors). */
+:root[data-theme="nerv"] .fetch-btn,
+:root[data-theme="nerv"] .gear-btn {
+  position: relative;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-color: var(--border);
+  background: var(--btn-bg);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+}
+:root[data-theme="nerv"] .fetch-btn::before,
+:root[data-theme="nerv"] .fetch-btn::after,
+:root[data-theme="nerv"] .gear-btn::before,
+:root[data-theme="nerv"] .gear-btn::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+:root[data-theme="nerv"] .fetch-btn::before,
+:root[data-theme="nerv"] .gear-btn::before {
+  left: 2px;
+  top: 2px;
+  border-left: 1px solid var(--accent);
+  border-top: 1px solid var(--accent);
+}
+:root[data-theme="nerv"] .fetch-btn::after,
+:root[data-theme="nerv"] .gear-btn::after {
+  right: 2px;
+  bottom: 2px;
+  border-right: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+}
+
 /* ── Scheme presets — recolor --accent/--accent-hover only; every other NERV
    token (including --err/--status-mod, decoupled to amber above) is untouched,
    so warnings/detached-HEAD/modified stay amber regardless of scheme. Bare

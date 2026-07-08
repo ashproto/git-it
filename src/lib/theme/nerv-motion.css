@@ -66,6 +66,36 @@
   }
 }
 
+/* ── Toolbar button corner-bracket hover + lift (Task 5) ──────────────────
+   Fetch/Pull/Push (+ split push-main/push-arrow) and Manage/Settings gear
+   buttons — the corner-bracket pseudos (nerv.css B5) reveal on hover with a
+   small lift, mirroring the website's .btn-ghost:hover treatment. `:not(:disabled)`
+   matches the existing Classic `.fetch-btn:hover:not(:disabled)` gate so a busy/
+   no-remote button doesn't lift; .gear-btn has no disabled state so plain :hover
+   suffices there. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn,
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn {
+    transition: transform 120ms ease;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn::before,
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn::after,
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn::before,
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn::after {
+    transition: opacity 120ms ease;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn:hover:not(:disabled),
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn:hover {
+    transform: translateY(-1px);
+  }
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn:hover:not(:disabled)::before,
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn:hover:not(:disabled)::after,
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn:hover::before,
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn:hover::after {
+    opacity: 1;
+  }
+}
+
 /* ── Op spinner "● LIVE" blink ────────────────────────────────────────────
    Static appearance (border/radius/background) lives in nerv.css; only the
    blink animation is gated here (moved from nerv.css, Task 7). */
