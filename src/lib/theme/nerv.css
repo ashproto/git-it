@@ -192,11 +192,17 @@
 /* Op spinner → phosphor "● LIVE" dot (only visible during an operation). This
    is the STATIC appearance; the blink animation lives in nerv-motion.css,
    gated on data-motion="on" + prefers-reduced-motion:no-preference (Task 7) —
-   motion-off/reduced-motion still shows a solid dot, just not blinking. */
+   motion-off/reduced-motion still shows a solid dot, just not blinking.
+   `animation: none` is load-bearing: StatusBar.svelte's base `.spinner` carries
+   `animation: pulse …`, which this rule does NOT otherwise override — so without it
+   the Classic pulse leaks through in static NERV (motion-off / reduced-motion). The
+   gated nerv-motion.css rule ([data-motion="on"]) is more specific and re-enables the
+   blink when motion is on. */
 :root[data-theme="nerv"] .spinner {
   border: none;
   border-radius: 50%;
   background: var(--status-add);
+  animation: none;
 }
 
 /* Persistent "live" dot — always present in NERV (unlike .spinner above,

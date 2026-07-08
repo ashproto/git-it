@@ -866,6 +866,15 @@ function makeState() {
         if ((saved === "classic" || saved === "nerv") && !themeTouched) {
           theme = saved;
           applyThemeAttr(saved);
+          // Refresh the pre-paint mirror themeMode.ts reads. The durable copy is the Tauri
+          // store; if localStorage was dropped/stale (the case this module exists to survive)
+          // the next launch would keep painting the stale theme until this async hydrate runs
+          // again — so write the accepted value back to the mirror now.
+          try {
+            if (typeof localStorage !== "undefined") localStorage.setItem(THEME_KEY, saved);
+          } catch (e) {
+            console.warn("[gte] could not refresh theme mirror", e);
+          }
         }
       })
       .catch((e) => console.warn("[gte] could not load theme", e));
@@ -900,6 +909,12 @@ function makeState() {
         if (isScheme(saved) && !schemeTouched) {
           scheme = saved;
           applySchemeAttr(saved);
+          // Refresh the pre-paint mirror themeMode.ts reads (see theme hydrate above).
+          try {
+            if (typeof localStorage !== "undefined") localStorage.setItem(SCHEME_KEY, saved);
+          } catch (e) {
+            console.warn("[gte] could not refresh scheme mirror", e);
+          }
         }
       })
       .catch((e) => console.warn("[gte] could not load scheme", e));
@@ -934,6 +949,12 @@ function makeState() {
         if ((saved === "on" || saved === "off") && !motionTouched) {
           motion = saved === "on";
           applyMotionAttr(motion);
+          // Refresh the pre-paint mirror themeMode.ts reads (see theme hydrate above).
+          try {
+            if (typeof localStorage !== "undefined") localStorage.setItem(MOTION_KEY, saved);
+          } catch (e) {
+            console.warn("[gte] could not refresh motion mirror", e);
+          }
         }
       })
       .catch((e) => console.warn("[gte] could not load motion", e));
