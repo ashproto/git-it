@@ -79,6 +79,21 @@ pub fn run() {
                     _ => {}
                 });
             }
+
+            // The main window launches hidden (visible:false in tauri.conf.json) so the
+            // native glass never flashes before the webview paints. The frontend reveals
+            // it after the first composited frame (+page.svelte onMount). This is the
+            // backstop: if that path never runs (JS bundle fails to load, throws before
+            // mount), force the window visible after a short delay so the app can never
+            // launch to a permanently-invisible window. show() is idempotent, so the
+            // normal frontend reveal and this one can't conflict.
+            #[cfg(desktop)]
+            if let Some(win) = app.get_webview_window("main") {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(1200));
+                    let _ = win.show();
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
