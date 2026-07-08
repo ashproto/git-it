@@ -58,9 +58,9 @@ describe("angularEdgePath", () => {
     expect(angularEdgePath(edge(0, 1, "branch"), 0, g)).toBe("M12 0 L12 15 L28 30");
   });
   it("stubs out of the node before angling for a fork/lane-shift edge", () => {
-    expect(angularEdgePath(edge(0, 1, "merge"), 0, g)).toBe("M12 0 L12 6 L28 24 L28 30");
+    expect(angularEdgePath(edge(0, 1, "merge"), 0, g)).toBe("M12 0 L12 12.6 L28 17.4 L28 30");
   });
   it("stubs out of the node before angling for a merge edge (other direction)", () => {
-    expect(angularEdgePath(edge(1, 0, "merge"), 0, g)).toBe("M28 0 L28 6 L12 24 L12 30");
+    expect(angularEdgePath(edge(1, 0, "merge"), 0, g)).toBe("M28 0 L28 12.6 L12 17.4 L12 30");
   });
 });
