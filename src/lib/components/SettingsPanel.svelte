@@ -165,6 +165,15 @@
                 {/each}
               </div>
             </div>
+
+            <label class="opt">
+              <input
+                type="checkbox"
+                checked={appState.motion}
+                onchange={() => appState.setMotion(!appState.motion)}
+              />
+              <span>NERV motion (scanline drift, hover glow)</span>
+            </label>
           {/if}
 
           <div class="seg-row">

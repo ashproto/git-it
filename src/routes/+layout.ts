@@ -5,5 +5,6 @@
 import "$lib/tauriMode";
 import "$lib/theme/themeMode"; // sets data-theme before paint (no-FOUC)
 import "$lib/theme/nerv.css";  // global NERV stylesheet
+import "$lib/theme/nerv-motion.css"; // NERV ambient/interaction motion (gated on data-motion)
 
 export const ssr = false;

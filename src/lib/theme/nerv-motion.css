@@ -1,0 +1,73 @@
+/* NERV motion — ambient drift + interaction transitions (Task 7). Plain CSS
+   (not Svelte), so bare `:root[data-theme="nerv"]…` selectors reach every
+   host globally — NEVER `:global()`, which is Svelte-only and silently
+   dropped here (see nerv.css's B1 comment for the same gotcha).
+
+   EVERY rule below is double-gated on `:root[data-theme="nerv"][data-motion="on"]`
+   AND `@media (prefers-reduced-motion: no-preference)`. Motion-off OR
+   reduced-motion ⇒ no animation/transition — NERV falls back to fully static,
+   matching nerv.css's base (non-motion) appearance byte-for-byte. */
+
+/* ── Ambient scanline drift ───────────────────────────────────────────────
+   A SEPARATE thin layer from nerv.css's static root ::after (grid + accent
+   wash) — the drift never touches that texture, so ::after can stay static
+   by design. transform-only (translateY) keeps this on the compositor's fast
+   path: animating background-position/opacity on a full-viewport fixed layer
+   would repaint every frame under the backdrop-filter panels (the exact
+   framerate wall nerv.css's B1 comment calls out). Overscan the top by one
+   drift-cycle (-4px) so translating down never reveals a seam at the edge.
+   The pattern's period is 4px (1px line + 3px gap), matching the 4px drift
+   distance, so the loop is seamless. */
+:root[data-theme="nerv"]::before {
+  content: "";
+  position: fixed;
+  inset: -4px 0 0 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 4px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"]::before {
+    animation: nerv-scanline-drift 8s linear infinite;
+  }
+}
+@keyframes nerv-scanline-drift {
+  to { transform: translateY(4px); } /* transform only */
+}
+
+/* ── Interaction motion ───────────────────────────────────────────────────
+   Corner brackets (nerv.css B3) brighten on hover — filter:brightness is a
+   real animatable property (unlike the `--c` custom property feeding the
+   gradients, which won't interpolate without @property registration). */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"] .panel::after,
+  :root[data-theme="nerv"][data-motion="on"] .dialog::after {
+    transition: filter 150ms ease;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .panel:hover::after,
+  :root[data-theme="nerv"][data-motion="on"] .dialog:hover::after {
+    filter: brightness(1.4);
+  }
+
+  /* Active-segment (SettingsPanel .seg buttons) + row-selection (GraphHistory
+     .row / .wc-row) — short background transitions instead of an instant
+     snap. Row selection changes rarely (click/keyboard nav, not per-frame),
+     so this doesn't reintroduce a scroll-time repaint cost. */
+  :root[data-theme="nerv"][data-motion="on"] .seg button {
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .row,
+  :root[data-theme="nerv"][data-motion="on"] .wc-row {
+    transition: background-color 120ms ease;
+  }
+}
+
+/* ── Op spinner "● LIVE" blink ────────────────────────────────────────────
+   Static appearance (border/radius/background) lives in nerv.css; only the
+   blink animation is gated here (moved from nerv.css, Task 7). */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"] .spinner {
+    animation: nerv-live-blink 1.2s steps(1, end) infinite;
+  }
+}
+@keyframes nerv-live-blink { 50% { opacity: 0.2; } }

@@ -76,6 +76,9 @@ const THEME_STORE_KEY = "theme";          // Tauri store (durable)
 const SCHEME_KEY = "gitit.scheme.v1";     // localStorage (also read synchronously by themeMode.ts)
 const SCHEME_STORE_KEY = "scheme";        // Tauri store (durable)
 
+const MOTION_KEY = "gitit.motion.v1";     // localStorage (also read synchronously by themeMode.ts)
+const MOTION_STORE_KEY = "motion";        // Tauri store (durable)
+
 const MERGEINSTYLE_KEY = "gitit.graphMergeInStyle.v1";
 const MERGEINSTYLE_STORE_KEY = "graphMergeInStyle";
 
@@ -235,6 +238,29 @@ function loadSyncScheme(): Scheme {
 function applySchemeAttr(s: Scheme): void {
   if (typeof document === "undefined") return;
   document.documentElement.dataset.scheme = s;
+}
+
+// INVERTED default vs loadSyncTheme/loadSyncScheme: motion defaults to ON
+// (attribute PRESENT by default) — only an explicit "off" disables it, so an
+// absent/malformed key must not silently turn motion off. Still reads
+// localStorage UNCONDITIONALLY (incl. under Tauri) so the store seed matches
+// what themeMode.ts already painted pre-paint.
+function loadSyncMotion(): boolean {
+  try {
+    if (typeof localStorage === "undefined") return true;
+    return localStorage.getItem(MOTION_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+// Reflect motion onto <html> imperatively — NO $effect (module-scope factory).
+// INVERTED vs applyThemeAttr: "on" SETS the attribute (default-present); "off"
+// removes it.
+function applyMotionAttr(on: boolean): void {
+  if (typeof document === "undefined") return;
+  if (on) document.documentElement.setAttribute("data-motion", "on");
+  else document.documentElement.removeAttribute("data-motion");
 }
 
 function loadSyncMergeInStyle(): MergeInStyle {
@@ -813,6 +839,40 @@ function makeState() {
         await store.set(SCHEME_STORE_KEY, snapshot);
         await store.save();
       }).catch((e) => console.warn("[gte] could not persist scheme (store)", e));
+    }
+  }
+
+  let motion = $state<boolean>(loadSyncMotion());
+  let motionTouched = false;
+
+  const motionHydrate = getStore();
+  if (motionHydrate) {
+    motionHydrate
+      .then((store) => store.get<string>(MOTION_STORE_KEY))
+      .then((saved) => {
+        if ((saved === "on" || saved === "off") && !motionTouched) {
+          motion = saved === "on";
+          applyMotionAttr(motion);
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load motion", e));
+  }
+
+  function persistMotion() {
+    const snapshot = motion ? "on" : "off";
+    // DEVIATION vs persistLineStyle: write localStorage in BOTH branches so
+    // themeMode.ts's synchronous pre-paint read is always current.
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(MOTION_KEY, snapshot);
+    } catch (e) {
+      console.warn("[gte] could not persist motion (localStorage)", e);
+    }
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(MOTION_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist motion (store)", e));
     }
   }
 
@@ -1685,6 +1745,15 @@ function makeState() {
       scheme = v;
       applySchemeAttr(v);
       persistScheme();
+    },
+    get motion() {
+      return motion;
+    },
+    setMotion(v: boolean) {
+      motionTouched = true;
+      motion = v;
+      applyMotionAttr(v);
+      persistMotion();
     },
     get graphMergeInStyle() {
       return graphMergeInStyle;

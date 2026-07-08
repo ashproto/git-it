@@ -12,6 +12,12 @@ const THEME_KEY = "gitit.theme.v1";
 const SCHEME_KEY = "gitit.scheme.v1";
 const VALID_SCHEMES = new Set(["orange", "phosphor", "steel", "amber", "violet", "crimson"]);
 
+// Same pre-paint mechanism for the NERV motion setting (see store.svelte.ts
+// persistMotion, Task 7). INVERTED default vs theme/scheme: motion defaults to
+// ON (attribute PRESENT by default) — only an explicit "off" removes it, so an
+// absent/malformed key must not silently disable motion.
+const MOTION_KEY = "gitit.motion.v1";
+
 function applySavedTheme(): void {
   if (typeof document === "undefined") return;
   try {
@@ -36,5 +42,23 @@ function applySavedScheme(): void {
   }
 }
 
+function applySavedMotion(): void {
+  if (typeof document === "undefined") return;
+  try {
+    if (typeof localStorage === "undefined") {
+      document.documentElement.setAttribute("data-motion", "on");
+      return;
+    }
+    // "off" → attribute absent; anything else (incl. absent key) → attribute
+    // present ("on" is the default).
+    if (localStorage.getItem(MOTION_KEY) !== "off") {
+      document.documentElement.setAttribute("data-motion", "on");
+    }
+  } catch {
+    document.documentElement.setAttribute("data-motion", "on"); // ignore — motion-on is the safe default
+  }
+}
+
 applySavedTheme();
 applySavedScheme();
+applySavedMotion();

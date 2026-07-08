@@ -134,16 +134,14 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
-/* Op spinner → phosphor "● LIVE" blink dot (only visible during an operation). */
+/* Op spinner → phosphor "● LIVE" dot (only visible during an operation). This
+   is the STATIC appearance; the blink animation lives in nerv-motion.css,
+   gated on data-motion="on" + prefers-reduced-motion:no-preference (Task 7) —
+   motion-off/reduced-motion still shows a solid dot, just not blinking. */
 :root[data-theme="nerv"] .spinner {
   border: none;
   border-radius: 50%;
   background: var(--status-add);
-  animation: nerv-live-blink 1.2s steps(1, end) infinite;
-}
-@keyframes nerv-live-blink { 50% { opacity: 0.2; } }
-@media (prefers-reduced-motion: reduce) {
-  :root[data-theme="nerv"] .spinner { animation: none; }
 }
 
 /* B4 — console header sigil (◇) on panel + dialog titles (Anton already applied in
