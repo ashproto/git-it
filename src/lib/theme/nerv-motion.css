@@ -124,52 +124,84 @@
   50%      { opacity: 0.5; transform: scale(0.8); }
 }
 
-/* ── One-shot "boot reveal" on NERV activation (Task 8) ───────────────────
-   Pulsed via a brief [data-boot] attribute on <html> (~600ms, set by
-   themeMode.ts on launch-with-NERV-saved and store.svelte.ts's setTheme on
-   Classic→NERV toggle). Same double-gate as the rest of this file
-   ([data-motion="on"] + reduced-motion); transform/opacity only. */
+/* ── One-shot NERV "materialize" boot ──────────────────────────────────────
+   Pulsed via [data-boot] on <html> (store.svelte.ts pulseBootReveal): on app
+   launch (+page onMount), on a Classic→NERV toggle (setTheme), and on every repo
+   switch (setGraphCommits). Each .panel "materializes": a tiny accent SQUARE grows
+   to the panel's footprint (filled), the fill drains to a full rectangular outline,
+   then that outline retracts into the four resting corner brackets — i.e. the
+   collapse animation played in reverse (--b 51% → 14px). Staggered per panel by
+   --boot-i; the square's start scale (--boot-sx/--boot-sy) is set per panel in JS so
+   it reads as a real square, not a panel-shaped sliver. Same double-gate as the rest
+   of this file; Classic / motion-off / reduced-motion get the static resting panel. */
 
-/* Scanline sweep — reuses the ambient-drift ::before pseudo (added [data-boot]
-   attribute selector makes this MORE specific than the drift rule above, so
-   it wins for the boot window and the infinite drift resumes once [data-boot]
-   is removed). */
+/* Power-on scan — a single bright accent band sweeps top→bottom over the whole
+   viewport. Overrides the ambient-drift ::before for the boot window (the [data-boot]
+   selector is more specific, so it wins; only background+animation are overridden —
+   position/inset/z-index fall through from the drift rule — and the drift resumes
+   once [data-boot] lifts). */
 @media (prefers-reduced-motion: no-preference) {
   :root[data-theme="nerv"][data-motion="on"][data-boot]::before {
-    animation: nerv-boot-sweep 550ms ease-out both;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      color-mix(in srgb, var(--accent) 6%, transparent) 44%,
+      color-mix(in srgb, var(--accent) 45%, transparent) 50%,
+      color-mix(in srgb, var(--accent) 6%, transparent) 56%,
+      transparent 100%
+    );
+    animation: nerv-boot-scan 640ms ease-in both;
   }
 }
-@keyframes nerv-boot-sweep {
-  from { transform: translateY(-100%); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+@keyframes nerv-boot-scan {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(100%); }
 }
 
-/* Per-panel cascade — each .panel fades + slides in, staggered by the
-   ascending --boot-i set on launch (themeMode.ts) / toggle (store.svelte.ts
-   setTheme) and cleared once [data-boot] lifts. */
+/* Per-panel materialize overlay. inset:0 = the panel box; --boot-sx/--boot-sy shrink
+   it to a ~24px centred square at 0%. It fades in, grows FILLED to the full panel,
+   drains to a border-only outline, then the outline fades as the ::after brackets
+   (below) take over. z-index:3 so the fill briefly covers the panel content. */
 @media (prefers-reduced-motion: no-preference) {
-  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel {
-    animation: nerv-boot-panel 380ms ease-out both;
-    animation-delay: calc(var(--boot-i, 0) * 70ms);
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    transform-origin: center;
+    border: 1.5px solid var(--accent);
+    background: var(--accent);
+    animation: nerv-mat 720ms cubic-bezier(0.45, 0, 0.15, 1) both;
+    animation-delay: calc(var(--boot-i, 0) * 105ms);
   }
 }
-@keyframes nerv-boot-panel {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
+@keyframes nerv-mat {
+  0%   { transform: scale(var(--boot-sx, 0.06), var(--boot-sy, 0.06)); background-color: var(--accent); border-color: var(--accent); opacity: 0; }
+  6%   { opacity: 1; }
+  30%  { transform: scale(1, 1); background-color: var(--accent); border-color: var(--accent); opacity: 1; }
+  48%  { transform: scale(1, 1); background-color: transparent;    border-color: var(--accent); opacity: 1; }
+  100% { transform: scale(1, 1); background-color: transparent;    border-color: transparent;   opacity: 0; }
 }
 
-/* Corner-bracket draw-on — arms extend from zero (--b, registered in nerv.css)
-   out to their resting 14px, staggered a touch after each panel's cascade. */
+/* Corner-bracket draw-on — the full outline (--b:51%, arms met, matching the
+   materialize overlay's outline stage) retracts into the four resting L-brackets
+   (--b:14px), so the outline visibly "opens" into the brackets. Timed to fade in as
+   the overlay reaches its outline stage (~48% of 720ms ≈ 346ms). .panel only —
+   dialogs keep their own nerv-dialog-in entrance. `:not(.collapsed)` because a
+   COLLAPSED panel's resting state IS the full outline (--b:51%, nerv.css) — it must
+   NOT retract to brackets and then snap/ease back to the outline when [data-boot]
+   lifts. Collapsed panels keep --b:51% throughout; their ::before fill still plays. */
 @media (prefers-reduced-motion: no-preference) {
-  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel::after,
-  :root[data-theme="nerv"][data-motion="on"][data-boot] .dialog::after {
-    animation: nerv-boot-draw 320ms ease-out both;
-    animation-delay: calc(var(--boot-i, 0) * 70ms + 120ms);
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel:not(.collapsed)::after {
+    animation: nerv-boot-draw 400ms cubic-bezier(0.45, 0, 0.15, 1) both;
+    animation-delay: calc(var(--boot-i, 0) * 105ms + 340ms);
   }
 }
 @keyframes nerv-boot-draw {
-  from { --b: 0px; opacity: 0; }
-  to { --b: 14px; opacity: 1; }
+  0%   { --b: 51%; opacity: 0; }
+  18%  { --b: 51%; opacity: 1; }
+  100% { --b: 14px; opacity: 1; }
 }
 
 /* ── One-shot timeline "graph builds itself" reveal ────────────────────────

@@ -39,7 +39,7 @@
   import { anyOverlayOpen } from "$lib/overlays";
   import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
-  import { onMount, untrack } from "svelte";
+  import { onMount, untrack, tick } from "svelte";
   import { slide } from "svelte/transition";
   import { appState } from "$lib/store.svelte";
   import { githubState } from "$lib/githubState.svelte";
@@ -258,13 +258,17 @@
     if (!inTauri && appState.graphCommits.length === 0) {
       appState.setGraphCommits(SAMPLE_GRAPH);
     }
-    // NERV boot reveal — fire now (post-mount, pre-first-paint) so the .panel
-    // elements exist to receive the staggered --boot-i cascade. themeMode.ts
-    // painted data-theme/data-motion before this ran; read them off <html> so we
-    // don't depend on store hydration order. No-op in Classic / motion-off.
+    // NERV materialize boot on the BROWSER launch path only. Wait for the reactive
+    // flush (tick) first: the commits panel renders from the setGraphCommits above, so
+    // it isn't in the DOM on this synchronous tick — without the wait it'd miss its
+    // measured --boot-i/scale. tick() resolves in a microtask (before paint), flash-free.
+    // Gated on !inTauri: under Tauri the sample isn't loaded here — the real repo loads
+    // async and its setGraphCommits(repoChanged) owns the launch boot, so firing here too
+    // would double-boot. themeMode.ts painted data-theme/data-motion before this ran; read
+    // them off <html> so we don't depend on store hydration order. No-op in Classic/motion-off.
     const rootEl = document.documentElement;
-    if (rootEl.dataset.theme === "nerv" && rootEl.dataset.motion === "on") {
-      appState.bootPulse();
+    if (!inTauri && rootEl.dataset.theme === "nerv" && rootEl.dataset.motion === "on") {
+      void tick().then(() => appState.bootPulse());
     }
     // Desktop: kick off the once-per-launch auto-update check, and route the
     // macOS app-menu items (emitted by src-tauri/src/lib.rs) to the same flows

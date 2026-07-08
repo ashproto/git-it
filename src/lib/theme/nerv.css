@@ -138,8 +138,11 @@
     linear-gradient(var(--c), var(--c)) 100% 100% / var(--w) var(--b);
   background-repeat: no-repeat;
 }
-/* GitHub screen is tokens-only — suppress its one .panel (ReviewBar) frame. */
-:root[data-theme="nerv"] .gh .panel::after { content: none; }
+/* GitHub screen is tokens-only — suppress its one .panel (ReviewBar) frame AND its
+   materialize overlay (nerv-motion.css .panel::before), so the frameless GitHub panel
+   never flashes a boot fill/outline. */
+:root[data-theme="nerv"] .gh .panel::after,
+:root[data-theme="nerv"] .gh .panel::before { content: none; }
 
 /* Context menu (ContextMenu.svelte) — same B3 corner-bracket treatment as .panel/
    .dialog, so the right-click popover reads as a NERV console menu. .menu is

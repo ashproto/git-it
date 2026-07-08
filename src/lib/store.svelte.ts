@@ -14,6 +14,7 @@ import {
   type Scheme,
 } from "./graph";
 import { reorder } from "./reorder";
+import { tick } from "svelte";
 
 // Preferences persist via the Tauri Store plugin (a JSON file written by Rust) so
 // they survive a force-quit/crash — macOS WKWebView flushes localStorage only
@@ -220,17 +221,40 @@ function applyThemeAttr(t: "classic" | "nerv"): void {
 // reduced-motion live in nerv-motion.css.
 // Task 7: panels get an ascending --boot-i so nerv-motion.css can stagger the
 // per-panel cascade + bracket draw-on.
+// How long [data-boot] stays on <html>. Must outlast the full staggered materialize:
+// last panel starts at (panelCount-1)*BOOT_STAGGER_MS and runs ~MAT_MS, plus headroom.
+const BOOT_MS = 1600;
+// A single owned teardown timer. Two pulses can overlap (a cold Tauri launch fires
+// onMount + the async repo-load, and rapid repo switches stack) — without this guard
+// the FIRST pulse's setTimeout would strip data-boot / --boot-* mid-animation of the
+// LATEST pulse. Clearing the prior timer means only the latest pulse owns cleanup.
+let bootTimer: ReturnType<typeof setTimeout> | null = null;
 function pulseBootReveal(): void {
   if (typeof document === "undefined") return;
+  if (bootTimer !== null) clearTimeout(bootTimer);
   document.documentElement.dataset.boot = "";
   const panels = document.querySelectorAll(".panel");
-  panels.forEach((el, i) => (el as HTMLElement).style.setProperty("--boot-i", String(i)));
-  setTimeout(() => {
+  const SQUARE_PX = 24; // start size of the materialize square
+  panels.forEach((el, i) => {
+    const p = el as HTMLElement;
+    p.style.setProperty("--boot-i", String(i));
+    // --boot-sx/--boot-sy = the scale that shrinks the inset:0 overlay to a ~24px
+    // SQUARE (not a panel-shaped sliver); nerv-motion.css's materialize keyframe
+    // starts there and grows to scale(1,1) = the full panel. Computed here (not via
+    // CSS calc on a custom prop) so it's a plain, well-supported number.
+    p.style.setProperty("--boot-sx", (SQUARE_PX / Math.max(1, p.offsetWidth)).toFixed(4));
+    p.style.setProperty("--boot-sy", (SQUARE_PX / Math.max(1, p.offsetHeight)).toFixed(4));
+  });
+  bootTimer = setTimeout(() => {
+    bootTimer = null;
     delete document.documentElement.dataset.boot;
-    panels.forEach((el) => (el as HTMLElement).style.removeProperty("--boot-i"));
-    // 1100ms so the staggered panel cascade + bracket draw-on completes before the
-    // window closes (keyframes end at the resting state, so overshoot degrades gracefully).
-  }, 1100);
+    panels.forEach((el) => {
+      const p = el as HTMLElement;
+      p.style.removeProperty("--boot-i");
+      p.style.removeProperty("--boot-sx");
+      p.style.removeProperty("--boot-sy");
+    });
+  }, BOOT_MS);
 }
 
 // Own-property check (not `in`) so a malformed localStorage/store value like
@@ -662,13 +686,25 @@ function makeState() {
   // delay ~≤650ms + the ~320ms edge-draw duration, plus headroom). If this fires
   // before the last row's animation ends, that row would snap to its resting state.
   const REVEAL_MS = 1100;
-  function armReveal() {
+  // On a repo switch the NERV panels play the "materialize" boot (square→outline→
+  // brackets, ~see nerv-motion.css). Per the chosen choreography the timeline draws
+  // AFTER the commits frame settles, so armReveal is called with this delay on a
+  // repo switch. A view switch (Local Changes→Timeline, no materialize) passes 0.
+  const REVEAL_AFTER_MAT_MS = 780;
+  function armReveal(delayMs = 0) {
     revealSeq++;
-    revealing = true;
     const seq = revealSeq;
-    setTimeout(() => {
-      if (revealSeq === seq) revealing = false;
-    }, REVEAL_MS);
+    const begin = () => {
+      if (revealSeq !== seq) return; // superseded before it could start
+      revealing = true;
+      setTimeout(() => {
+        if (revealSeq === seq) revealing = false;
+      }, REVEAL_MS);
+    };
+    // delayMs === 0 keeps the original synchronous behaviour (revealing flips true
+    // immediately) — the 5 reveal tests and every view-switch arm rely on that.
+    if (delayMs > 0) setTimeout(begin, delayMs);
+    else begin();
   }
   const rows = $derived(
     computeLanes(graphCommits.map((c) => ({ sha: c.sha, parents: c.parents }))),
@@ -2029,7 +2065,21 @@ function makeState() {
       currentSha = null;
       // NOTE: lastUndo is intentionally NOT cleared here — a destructive op reloads the
       // graph and we want the UndoBar to remain visible after that refresh.
-      if (repoChanged) armReveal();
+      if (repoChanged) {
+        // In NERV + motion, a repo switch re-runs the "materialize" boot on every panel
+        // (square→outline→brackets); the timeline reveal is delayed so it draws AFTER the
+        // commits frame has settled. In Classic / motion-off there's no materialize, so
+        // the reveal arms immediately (it's inert there anyway — the CSS is NERV-gated).
+        const nervMaterialize = theme === "nerv" && motion;
+        // Defer the DOM-measuring pulse until AFTER Svelte flushes: during a repo
+        // switch the commits panel is unmounted (GraphSkeleton shows while repoLoading);
+        // setting graphCommitsRepo=repo above flips +page's skeleton guard, so the next
+        // flush (awaited by tick) mounts the commits .panel — only then can pulseBootReveal
+        // measure it and set its --boot-i/--boot-sx/--boot-sy. Firing synchronously would
+        // miss it → a panel-shaped sliver with no stagger. (Mirrors the onMount tick fix.)
+        if (nervMaterialize) void tick().then(pulseBootReveal);
+        armReveal(nervMaterialize ? REVEAL_AFTER_MAT_MS : 0);
+      }
     },
     // Non-destructive graph update for a LIVE refresh (filesystem watcher / window
     // focus), as opposed to setGraphCommits (the repo-switch reset). Keeps the open
