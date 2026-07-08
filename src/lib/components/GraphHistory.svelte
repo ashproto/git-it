@@ -48,27 +48,33 @@
   let headEl = $state<HTMLElement>();
   let histEl = $state<HTMLElement>();
 
-  // NERV timeline reveal (nerv-motion.css `.nerv-graph-reveal` → nerv-graph-grow wipe).
-  // Driven imperatively (not via `class:`) so `--reveal-start` is set BEFORE the class
-  // is added — otherwise the clip-path `from` reads its 92% default on the first frame.
-  // --reveal-start = the content's bottom as a % of the viewport (capped 95%), so the
-  // bottom→top sweep spans exactly the commits instead of dwelling on empty space below
-  // a short graph. Gating (data-motion/reduced-motion/theme) lives in the CSS, so this
-  // safely no-ops in Classic / motion-off (the class is inert there).
+  // NERV timeline reveal — genuine per-element draw (nerv-motion.css): each gutter
+  // edge stroke-draws (.nerv-edge-draw) and each dot pops (.nerv-node-in), and each
+  // commit row fades in (.nerv-row-in), staggered bottom→top so the whole timeline
+  // reads as one continuous line growing upward with the entries arriving under it.
+  // `revealBottomIndex` (the last row of the first viewport) gets delay 0; rows above
+  // it climb by `revealStep` ms each. Both are captured once when `revealing` flips on
+  // (untracked geometry read) so mid-reveal scrolling doesn't recompute the stagger.
+  // Gating (theme/motion/reduced-motion) lives entirely in the CSS classes, so these
+  // values are inert in Classic / motion-off.
+  let revealBottomIndex = $state(0);
+  let revealStep = $state(20);
+  const revealRowDelay = (i: number) => Math.max(0, revealBottomIndex - i) * revealStep;
   $effect(() => {
-    if (!revealing || !wrapEl || !histEl) return;
-    const el = wrapEl;
-    const vh = el.clientHeight;
-    if (vh <= 0) return;
-    const contentBottomPx = histEl.getBoundingClientRect().bottom - el.getBoundingClientRect().top;
-    const pct = Math.min(95, Math.max(10, (contentBottomPx / vh) * 100));
-    el.style.setProperty("--reveal-start", `${pct.toFixed(1)}%`);
-    el.classList.add("nerv-graph-reveal");
-    const t = setTimeout(() => el.classList.remove("nerv-graph-reveal"), 800);
-    return () => {
-      clearTimeout(t);
-      el.classList.remove("nerv-graph-reveal");
-    };
+    if (!revealing) return;
+    untrack(() => {
+      if (!wrapEl) return;
+      const visRows = Math.max(1, Math.ceil(wrapEl.clientHeight / rowHeight));
+      // Anchor the sweep's delay-0 origin to the bottom of the VISIBLE CONTENT, not
+      // the viewport bottom: with few commits in a tall pane, the last real commit
+      // (commits.length-1) is well above the fold, so anchoring to the viewport would
+      // waste the first ~½s sweeping empty space below it before anything animates.
+      revealBottomIndex = Math.max(0, Math.min(winStart + visRows - 1, commits.length - 1));
+      // Base the stagger on the rows actually swept so short graphs stay visibly
+      // staggered (not instant) and tall ones stay snappy (~≤600ms of stagger).
+      const sweptRows = Math.max(1, revealBottomIndex - winStart + 1);
+      revealStep = Math.min(24, Math.max(10, Math.floor(600 / sweptRows)));
+    });
   });
 
   let winStart = $state(0);
@@ -483,6 +489,9 @@
           renderStart={winStart}
           renderEnd={winEnd}
           colorOf={(idx) => appState.colorForIndex(idx)}
+          reveal={revealing}
+          {revealBottomIndex}
+          {revealStep}
         />
       </div>
 
@@ -518,9 +527,10 @@
         <div
           class="row wc-row"
           class:selected={appState.workingCopySelected}
+          class:nerv-row-in={revealing}
           role="row"
           tabindex="0"
-          style={`height:${rowHeight}px`}
+          style={`height:${rowHeight}px${revealing ? `;animation-delay:${revealRowDelay(-1)}ms` : ""}`}
           onmousedown={selectWorkingCopy}
           onkeydown={(e) => { if (e.key === " " || e.key === "Enter") selectWorkingCopy(); }}
         >
@@ -547,7 +557,8 @@
           class:edited={appState.newDates.has(commit.sha)}
           class:search-hit={searchHits?.has(i) ?? false}
           class:search-active={i === searchActiveRow}
-          style={`height:${rowHeight}px`}
+          class:nerv-row-in={revealing}
+          style={`height:${rowHeight}px${revealing ? `;animation-delay:${revealRowDelay(i)}ms` : ""}`}
           onmousedown={(e) => onRowMouseDown(e, commit.sha, i)}
           oncontextmenu={(e) => onRowContext(e, commit.sha, i)}
           onkeydown={(e) => { if (e.key === " " || e.key === "Enter") onRowMouseDown(e as unknown as MouseEvent, commit.sha, i); }}

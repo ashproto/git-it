@@ -59,30 +59,12 @@ function applySavedMotion(): void {
   }
 }
 
-// One-shot NERV "boot reveal" pulse (Task 8) — plays only when NERV is the
-// saved theme AND motion is on (data-motion="on", set by applySavedMotion
-// just above). CSS keyframes gated on [data-boot] live in nerv-motion.css;
-// reduced-motion is handled there too, so no need to duplicate that check.
-// Task 7: panels get an ascending --boot-i so nerv-motion.css can stagger the
-// per-panel cascade + bracket draw-on.
-function pulseBootReveal(): void {
-  if (typeof document === "undefined") return;
-  const root = document.documentElement;
-  if (root.getAttribute("data-theme") !== "nerv") return;
-  if (root.dataset.motion !== "on") return;
-  root.dataset.boot = "";
-  const panels = document.querySelectorAll(".panel");
-  panels.forEach((el, i) => (el as HTMLElement).style.setProperty("--boot-i", String(i)));
-  setTimeout(() => {
-    delete root.dataset.boot;
-    panels.forEach((el) => (el as HTMLElement).style.removeProperty("--boot-i"));
-    // 1100ms so the staggered panel cascade + bracket draw-on (up to ~maxIndex*70+440ms
-    // for ~8-9 panels) completes before the window closes; the keyframes end at the
-    // resting state so any overshoot degrades gracefully (panel just appears static).
-  }, 1100);
-}
+// NOTE: the one-shot NERV "boot reveal" pulse is NOT fired here. This module runs
+// at import time — BEFORE SvelteKit mounts the app — so document.querySelectorAll(".panel")
+// would find nothing and the pulse would be a no-op (this is the bug that made the
+// boot animation appear absent). It is now fired from +page.svelte's onMount via
+// appState.bootPulse(), when the panels exist and just before the first paint.
 
 applySavedTheme();
 applySavedScheme();
 applySavedMotion();
-pulseBootReveal();

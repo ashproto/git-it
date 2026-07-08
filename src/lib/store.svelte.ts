@@ -658,8 +658,10 @@ function makeState() {
   let revealing = $state(false);
   let revealSeq = 0;
   // Wipe duration (nerv-motion.css .nerv-graph-reveal, ~700ms) + a small buffer so
-  // `revealing` clears just after the single bottom→top wipe finishes.
-  const REVEAL_MS = 750;
+  // `revealing` clears just after the staggered bottom→top draw finishes (max row
+  // delay ~≤650ms + the ~320ms edge-draw duration, plus headroom). If this fires
+  // before the last row's animation ends, that row would snap to its resting state.
+  const REVEAL_MS = 1100;
   function armReveal() {
     revealSeq++;
     revealing = true;
@@ -1700,6 +1702,11 @@ function makeState() {
       return revealing;
     },
     armReveal,
+    // One-shot NERV boot reveal. Fired from +page.svelte's onMount (NOT at module
+    // load) so the .panel elements exist to receive --boot-i; onMount runs before
+    // the first browser paint, so the staggered cascade applies with no rest-state
+    // flash. Also fired by setTheme on a Classic→NERV toggle.
+    bootPulse: pulseBootReveal,
     get rows() {
       return rows;
     },

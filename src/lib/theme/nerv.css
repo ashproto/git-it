@@ -143,13 +143,12 @@
 
 /* Context menu (ContextMenu.svelte) — same B3 corner-bracket treatment as .panel/
    .dialog, so the right-click popover reads as a NERV console menu. .menu is
-   already position:fixed (the popover itself); position:relative here is only
-   for the ::after's inset:0 anchor and doesn't disturb that fixed positioning.
-   .submenu carries the .menu class too, so flyouts pick this up for free. No
-   pre-existing ::after on .menu to collide with. */
-:root[data-theme="nerv"] .menu {
-  position: relative;
-}
+   already position:fixed (main popover) / position:absolute (.submenu) — BOTH are
+   positioned, so the ::after (position:absolute; inset:0) anchors to the menu box
+   directly. We must NOT override `position` here: a global `position:relative`
+   out-specifies the component-scoped `position:fixed` and drops the menu into
+   document flow (it lands bottom-right and shoves panels around). No pre-existing
+   ::after on .menu to collide with. */
 :root[data-theme="nerv"] .menu::after {
   content: "";
   position: absolute;

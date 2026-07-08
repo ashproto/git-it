@@ -258,6 +258,14 @@
     if (!inTauri && appState.graphCommits.length === 0) {
       appState.setGraphCommits(SAMPLE_GRAPH);
     }
+    // NERV boot reveal — fire now (post-mount, pre-first-paint) so the .panel
+    // elements exist to receive the staggered --boot-i cascade. themeMode.ts
+    // painted data-theme/data-motion before this ran; read them off <html> so we
+    // don't depend on store hydration order. No-op in Classic / motion-off.
+    const rootEl = document.documentElement;
+    if (rootEl.dataset.theme === "nerv" && rootEl.dataset.motion === "on") {
+      appState.bootPulse();
+    }
     // Desktop: kick off the once-per-launch auto-update check, and route the
     // macOS app-menu items (emitted by src-tauri/src/lib.rs) to the same flows
     // the in-app UI uses. Both no-op outside Tauri / in dev.
