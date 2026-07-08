@@ -3,6 +3,9 @@
   import { settingsPanel } from "../settingsPanel.svelte";
   import { manualCheckForUpdates } from "../updater.svelte";
   import { onMount } from "svelte";
+  import { NERV_SCHEME_PALETTES, type Scheme } from "../graph";
+
+  const SCHEMES: readonly Scheme[] = ["orange", "phosphor", "steel", "amber", "violet", "crimson"];
 
   let closeBtn = $state<HTMLButtonElement | undefined>();
 
@@ -143,6 +146,26 @@
               >NERV</button>
             </div>
           </div>
+
+          {#if appState.theme === "nerv"}
+            <div class="seg-row">
+              <span class="seg-label">Color scheme</span>
+              <div class="swatch-row" role="group" aria-label="Color scheme">
+                {#each SCHEMES as s (s)}
+                  <button
+                    type="button"
+                    class="swatch"
+                    class:active={appState.scheme === s}
+                    style:background={NERV_SCHEME_PALETTES[s][0]}
+                    title={s}
+                    aria-label={`${s} color scheme`}
+                    aria-pressed={appState.scheme === s}
+                    onclick={() => appState.setScheme(s)}
+                  ></button>
+                {/each}
+              </div>
+            </div>
+          {/if}
 
           <div class="seg-row">
             <span class="seg-label">Diff view</span>
@@ -560,6 +583,38 @@
   .seg button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
+  }
+
+  /* NERV color-scheme swatches */
+  .swatch-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .swatch {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: border-color 0.1s, transform 0.1s;
+  }
+
+  .swatch:hover {
+    transform: scale(1.1);
+  }
+
+  .swatch.active {
+    border-color: var(--text);
+  }
+
+  .swatch:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   /* Checkbox rows — mirrors DateFormatMenu .opt */
