@@ -727,17 +727,17 @@
     --border-subtle: #232A31;
     --text: #EAE6DA;
     --text-muted: #8A94A0;
-    --row-hover: rgba(242, 84, 45, 0.06);
-    --row-selected: rgba(242, 84, 45, 0.10);
-    --row-selected-border: #F2542D;
+    --row-hover: color-mix(in srgb, var(--accent) 6%, transparent);
+    --row-selected: color-mix(in srgb, var(--accent) 10%, transparent);
+    --row-selected-border: var(--accent);
     --accent: #F2542D;
     --accent-hover: #ff6a44;
     --on-accent: #0A0C0F;                        /* dark text on orange (AA) */
     --danger: #FF4438;
     --danger-hover: #ff5a4f;
-    --err: #F2542D;                              /* NERV warning = orange; red = hazard only */
+    --err: #D9922E;                              /* warning = amber, decoupled from the accent so it stays legible in every scheme */
     --status-add: #46E88B;
-    --status-mod: #F2542D;
+    --status-mod: #D9922E;
     --status-del: #FF4438;
     /* diff — BOTH tiers (NERV is dark-only but @media dark still matches on a dark-mode Mac) */
     --diff-add-bg: rgba(70, 232, 139, 0.15);      --diff-add-bg-dark: rgba(70, 232, 139, 0.15);

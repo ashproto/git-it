@@ -21,39 +21,41 @@
    read wrong on the NERV void. Selectors were checked to be unique to their
    component (StatusBar uses .left.detached, not .ref.detached). */
 
-/* Sidebar detached-HEAD row — swap the Classic amber (#d97706) for the NERV
-   warning orange so the row reads on the void and matches the palette. */
+/* Sidebar detached-HEAD row — this is a WARNING, not decoration, so it stays
+   amber (var(--err)) in every scheme rather than following the accent (else
+   the Phosphor scheme would paint detached-HEAD green). */
 :root[data-theme="nerv"] .ref.detached {
-  background: color-mix(in srgb, #F2542D 10%, transparent);
+  background: color-mix(in srgb, var(--err) 10%, transparent);
 }
 :root[data-theme="nerv"] .ref.detached .rn {
-  color: color-mix(in srgb, #F2542D 75%, var(--text));
+  color: color-mix(in srgb, var(--err) 75%, var(--text));
 }
 :root[data-theme="nerv"] .ref.detached .warn-icon {
-  color: #F2542D;
+  color: var(--err);
 }
 
 /* WorkingCopyView status-glyph tints — retint the hardcoded Classic green/amber/
    red backgrounds to NERV equivalents. The glyph text colour already themes via
    var(--status-*); only the background literals are stuck. .glyph.s-{add,mod,del}
-   is a compound selector unique to WorkingCopyView. */
+   is a compound selector unique to WorkingCopyView. s-mod follows --status-mod
+   (amber, warning-family), not the accent. */
 :root[data-theme="nerv"] .glyph.s-add { background: rgba(70, 232, 139, 0.1); }
-:root[data-theme="nerv"] .glyph.s-mod { background: rgba(242, 84, 45, 0.1); }
+:root[data-theme="nerv"] .glyph.s-mod { background: color-mix(in srgb, var(--status-mod) 10%, transparent); }
 :root[data-theme="nerv"] .glyph.s-del { background: rgba(255, 68, 56, 0.1); }
 
-/* PrereqBanner — the Classic amber (#b45309 heading / #fde68a border) is low
-   contrast on the void; use the NERV orange for the heading + border and give
-   the CTA the standard on-accent (dark) text. Body <p> already inherits
-   var(--text). .banner is unique to PrereqBanner. */
+/* PrereqBanner is a WARNING banner — heading + border + background wash stay
+   amber (var(--err)) in every scheme, matching .ref.detached above. The CTA
+   button is a primary action, not the warning itself, so it intentionally
+   stays on the accent. */
 :root[data-theme="nerv"] .banner {
-  background: rgba(242, 84, 45, 0.08);
-  border-color: #F2542D;
+  background: color-mix(in srgb, var(--err) 8%, transparent);
+  border-color: var(--err);
 }
 :root[data-theme="nerv"] .banner strong {
-  color: #F2542D;
+  color: var(--err);
 }
 :root[data-theme="nerv"] .banner .actions button {
-  background: #F2542D;
+  background: var(--accent);
   color: var(--on-accent);
 }
 
@@ -87,7 +89,7 @@
   z-index: 9999;
   background:
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 3px),
-    linear-gradient(rgba(242, 84, 45, 0.015), rgba(242, 84, 45, 0.015));
+    linear-gradient(color-mix(in srgb, var(--accent) 1.5%, transparent), color-mix(in srgb, var(--accent) 1.5%, transparent));
 }
 /* Static by design; reduced-motion is a no-op but kept explicit for intent. */
 @media (prefers-reduced-motion: reduce) {
@@ -158,8 +160,20 @@
 :root[data-theme="nerv"] .panel:not(.collapsed) .panel-header {
   border-bottom-color: transparent;
   background-image: repeating-linear-gradient(
-    -45deg, rgba(242, 84, 45, 0.35) 0 5px, transparent 5px 10px);
+    -45deg, color-mix(in srgb, var(--accent) 35%, transparent) 0 5px, transparent 5px 10px);
   background-repeat: no-repeat;
   background-position: bottom left;
   background-size: 100% 2px;
 }
+
+/* ── Scheme presets — recolor --accent/--accent-hover only; every other NERV
+   token (including --err/--status-mod, decoupled to amber above) is untouched,
+   so warnings/detached-HEAD/modified stay amber regardless of scheme. Bare
+   selectors (NOT :global() — that's Svelte-only and silently dropped in a plain
+   .css file); specificity (0,3,0) beats the base :root[data-theme="nerv"] block
+   (0,2,0). "orange" is the base NERV palette itself, so it has no block here. */
+:root[data-theme="nerv"][data-scheme="phosphor"] { --accent: #46E88B; --accent-hover: #6cf3a5; }
+:root[data-theme="nerv"][data-scheme="steel"]    { --accent: #5AA9E6; --accent-hover: #7cbef0; }
+:root[data-theme="nerv"][data-scheme="amber"]    { --accent: #E8A33D; --accent-hover: #f2b85c; }
+:root[data-theme="nerv"][data-scheme="violet"]   { --accent: #9B7FE0; --accent-hover: #b49bee; }
+:root[data-theme="nerv"][data-scheme="crimson"]  { --accent: #E0445A; --accent-hover: #ec6376; }

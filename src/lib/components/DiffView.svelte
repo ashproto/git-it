@@ -40,7 +40,7 @@
   }
 
   const activeTheme = $derived(
-    appState.theme === "nerv" ? "nerv" : darkMode ? "github-dark" : "github-light",
+    appState.theme === "nerv" ? "nerv-" + appState.scheme : darkMode ? "github-dark" : "github-light",
   );
 
   // ─── Parsed diff ──────────────────────────────────────────────────────────────
