@@ -141,6 +141,36 @@
 /* GitHub screen is tokens-only — suppress its one .panel (ReviewBar) frame. */
 :root[data-theme="nerv"] .gh .panel::after { content: none; }
 
+/* Context menu (ContextMenu.svelte) — same B3 corner-bracket treatment as .panel/
+   .dialog, so the right-click popover reads as a NERV console menu. .menu is
+   already position:fixed (the popover itself); position:relative here is only
+   for the ::after's inset:0 anchor and doesn't disturb that fixed positioning.
+   .submenu carries the .menu class too, so flyouts pick this up for free. No
+   pre-existing ::after on .menu to collide with. */
+:root[data-theme="nerv"] .menu {
+  position: relative;
+}
+:root[data-theme="nerv"] .menu::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  --b: 14px;
+  --w: 1.5px;
+  --c: var(--accent);
+  background:
+    linear-gradient(var(--c), var(--c)) 0 0 / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 0 0 / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 100% 0 / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 100% 0 / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 0 100% / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 0 100% / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 100% 100% / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 100% 100% / var(--w) var(--b);
+  background-repeat: no-repeat;
+}
+
 /* Collapsed panel (CollapsiblePanel's header-only state) — extend each corner's
    two gradient arms past the box's midpoint so opposite arms meet, turning the
    four L-marks into one continuous frame around the header. State rule (always

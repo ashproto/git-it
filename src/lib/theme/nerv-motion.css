@@ -191,3 +191,24 @@
   from { clip-path: inset(var(--reveal-start, 92%) 0 0 0); }
   to   { clip-path: inset(0 0 0 0); }
 }
+
+/* ── Context menu + Settings dialog entrance (motion-polish round 2, Task 8) ──
+   Short fade + scale on mount so the transient popovers don't just snap into
+   existence. `both` holds the `from` frame before the animation starts (no
+   flash-of-final-state) and the `to` frame after it ends. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"] .menu {
+    animation: nerv-menu-in 140ms ease-out both;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .dialog {
+    animation: nerv-dialog-in 180ms ease-out both;
+  }
+}
+@keyframes nerv-menu-in {
+  from { opacity: 0; transform: scale(0.97) translateY(-2px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes nerv-dialog-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
