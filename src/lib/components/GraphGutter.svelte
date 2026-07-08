@@ -22,7 +22,6 @@
     renderStart = 0,
     renderEnd = undefined,
     colorOf,
-    revealing = false,
   }: {
     rows: RowLayout[];
     heads: boolean[];
@@ -36,19 +35,7 @@
     renderEnd?: number;
     /** Resolve a lane colour from its colorIndex (override-aware); defaults to the palette. */
     colorOf?: (colorIndex: number) => string;
-    /** Task 9: while true, draw each visible edge on (stroke-dashoffset), staggered. */
-    revealing?: boolean;
   } = $props();
-
-  // Task 9 edge draw-on stagger. Mirrors GraphHistory's REVEAL_STEP / MAX_STAGGER so
-  // the lines draw in lock-step with the row cascade. pathLength="1" (set on every
-  // edge, visually inert without dash props) normalises the dash coordinate space so
-  // the gated .nerv-edge-draw keyframe (nerv-motion.css) can offset a full-length
-  // dash from 1→0. Delay is clamped ≥0 because edgeStart can be renderStart-1.
-  const REVEAL_STEP = 15;
-  const REVEAL_MAX_STAGGER = 40;
-  const revealDelay = (i: number) =>
-    Math.min(Math.max(i - renderStart, 0), REVEAL_MAX_STAGGER) * REVEAL_STEP;
 
   // Lane-colour resolver: a manual override wins where present, else the palette.
   const resolveColor = (idx: number) => (colorOf ? colorOf(idx) : laneColor(idx, null, {}));
@@ -92,9 +79,6 @@
         stroke={resolveColor(edge.colorIndex)}
         stroke-width="2"
         fill="none"
-        pathLength="1"
-        class:nerv-edge-draw={revealing}
-        style={revealing ? `animation-delay:${revealDelay(i)}ms` : undefined}
       />
     {/each}
   {/each}

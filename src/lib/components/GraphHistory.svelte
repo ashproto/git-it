@@ -35,15 +35,10 @@
 
   // ── Task 9: one-shot "graph builds itself" reveal ───────────────────────────
   // While appState.revealing (armed once per repo-identity change / same-repo
-  // view switch — see store.svelte.ts), each rendered row gets a staggered
-  // .nerv-row-in cascade and the gutter draws its edges on. Only the animation
-  // gating lives here; the actual keyframes are in nerv-motion.css, double-gated
-  // on [data-theme="nerv"][data-motion="on"] + reduced-motion, so Classic /
-  // motion-off / reduced-motion render instantly. STEP × cap + the row-in
-  // duration must stay under the store's REVEAL_MS clear timeout; GraphGutter
-  // mirrors these constants for its edge draw-on.
-  const REVEAL_STEP = 15; // ms between successive rows
-  const REVEAL_MAX_STAGGER = 40; // cap the effective row index (delay ceiling)
+  // view switch — see store.svelte.ts), the scroll viewport (.wrap) plays a
+  // single bottom→top clip-path wipe (.nerv-graph-reveal, nerv-motion.css),
+  // double-gated on [data-theme="nerv"][data-motion="on"] + reduced-motion, so
+  // Classic / motion-off / reduced-motion render instantly.
   const revealing = $derived(appState.revealing);
 
   // Virtualization: only the rows in [winStart, winEnd) are in the DOM; two
@@ -405,6 +400,7 @@
 
   <div
     class="wrap"
+    class:nerv-graph-reveal={revealing}
     bind:this={wrapEl}
     onscroll={onWrapScroll}
     style={colVars}
@@ -464,7 +460,6 @@
           renderStart={winStart}
           renderEnd={winEnd}
           colorOf={(idx) => appState.colorForIndex(idx)}
-          {revealing}
         />
       </div>
 
@@ -529,8 +524,7 @@
           class:edited={appState.newDates.has(commit.sha)}
           class:search-hit={searchHits?.has(i) ?? false}
           class:search-active={i === searchActiveRow}
-          class:nerv-row-in={revealing}
-          style={`height:${rowHeight}px${revealing ? `;animation-delay:${Math.min(i - winStart, REVEAL_MAX_STAGGER) * REVEAL_STEP}ms` : ""}`}
+          style={`height:${rowHeight}px`}
           onmousedown={(e) => onRowMouseDown(e, commit.sha, i)}
           oncontextmenu={(e) => onRowContext(e, commit.sha, i)}
           onkeydown={(e) => { if (e.key === " " || e.key === "Enter") onRowMouseDown(e as unknown as MouseEvent, commit.sha, i); }}

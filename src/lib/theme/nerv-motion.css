@@ -124,31 +124,17 @@
 
 /* ── One-shot timeline "graph builds itself" reveal (Task 9) ───────────────
    Armed exactly once per repo-identity change / same-repo Local Changes→Timeline
-   switch (store.svelte.ts → appState.revealing), which toggles .nerv-row-in on
-   each rendered commit row (GraphHistory) and .nerv-edge-draw on each visible
-   gutter edge (GraphGutter). Both carry an inline animation-delay for the
-   top-to-bottom cascade. Same double-gate as the rest of this file, so Classic /
-   motion-off / reduced-motion get the static graph with no reveal. Rows animate
-   transform/opacity only (compositor-friendly); edges animate stroke-dashoffset. */
+   switch (store.svelte.ts → appState.revealing), which toggles .nerv-graph-reveal
+   on the scroll viewport (.wrap, GraphHistory). A single clip-path wipe grows the
+   whole graph (lanes + rows together) from the bottom edge up, instead of
+   animating each row/edge separately. Same double-gate as the rest of this file,
+   so Classic / motion-off / reduced-motion render the static graph with no reveal. */
 @media (prefers-reduced-motion: no-preference) {
-  :root[data-theme="nerv"][data-motion="on"] .nerv-row-in {
-    animation: nerv-row-in 360ms ease-out both;
-  }
-  /* Draw each edge on: pathLength="1" (set on the <path> in GraphGutter) normalises
-     the dash coordinate space so a single full-length dash (stroke-dasharray:1),
-     offset by its own length, hides the path, then stroke-dashoffset animates 1→0
-     to trace it in. stroke-dasharray lives on the rule (not in the keyframes) so it
-     applies ONLY while the gated class is present — the static path keeps no dash. */
-  :root[data-theme="nerv"][data-motion="on"] .nerv-edge-draw {
-    stroke-dasharray: 1;
-    animation: nerv-edge-draw 380ms ease-out both;
+  :root[data-theme="nerv"][data-motion="on"] .nerv-graph-reveal {
+    animation: nerv-graph-grow 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 }
-@keyframes nerv-row-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes nerv-edge-draw {
-  from { stroke-dashoffset: 1; }
-  to { stroke-dashoffset: 0; }
+@keyframes nerv-graph-grow {          /* reveal edge sweeps UP: bottom-only → full */
+  from { clip-path: inset(92% 0 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
 }

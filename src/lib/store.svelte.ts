@@ -650,9 +650,9 @@ function makeState() {
   // older timer instead of clearing early.
   let revealing = $state(false);
   let revealSeq = 0;
-  // ≥ (capped max staggered rows × per-row step) + row-in duration; the per-row delay
-  // is capped in GraphHistory so the last visible row still finishes before this fires.
-  const REVEAL_MS = 1100;
+  // Wipe duration (nerv-motion.css .nerv-graph-reveal, ~700ms) + a small buffer so
+  // `revealing` clears just after the single bottom→top wipe finishes.
+  const REVEAL_MS = 750;
   function armReveal() {
     revealSeq++;
     revealing = true;
