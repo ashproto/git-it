@@ -197,6 +197,12 @@
     const repo = appState.repo; // tracked
     untrack(() => {
       const changed = view !== prevView || repo !== prevRepo;
+      // Task 9: arm the one-shot timeline reveal on a genuine Local Changes→Timeline
+      // switch WITHIN the same repo. Computed from the OLD prevView/prevRepo (before
+      // the reassignment below). The repo === prevRepo guard means a repo switch does
+      // NOT arm here — setGraphCommits already arms on the repo-identity change, so
+      // this avoids a double-arm.
+      const revealOnViewSwitch = view === "timeline" && prevView !== "timeline" && repo === prevRepo;
       prevView = view;
       prevRepo = repo;
       if (firstSwap) {
@@ -214,6 +220,7 @@
         ],
         { duration: 260, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
       );
+      if (revealOnViewSwitch) appState.armReveal();
     });
   });
 

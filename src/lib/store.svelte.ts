@@ -639,6 +639,28 @@ function makeState() {
   let graphCommitsRepo = $state<string>("");
   let graphHasMore = $state(false);
   let graphLoadingMore = $state(false);
+  // ── Timeline "graph builds itself" reveal (Task 9) ─────────────────────────
+  // Plays ONCE when a repo's graph first appears — armed on a repo-identity change
+  // in setGraphCommits, or a genuine Local Changes→Timeline view switch (+page.svelte).
+  // Must NOT replay on scroll, on an fswatch/window-focus refresh (applyGraphRefresh),
+  // on paging (appendGraphCommits), or on same-repo git ops. NO $effect here: this is
+  // a module-scope factory, so an $effect throws effect_orphan (same reason the theme
+  // attrs are reflected imperatively). armReveal() bumps revealSeq and clears
+  // `revealing` via a seq-guarded setTimeout so a re-arm mid-reveal supersedes the
+  // older timer instead of clearing early.
+  let revealing = $state(false);
+  let revealSeq = 0;
+  // ≥ (capped max staggered rows × per-row step) + row-in duration; the per-row delay
+  // is capped in GraphHistory so the last visible row still finishes before this fires.
+  const REVEAL_MS = 1100;
+  function armReveal() {
+    revealSeq++;
+    revealing = true;
+    const seq = revealSeq;
+    setTimeout(() => {
+      if (revealSeq === seq) revealing = false;
+    }, REVEAL_MS);
+  }
   const rows = $derived(
     computeLanes(graphCommits.map((c) => ({ sha: c.sha, parents: c.parents }))),
   );
@@ -1664,6 +1686,13 @@ function makeState() {
     get graphCommitsRepo() {
       return graphCommitsRepo;
     },
+    // Task 9 one-shot timeline reveal. `revealing` gates the row-cascade / edge-draw
+    // animations (GraphHistory/GraphGutter); armReveal() is also called from the
+    // view-switch effect in +page.svelte on a same-repo Local Changes→Timeline switch.
+    get revealing() {
+      return revealing;
+    },
+    armReveal,
     get rows() {
       return rows;
     },
@@ -1973,6 +2002,11 @@ function makeState() {
       persistRelativeDates();
     },
     setGraphCommits(gc: GraphCommit[]) {
+      // Capture BEFORE reassigning graphCommitsRepo — a genuine repo-identity
+      // transition (incl. the first load, when graphCommitsRepo === "") arms the
+      // one-shot reveal below. applyGraphRefresh/appendGraphCommits deliberately do
+      // NOT arm, so fswatch/focus refreshes and paging never replay it.
+      const repoChanged = graphCommitsRepo !== repo;
       graphCommits = gc;
       graphCommitsRepo = repo;
       commits = gc.map(graphToCommit);
@@ -1981,6 +2015,7 @@ function makeState() {
       currentSha = null;
       // NOTE: lastUndo is intentionally NOT cleared here — a destructive op reloads the
       // graph and we want the UndoBar to remain visible after that refresh.
+      if (repoChanged) armReveal();
     },
     // Non-destructive graph update for a LIVE refresh (filesystem watcher / window
     // focus), as opposed to setGraphCommits (the repo-switch reset). Keeps the open
