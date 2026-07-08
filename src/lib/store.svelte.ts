@@ -681,31 +681,32 @@ function makeState() {
   // older timer instead of clearing early.
   let revealing = $state(false);
   let revealSeq = 0;
+  // Base delay (ms) ADDED to every per-row/edge reveal animation. On a repo-switch
+  // materialize this pushes the DRAW to after the commits frame + content have faded
+  // in — WITHOUT delaying `revealing` itself. That distinction fixes the flash: if we
+  // instead delayed `revealing`, the content-fade would paint the whole timeline at
+  // rest first, then nerv-row-in would snap it hidden and redraw it. Arming `revealing`
+  // immediately means the rows carry the hidden nerv-row-in from-state from their first
+  // paint (held through this base delay via `both`), so the timeline is never shown at
+  // rest — only the offset draw plays. A view switch (no materialize) uses base 0.
+  let revealBaseMs = $state(0);
   // Wipe duration (nerv-motion.css .nerv-graph-reveal, ~700ms) + a small buffer so
   // `revealing` clears just after the staggered bottom→top draw finishes (max row
   // delay ~≤650ms + the ~320ms edge-draw duration, plus headroom). If this fires
   // before the last row's animation ends, that row would snap to its resting state.
   const REVEAL_MS = 1100;
-  // On a repo switch the NERV panels play the "materialize" boot (square→outline→
-  // brackets, then the panel box + content fade in — see nerv-motion.css). Per the
-  // chosen choreography the timeline draws AFTER the commits frame + its content have
-  // faded in (commits is the last-staggered panel, ~i*105 + ~508ms ≈ 930ms), so
-  // armReveal gets this delay on a repo switch. A view switch (no materialize) passes 0.
-  const REVEAL_AFTER_MAT_MS = 950;
-  function armReveal(delayMs = 0) {
+  // The base offset for a repo-switch: commits is the last-staggered panel, its content
+  // fades in ~930ms into the boot, so the draw starts ~here (relative to the rows' mount).
+  const REVEAL_BASE_MAT_MS = 900;
+  function armReveal(baseMs = 0) {
     revealSeq++;
     const seq = revealSeq;
-    const begin = () => {
-      if (revealSeq !== seq) return; // superseded before it could start
-      revealing = true;
-      setTimeout(() => {
-        if (revealSeq === seq) revealing = false;
-      }, REVEAL_MS);
-    };
-    // delayMs === 0 keeps the original synchronous behaviour (revealing flips true
-    // immediately) — the 5 reveal tests and every view-switch arm rely on that.
-    if (delayMs > 0) setTimeout(begin, delayMs);
-    else begin();
+    revealBaseMs = baseMs;
+    revealing = true; // ALWAYS synchronous — rows must carry nerv-row-in from first paint.
+    // The window must outlast the base offset + the staggered draw, else the last row snaps.
+    setTimeout(() => {
+      if (revealSeq === seq) revealing = false;
+    }, REVEAL_MS + baseMs);
   }
   const rows = $derived(
     computeLanes(graphCommits.map((c) => ({ sha: c.sha, parents: c.parents }))),
@@ -1738,6 +1739,11 @@ function makeState() {
     get revealing() {
       return revealing;
     },
+    // Base ms added to every reveal animation-delay (GraphHistory/GraphGutter) so the
+    // draw plays after the materialize frame on a repo switch; 0 on a view switch.
+    get revealBaseMs() {
+      return revealBaseMs;
+    },
     armReveal,
     // One-shot NERV boot reveal. Fired from +page.svelte's onMount (NOT at module
     // load) so the .panel elements exist to receive --boot-i; onMount runs before
@@ -2079,7 +2085,7 @@ function makeState() {
         // measure it and set its --boot-i/--boot-sx/--boot-sy. Firing synchronously would
         // miss it → a panel-shaped sliver with no stagger. (Mirrors the onMount tick fix.)
         if (nervMaterialize) void tick().then(pulseBootReveal);
-        armReveal(nervMaterialize ? REVEAL_AFTER_MAT_MS : 0);
+        armReveal(nervMaterialize ? REVEAL_BASE_MAT_MS : 0);
       }
     },
     // Non-destructive graph update for a LIVE refresh (filesystem watcher / window

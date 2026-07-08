@@ -25,6 +25,7 @@
     reveal = false,
     revealBottomIndex = 0,
     revealStep = 20,
+    revealBase = 0,
   }: {
     rows: RowLayout[];
     heads: boolean[];
@@ -44,11 +45,14 @@
     revealBottomIndex?: number;
     /** Per-row reveal stagger in ms. */
     revealStep?: number;
+    /** Base delay added to every reveal animation (draw plays after the materialize frame). */
+    revealBase?: number;
   } = $props();
 
   // Reveal delay for the element on absolute commit row `i`: bottom rows first
   // (delay 0), climbing upward. Clamped so off-screen-below rows don't get negatives.
-  const revealDelay = (i: number) => Math.max(0, revealBottomIndex - i) * revealStep;
+  // revealBase pushes the whole draw past the boot frame on a repo switch (0 otherwise).
+  const revealDelay = (i: number) => revealBase + Math.max(0, revealBottomIndex - i) * revealStep;
 
   // Lane-colour resolver: a manual override wins where present, else the palette.
   const resolveColor = (idx: number) => (colorOf ? colorOf(idx) : laneColor(idx, null, {}));

@@ -59,7 +59,11 @@
   // values are inert in Classic / motion-off.
   let revealBottomIndex = $state(0);
   let revealStep = $state(20);
-  const revealRowDelay = (i: number) => Math.max(0, revealBottomIndex - i) * revealStep;
+  // Base delay (store): on a repo-switch materialize the draw is pushed past the frame,
+  // while `revealing` is already true so the rows carry the hidden from-state immediately
+  // (no flash of the timeline at rest). 0 on a view switch → draw plays now.
+  const revealBase = $derived(appState.revealBaseMs);
+  const revealRowDelay = (i: number) => revealBase + Math.max(0, revealBottomIndex - i) * revealStep;
   $effect(() => {
     if (!revealing) return;
     untrack(() => {
@@ -492,6 +496,7 @@
           reveal={revealing}
           {revealBottomIndex}
           {revealStep}
+          {revealBase}
         />
       </div>
 
