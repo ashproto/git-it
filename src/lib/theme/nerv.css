@@ -141,6 +141,16 @@
 /* GitHub screen is tokens-only — suppress its one .panel (ReviewBar) frame. */
 :root[data-theme="nerv"] .gh .panel::after { content: none; }
 
+/* Collapsed panel (CollapsiblePanel's header-only state) — extend each corner's
+   two gradient arms past the box's midpoint so opposite arms meet, turning the
+   four L-marks into one continuous frame around the header. State rule (always
+   on in NERV, not gated on data-motion); the gated --b transition in
+   nerv-motion.css (same .panel::after selector) animates the sweep when motion
+   is on, and this snaps straight to the closed frame when it's off. */
+:root[data-theme="nerv"] .panel.collapsed::after {
+  --b: 51%; /* arms meet → outline (51% closes the seam) */
+}
+
 /* B2 — status bar as a mono console readout (uppercase, tracked, mono). */
 :root[data-theme="nerv"] .status-bar {
   font-family: var(--font-mono);
