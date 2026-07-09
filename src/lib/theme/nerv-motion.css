@@ -159,9 +159,12 @@
 }
 
 /* Per-panel materialize overlay. inset:0 = the panel box; --boot-sx/--boot-sy shrink
-   it to a ~24px centred square at 0%. It fades in, grows FILLED to the full panel,
-   drains to a border-only outline, then the outline fades as the ::after brackets
-   (below) take over. z-index:3 so the fill briefly covers the panel content. */
+   it to a ~24px centred square at 0%. It fades in and grows FILLED to the full panel,
+   then a panel-bg rectangle grows from the CENTRE (background-size, animated by
+   nerv-mat) so the fill's inner edge opens outward and the red thins into a border-only
+   outline — which then fades as the ::after brackets (below) take over. The 1.5px border
+   never gets covered (background-origin defaults to padding-box) so it survives as the
+   resting outline. z-index:3 so the fill briefly covers the panel content. */
 @media (prefers-reduced-motion: no-preference) {
   :root[data-theme="nerv"][data-motion="on"][data-boot] .panel::before {
     content: "";
@@ -171,17 +174,23 @@
     pointer-events: none;
     transform-origin: center;
     border: 1.5px solid var(--accent);
-    background: var(--accent);
+    /* Red base + a centred panel-bg rectangle whose size nerv-mat grows 0→100%, carving
+       the fill into a frame from the inside out. */
+    background-color: var(--accent);
+    background-image: linear-gradient(var(--panel-bg), var(--panel-bg));
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 0% 0%;
     animation: nerv-mat 720ms cubic-bezier(0.45, 0, 0.15, 1) both;
     animation-delay: calc(var(--boot-i, 0) * 105ms);
   }
 }
 @keyframes nerv-mat {
-  0%   { transform: scale(var(--boot-sx, 0.06), var(--boot-sy, 0.06)); background-color: var(--accent); border-color: var(--accent); opacity: 0; }
+  0%   { transform: scale(var(--boot-sx, 0.06), var(--boot-sy, 0.06)); background-size: 0% 0%;     border-color: var(--accent); opacity: 0; }
   6%   { opacity: 1; }
-  30%  { transform: scale(1, 1); background-color: var(--accent); border-color: var(--accent); opacity: 1; }
-  48%  { transform: scale(1, 1); background-color: transparent;    border-color: var(--accent); opacity: 1; }
-  100% { transform: scale(1, 1); background-color: transparent;    border-color: transparent;   opacity: 0; }
+  30%  { transform: scale(1, 1); background-size: 0% 0%;     border-color: var(--accent); opacity: 1; }
+  48%  { transform: scale(1, 1); background-size: 100% 100%; border-color: var(--accent); opacity: 1; }
+  100% { transform: scale(1, 1); background-size: 100% 100%; border-color: transparent;   opacity: 0; }
 }
 
 /* Corner-bracket draw-on — the full outline (--b:51%, arms met, matching the
