@@ -460,7 +460,12 @@ mod tests {
         r.write_commit("a.txt", "a");
         r.git(&["branch", "next"]);
         r.git(&["tag", "next"]);
-        r.git(&["checkout", "-q", "--end-of-options", "next"]);
+        // Plain `next` DWIMs to the branch and attaches HEAD (refs/heads/next), which is what
+        // the assertion below needs. No `--end-of-options`: the operand is a hardcoded literal
+        // (not user input, so the shell-safety rule doesn't apply) and `git checkout` rejects
+        // the marker on some Git versions. Not `refs/heads/next` either — that DETACHES HEAD,
+        // which would make is_head below fail.
+        r.git(&["checkout", "-q", "next"]);
 
         let commits = load_graph(&r.path, 50, 0).unwrap();
         let head_sha = r.rev("HEAD");

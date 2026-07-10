@@ -11,13 +11,21 @@
          let the wrong background flash on launch: NERV showed the transparent glass, and
          Classic briefly showed a solid dark box. This synchronous head script + critical CSS
          run before the first paint, so the very first frame already has the right background.
-         Keep the theme key / Tauri globals / --bg colour in sync with themeMode.ts, tauriMode.ts
-         and +page.svelte. -->
+         Keep the theme + scheme keys / Tauri globals / --bg colour in sync with themeMode.ts,
+         tauriMode.ts and +page.svelte. -->
     <script>
       (function () {
         try {
           var d = document.documentElement;
           if (localStorage.getItem("gitit.theme.v1") === "nerv") d.setAttribute("data-theme", "nerv");
+          // Mirror the saved NERV colour scheme too. The scheme-gated NERV rules ship in the
+          // render-blocking bundle CSS, but data-scheme is only set by the deferred themeMode.ts —
+          // so without this a non-orange scheme (phosphor/steel/…) paints its first frame on the
+          // default orange accent, then flips: a scheme-flavoured launch flash. Same validated set
+          // themeMode.ts uses; unknown/absent → "orange" (the default).
+          var scheme = localStorage.getItem("gitit.scheme.v1");
+          var VALID = ["orange", "phosphor", "steel", "amber", "violet", "crimson"];
+          d.setAttribute("data-scheme", VALID.indexOf(scheme) >= 0 ? scheme : "orange");
           var w = window;
           if (
             "__TAURI_INTERNALS__" in w ||
