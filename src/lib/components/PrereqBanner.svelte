@@ -61,7 +61,7 @@
     background: #fde68a22;
     border: 1px solid #fde68a;
     color: var(--text);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     padding: 10px 14px;
     margin-bottom: 8px;
     font-size: 13px;
@@ -83,7 +83,7 @@
     color: #fff;
     background: #b45309;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 5px 12px;
     cursor: pointer;
   }
@@ -96,9 +96,9 @@
     opacity: 0.85;
   }
   code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     background: #00000010;
     padding: 1px 5px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 </style>

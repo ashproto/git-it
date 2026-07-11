@@ -139,7 +139,7 @@
     min-height: 84px;
     padding: 8px 10px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     background: var(--input-bg, var(--btn-bg));
     color: var(--text);
     font: inherit;
@@ -159,7 +159,7 @@
     border-radius: 7px;
     border: 1px solid var(--border);
     background: var(--accent, #2563eb);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;

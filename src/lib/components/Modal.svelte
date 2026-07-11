@@ -402,7 +402,7 @@
     max-width: calc(100vw - 32px);
     background: var(--popover-bg, var(--panel-bg));
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     padding: 16px 18px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
     backdrop-filter: blur(20px) saturate(140%);
@@ -434,7 +434,7 @@
     width: 100%;
     box-sizing: border-box;
     padding: 7px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--input-bg);
     color: var(--text);
@@ -449,7 +449,7 @@
   }
   button {
     padding: 6px 14px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);
@@ -462,7 +462,7 @@
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   button.primary.danger {
     background: var(--danger);
@@ -523,7 +523,7 @@
     width: 100%;
     box-sizing: border-box;
     padding: 7px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--input-bg);
     color: var(--text);
@@ -553,7 +553,7 @@
     flex: 1;
     min-width: 0;
     padding: 6px 8px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--input-bg);
     color: var(--text);

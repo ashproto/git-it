@@ -117,7 +117,7 @@
     background: var(--input-bg, var(--btn-bg));
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     padding: 8px 10px;
     font: inherit;
     font-size: 13px;
@@ -157,7 +157,7 @@
   .actions .primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .err {
     margin: 0;

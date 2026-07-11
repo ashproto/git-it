@@ -107,7 +107,7 @@
   }
   .apply-row.panel {
     background: var(--panel-bg);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     padding: 10px 14px;
     border: 1px solid var(--border);
   }
@@ -145,7 +145,7 @@
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: white;
+    color: var(--on-accent);
   }
   button.danger.primary {
     background: var(--danger);

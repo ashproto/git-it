@@ -39,7 +39,7 @@
   import { anyOverlayOpen } from "$lib/overlays";
   import { pickRepoFolder, api } from "$lib/api";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
-  import { onMount, untrack } from "svelte";
+  import { onMount, untrack, tick } from "svelte";
   import { slide } from "svelte/transition";
   import { appState } from "$lib/store.svelte";
   import { githubState } from "$lib/githubState.svelte";
@@ -197,6 +197,12 @@
     const repo = appState.repo; // tracked
     untrack(() => {
       const changed = view !== prevView || repo !== prevRepo;
+      // Task 9: arm the one-shot timeline reveal on a genuine Local Changes→Timeline
+      // switch WITHIN the same repo. Computed from the OLD prevView/prevRepo (before
+      // the reassignment below). The repo === prevRepo guard means a repo switch does
+      // NOT arm here — setGraphCommits already arms on the repo-identity change, so
+      // this avoids a double-arm.
+      const revealOnViewSwitch = view === "timeline" && prevView !== "timeline" && repo === prevRepo;
       prevView = view;
       prevRepo = repo;
       if (firstSwap) {
@@ -214,6 +220,7 @@
         ],
         { duration: 260, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
       );
+      if (revealOnViewSwitch) appState.armReveal();
     });
   });
 
@@ -251,11 +258,26 @@
     if (!inTauri && appState.graphCommits.length === 0) {
       appState.setGraphCommits(SAMPLE_GRAPH);
     }
+    // NERV materialize boot on the BROWSER launch path only. Wait for the reactive
+    // flush (tick) first: the commits panel renders from the setGraphCommits above, so
+    // it isn't in the DOM on this synchronous tick — without the wait it'd miss its
+    // measured --boot-i/scale. tick() resolves in a microtask (before paint), flash-free.
+    // Gated on !inTauri: under Tauri the sample isn't loaded here — the real repo loads
+    // async and its setGraphCommits(repoChanged) owns the launch boot, so firing here too
+    // would double-boot. themeMode.ts painted data-theme/data-motion before this ran; read
+    // them off <html> so we don't depend on store hydration order. No-op in Classic/motion-off.
+    const rootEl = document.documentElement;
+    if (!inTauri && rootEl.dataset.theme === "nerv" && rootEl.dataset.motion === "on") {
+      void tick().then(() => appState.bootPulse());
+    }
     // Desktop: kick off the once-per-launch auto-update check, and route the
     // macOS app-menu items (emitted by src-tauri/src/lib.rs) to the same flows
     // the in-app UI uses. Both no-op outside Tauri / in dev.
     const unlistenMenu: Array<() => void> = [];
     if (inTauri) {
+      // NOTE: the hidden window (visible:false) is revealed natively from lib.rs's
+      // on_page_load hook, NOT here — WebKit throttles JS timers/rAF while a window is
+      // ordered-out, so any webview-side reveal is unreliable and lands late.
       void startupUpdateCheck();
       import("@tauri-apps/api/event").then(async ({ listen }) => {
         unlistenMenu.push(await listen("menu:check-updates", () => manualCheckForUpdates()));
@@ -628,6 +650,17 @@
     --danger: #dc2626;
     --danger-hover: #b91c1c;
     --err: #b45309;
+    /* Type + shape + on-accent + diff tokens. Classic values == the current literals
+       (Classic renders identically); NERV overrides them in its block below.
+       Diff sigils are constant today (no @media dark override) — keep them constant. */
+    --on-accent: #fff;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-display: var(--font-sans);
+    --radius-sm: 4px; --radius-md: 6px; --radius-lg: 10px; --radius-dialog: 8px;
+    --diff-add-bg: rgba(46, 160, 67, 0.18);      --diff-del-bg: rgba(210, 35, 35, 0.18);
+    --diff-add-bg-dark: rgba(46, 160, 67, 0.24); --diff-del-bg-dark: rgba(210, 35, 35, 0.24);
+    --diff-add-fg: #2da44e;                      --diff-del-fg: #cf222e;
     /* File-status glyph colours (A/M/D…), keyed by what the change MEANS:
        add = green, modify = yellow/amber (a legible gold on white), remove = red. */
     --status-add: #2da44e;
@@ -635,9 +668,7 @@
     --status-del: #cf222e;
     /* tells native form controls (spinners, scrollbars, etc.) to follow light/dark */
     color-scheme: light;
-    font-family:
-      -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue",
-      sans-serif;
+    font-family: var(--font-sans);
     font-size: 14px;
   }
 
@@ -701,6 +732,53 @@
       --border-subtle: rgba(90, 100, 112, 0.22);
       --row-hover: rgba(28, 32, 39, 0.22);
     }
+  }
+
+  /* ===== NERV theme tokens — MUST remain AFTER both [data-tauri] glass blocks
+     (equal specificity → later source order wins). NERV is dark-only + opaque and
+     ignores prefers-color-scheme; it re-declares the full token superset. ===== */
+  :global(:root[data-theme="nerv"]) {
+    --bg: #0A0C0F;
+    --panel-bg: #12171C;
+    --popover-bg: #0E1216;
+    --header-bg: #0E1216;
+    --input-bg: #0E1216;
+    --btn-bg: #0E1216;
+    --btn-hover: #14181d;
+    --border: #2E3742;
+    --border-subtle: #232A31;
+    --text: #EAE6DA;
+    --text-muted: #8A94A0;
+    --row-hover: color-mix(in srgb, var(--accent) 6%, transparent);
+    --row-selected: color-mix(in srgb, var(--accent) 10%, transparent);
+    --row-selected-border: var(--accent);
+    --accent: #F2542D;
+    --accent-hover: #ff6a44;
+    --on-accent: #0A0C0F;                        /* dark text on orange (AA) */
+    --danger: #FF4438;
+    --danger-hover: #ff5a4f;
+    --err: #D9922E;                              /* warning = amber, decoupled from the accent so it stays legible in every scheme */
+    --status-add: #46E88B;
+    --status-mod: #D9922E;
+    --status-del: #FF4438;
+    /* diff — BOTH tiers (NERV is dark-only but @media dark still matches on a dark-mode Mac) */
+    --diff-add-bg: rgba(70, 232, 139, 0.15);      --diff-add-bg-dark: rgba(70, 232, 139, 0.15);
+    --diff-del-bg: rgba(255, 68, 56, 0.15);       --diff-del-bg-dark: rgba(255, 68, 56, 0.15);
+    --diff-add-fg: #46E88B;                       --diff-del-fg: #FF4438;
+    /* type */
+    --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-display: "Anton", "Arial Narrow", Impact, sans-serif;
+    /* shape — near-sharp */
+    --radius-sm: 0px; --radius-md: 2px; --radius-lg: 2px; --radius-dialog: 2px;
+    color-scheme: dark;
+    font-family: var(--font-sans);
+  }
+  /* opaque-over-glass: cover BOTH root and body (the transparent reset ~715-718 targets
+     body too). Combined selectors (0,3,0)/(0,3,1) → order-independent for this rule. */
+  :global(:root[data-theme="nerv"][data-tauri="true"]),
+  :global(:root[data-theme="nerv"][data-tauri="true"] body) {
+    background: var(--bg);
   }
 
   :global(html, body) {
@@ -895,7 +973,7 @@
   .fetch-btn {
     align-self: center;
     padding: 4px 12px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);
@@ -1023,7 +1101,7 @@
     border-radius: 7px;
     border: none;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;

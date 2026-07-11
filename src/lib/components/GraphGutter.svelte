@@ -22,6 +22,10 @@
     renderStart = 0,
     renderEnd = undefined,
     colorOf,
+    reveal = false,
+    revealBottomIndex = 0,
+    revealStep = 20,
+    revealBase = 0,
   }: {
     rows: RowLayout[];
     heads: boolean[];
@@ -35,7 +39,20 @@
     renderEnd?: number;
     /** Resolve a lane colour from its colorIndex (override-aware); defaults to the palette. */
     colorOf?: (colorIndex: number) => string;
+    /** NERV one-shot reveal: stroke-draw each edge + pop each dot, staggered bottom→top. */
+    reveal?: boolean;
+    /** Index whose reveal delay is 0 (bottom of the first viewport); rows above it draw later. */
+    revealBottomIndex?: number;
+    /** Per-row reveal stagger in ms. */
+    revealStep?: number;
+    /** Base delay added to every reveal animation (draw plays after the materialize frame). */
+    revealBase?: number;
   } = $props();
+
+  // Reveal delay for the element on absolute commit row `i`: bottom rows first
+  // (delay 0), climbing upward. Clamped so off-screen-below rows don't get negatives.
+  // revealBase pushes the whole draw past the boot frame on a repo switch (0 otherwise).
+  const revealDelay = (i: number) => revealBase + Math.max(0, revealBottomIndex - i) * revealStep;
 
   // Lane-colour resolver: a manual override wins where present, else the palette.
   const resolveColor = (idx: number) => (colorOf ? colorOf(idx) : laneColor(idx, null, {}));
@@ -79,6 +96,9 @@
         stroke={resolveColor(edge.colorIndex)}
         stroke-width="2"
         fill="none"
+        pathLength="1"
+        class:nerv-edge-draw={reveal}
+        style={reveal ? `animation-delay:${revealDelay(i)}ms` : ""}
       />
     {/each}
   {/each}
@@ -92,6 +112,8 @@
         fill="none"
         stroke="var(--accent)"
         stroke-width="1.5"
+        class:nerv-node-in={reveal}
+        style={reveal ? `animation-delay:${revealDelay(i)}ms` : ""}
       />
     {/if}
     <!-- All commit dots are FILLED in the lane colour (clean, Fork-like). Merges
@@ -104,6 +126,8 @@
       fill={resolveColor(row.colorIndex)}
       stroke="var(--panel-bg)"
       stroke-width="1.5"
+      class:nerv-node-in={reveal}
+      style={reveal ? `animation-delay:${revealDelay(i)}ms` : ""}
     />
   {/each}
 </svg>

@@ -20,7 +20,7 @@
     gap: 2px;
     padding: 8px 14px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     background: var(--panel-bg);
     color: var(--text);
     text-align: left;

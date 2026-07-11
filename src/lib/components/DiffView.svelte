@@ -39,7 +39,9 @@
     });
   }
 
-  const activeTheme = $derived(darkMode ? "github-dark" : "github-light");
+  const activeTheme = $derived(
+    appState.theme === "nerv" ? "nerv-" + appState.scheme : darkMode ? "github-dark" : "github-light",
+  );
 
   // ─── Parsed diff ──────────────────────────────────────────────────────────────
 
@@ -600,7 +602,7 @@
   .diff-view {
     display: flex;
     flex-direction: column;
-    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Code", monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.5;
     overflow: auto;
@@ -638,7 +640,7 @@
   .mode-btn.active {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .mode-btn:disabled {
     opacity: 0.45;
@@ -657,7 +659,7 @@
     gap: 6px;
     margin-left: 8px;
     font-size: 11px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .tot-add {
     color: var(--diff-add-fg, #2da44e);
@@ -670,7 +672,7 @@
     min-width: 1.4ch;
     text-align: center;
     font-size: 11px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     color: var(--text);
   }
 
@@ -853,7 +855,7 @@
   }
 
   .hunk-range {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--accent);
     margin-right: auto;
@@ -862,7 +864,7 @@
   /* ── Stage/unstage hunk buttons ─────────────────────────────────────────────── */
   .hunk-btn {
     padding: 1px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);
@@ -877,7 +879,7 @@
   .hunk-btn.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .hunk-btn.primary:hover {
     opacity: 0.88;
@@ -910,7 +912,7 @@
     border: none;
     border-radius: 3px;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 11px;
     line-height: 15px;
     text-align: center;
@@ -935,6 +937,6 @@
 
   /* ── Mono utility ───────────────────────────────────────────────────────────── */
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Code", monospace;
+    font-family: var(--font-mono);
   }
 </style>

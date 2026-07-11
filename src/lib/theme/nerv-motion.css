@@ -1,0 +1,328 @@
+/* NERV motion — ambient drift + interaction transitions (Task 7). Plain CSS
+   (not Svelte), so bare `:root[data-theme="nerv"]…` selectors reach every
+   host globally — NEVER `:global()`, which is Svelte-only and silently
+   dropped here (see nerv.css's B1 comment for the same gotcha).
+
+   EVERY rule below is double-gated on `:root[data-theme="nerv"][data-motion="on"]`
+   AND `@media (prefers-reduced-motion: no-preference)`. Motion-off OR
+   reduced-motion ⇒ no animation/transition — NERV falls back to fully static,
+   matching nerv.css's base (non-motion) appearance byte-for-byte. */
+
+/* ── Ambient scanline drift ───────────────────────────────────────────────
+   A SEPARATE thin layer from nerv.css's static root ::after (grid + accent
+   wash) — the drift never touches that texture, so ::after can stay static
+   by design. transform-only (translateY) keeps this on the compositor's fast
+   path: animating background-position/opacity on a full-viewport fixed layer
+   would repaint every frame under the backdrop-filter panels (the exact
+   framerate wall nerv.css's B1 comment calls out). Overscan the top by one
+   drift-cycle (-4px) so translating down never reveals a seam at the edge.
+   The pattern's period is 4px (1px line + 3px gap), matching the 4px drift
+   distance, so the loop is seamless. */
+/* Gated on [data-motion="on"] so motion-off NERV renders NO extra scanline layer
+   and matches nerv.css's base static appearance; the drift animation below adds
+   the same [prefers-reduced-motion] gate. */
+:root[data-theme="nerv"][data-motion="on"]::before {
+  content: "";
+  position: fixed;
+  inset: -4px 0 0 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 4px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"]::before {
+    animation: nerv-scanline-drift 8s linear infinite;
+  }
+}
+@keyframes nerv-scanline-drift {
+  to { transform: translateY(4px); } /* transform only */
+}
+
+/* ── Interaction motion ───────────────────────────────────────────────────
+   Corner brackets (nerv.css B3) grow + brighten on hover. --b is registered
+   via @property in nerv.css (syntax <length-percentage>), which is what
+   makes it interpolatable — a plain custom property can only be swapped
+   discretely, not transitioned. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"] .panel::after,
+  :root[data-theme="nerv"][data-motion="on"] .dialog::after {
+    transition: --b 180ms ease, filter 180ms ease;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .panel:hover::after,
+  :root[data-theme="nerv"][data-motion="on"] .dialog:hover::after {
+    --b: 22px; filter: brightness(1.5);
+  }
+
+  /* Active-segment (SettingsPanel .seg buttons) + row-selection (GraphHistory
+     .row / .wc-row) — short background transitions instead of an instant
+     snap. Row selection changes rarely (click/keyboard nav, not per-frame),
+     so this doesn't reintroduce a scroll-time repaint cost. */
+  :root[data-theme="nerv"][data-motion="on"] .seg button {
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .row,
+  :root[data-theme="nerv"][data-motion="on"] .wc-row {
+    transition: background-color 120ms ease;
+  }
+}
+
+/* ── Toolbar button corner-bracket hover + lift (Task 5) ──────────────────
+   Fetch/Pull/Push (+ split push-main/push-arrow) and Manage/Settings gear
+   buttons — the corner-bracket pseudos (nerv.css B5) reveal on hover with a
+   small lift, mirroring the website's .btn-ghost:hover treatment. `:not(:disabled)`
+   matches the existing Classic `.fetch-btn:hover:not(:disabled)` gate so a busy/
+   no-remote button doesn't lift; .gear-btn has no disabled state so plain :hover
+   suffices there. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn,
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn {
+    transition: transform 120ms ease;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn::before,
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn::after,
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn::before,
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn::after {
+    transition: opacity 120ms ease;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn:hover:not(:disabled),
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn:hover {
+    transform: translateY(-1px);
+  }
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn:hover:not(:disabled)::before,
+  :root[data-theme="nerv"][data-motion="on"] .fetch-btn:hover:not(:disabled)::after,
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn:hover::before,
+  :root[data-theme="nerv"][data-motion="on"] .gear-btn:hover::after {
+    opacity: 1;
+  }
+}
+
+/* ── Op spinner "● LIVE" blink ────────────────────────────────────────────
+   Static appearance (border/radius/background) lives in nerv.css; only the
+   blink animation is gated here (moved from nerv.css, Task 7). */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"] .spinner {
+    animation: nerv-live-blink 1.2s steps(1, end) infinite;
+  }
+}
+@keyframes nerv-live-blink { 50% { opacity: 0.2; } }
+
+/* ── Persistent live-dot pulse ─────────────────────────────────────────────
+   Idle: gentle slow pulse (~2s). Busy: faster pulse (~0.8s) — the compound
+   `.live-dot.busy` selector is more specific than the idle rule, so it wins
+   the cascade whenever both classes are present. Motion-off or
+   reduced-motion falls back to the static dot from nerv.css. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"] .live-dot {
+    animation: nerv-live-dot-pulse 2s ease-in-out infinite;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .live-dot.busy {
+    animation: nerv-live-dot-pulse 0.8s ease-in-out infinite;
+  }
+}
+@keyframes nerv-live-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* ── One-shot NERV "materialize" boot ──────────────────────────────────────
+   Pulsed via [data-boot] on <html> (store.svelte.ts pulseBootReveal): on app
+   launch (+page onMount), on a Classic→NERV toggle (setTheme), and on every repo
+   switch (setGraphCommits). Each .panel "materializes": a tiny accent SQUARE grows
+   to the panel's footprint (filled), the fill drains to a full rectangular outline,
+   then that outline retracts into the four resting corner brackets — i.e. the
+   collapse animation played in reverse (--b 51% → 14px). Staggered per panel by
+   --boot-i; the square's start scale (--boot-sx/--boot-sy) is set per panel in JS so
+   it reads as a real square, not a panel-shaped sliver. Same double-gate as the rest
+   of this file; Classic / motion-off / reduced-motion get the static resting panel. */
+
+/* Power-on scan — a single bright accent band sweeps top→bottom over the whole
+   viewport. Overrides the ambient-drift ::before for the boot window (the [data-boot]
+   selector is more specific, so it wins; only background+animation are overridden —
+   position/inset/z-index fall through from the drift rule — and the drift resumes
+   once [data-boot] lifts). */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot]::before {
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      color-mix(in srgb, var(--accent) 6%, transparent) 44%,
+      color-mix(in srgb, var(--accent) 45%, transparent) 50%,
+      color-mix(in srgb, var(--accent) 6%, transparent) 56%,
+      transparent 100%
+    );
+    animation: nerv-boot-scan 640ms ease-in both;
+  }
+}
+@keyframes nerv-boot-scan {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(100%); }
+}
+
+/* Per-panel materialize overlay. inset:0 = the panel box; --boot-sx/--boot-sy shrink
+   it to a ~24px centred square at 0%. It fades in and grows FILLED to the full panel,
+   then a panel-bg rectangle grows from the CENTRE (background-size, animated by
+   nerv-mat) so the fill's inner edge opens outward and the red thins into a border-only
+   outline — which then fades as the ::after brackets (below) take over. The 1.5px border
+   never gets covered (background-origin defaults to padding-box) so it survives as the
+   resting outline. z-index:3 so the fill briefly covers the panel content. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    transform-origin: center;
+    border: 1.5px solid var(--accent);
+    /* Red base + a centred panel-bg rectangle whose size nerv-mat grows 0→100%, carving
+       the fill into a frame from the inside out. */
+    background-color: var(--accent);
+    background-image: linear-gradient(var(--panel-bg), var(--panel-bg));
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 0% 0%;
+    animation: nerv-mat 720ms cubic-bezier(0.45, 0, 0.15, 1) both;
+    animation-delay: calc(var(--boot-i, 0) * 105ms);
+  }
+}
+@keyframes nerv-mat {
+  0%   { transform: scale(var(--boot-sx, 0.06), var(--boot-sy, 0.06)); background-size: 0% 0%;     border-color: var(--accent); opacity: 0; }
+  6%   { opacity: 1; }
+  30%  { transform: scale(1, 1); background-size: 0% 0%;     border-color: var(--accent); opacity: 1; }
+  48%  { transform: scale(1, 1); background-size: 100% 100%; border-color: var(--accent); opacity: 1; }
+  100% { transform: scale(1, 1); background-size: 100% 100%; border-color: transparent;   opacity: 0; }
+}
+
+/* Corner-bracket draw-on — the full outline (--b:51%, arms met, matching the
+   materialize overlay's outline stage) retracts into the four resting L-brackets
+   (--b:14px), so the outline visibly "opens" into the brackets. Timed to fade in as
+   the overlay reaches its outline stage (~48% of 720ms ≈ 346ms). .panel only —
+   dialogs keep their own nerv-dialog-in entrance. `:not(.collapsed)` because a
+   COLLAPSED panel's resting state IS the full outline (--b:51%, nerv.css) — it must
+   NOT retract to brackets and then snap/ease back to the outline when [data-boot]
+   lifts. Collapsed panels keep --b:51% throughout; their ::before fill still plays. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel:not(.collapsed)::after {
+    animation: nerv-boot-draw 400ms cubic-bezier(0.45, 0, 0.15, 1) both;
+    animation-delay: calc(var(--boot-i, 0) * 105ms + 340ms);
+  }
+}
+@keyframes nerv-boot-draw {
+  0%   { --b: 51%; opacity: 0; }
+  18%  { --b: 51%; opacity: 1; }
+  100% { --b: 14px; opacity: 1; }
+}
+
+/* Collapsed panels keep their full outline (--b:51%) — they must NOT retract to
+   brackets (hence :not(.collapsed) above) — but still fade that outline IN with the
+   frame, so a collapsed panel is part of the "nothing → materialize" sequence instead
+   of showing a static outline from t=0 during the seed phase. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel.collapsed::after {
+    animation: nerv-boot-draw-collapsed 400ms cubic-bezier(0.45, 0, 0.15, 1) both;
+    animation-delay: calc(var(--boot-i, 0) * 105ms + 340ms);
+  }
+}
+@keyframes nerv-boot-draw-collapsed {
+  0%   { --b: 51%; opacity: 0; }
+  18%  { --b: 51%; opacity: 1; }
+  100% { --b: 51%; opacity: 1; }
+}
+
+/* Panel BOX reveal — the panel's own background + border start invisible so at t=0
+   there is genuinely NOTHING (no dark panel box), only the materialize square on the
+   app backdrop. The box fades in as the ::before fill drains into the outline (~46-70%
+   of 720ms), so the frame appears to "deposit" the panel. Animates .panel's own
+   background/border only — the ::before/::after overlays are unaffected. The keyframe
+   ends at the resting tokens, so when [data-boot] lifts the base rule takes over seamlessly. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel {
+    animation: nerv-boot-box 720ms ease-out both;
+    animation-delay: calc(var(--boot-i, 0) * 105ms);
+  }
+}
+@keyframes nerv-boot-box {
+  0%, 46% { background-color: transparent; border-color: transparent; }
+  70%     { background-color: var(--panel-bg); border-color: var(--border); }
+  100%    { background-color: var(--panel-bg); border-color: var(--border); }
+}
+
+/* Panel CONTENT reveal — the header + body (`.panel > *`, which excludes the ::before/
+   ::after materialize pseudos) start hidden and fade+rise in AFTER the frame has
+   materialized, so the sequence reads: nothing → red square/frame → content. Staggered
+   per panel by the same --boot-i. `both` holds opacity:0 through the delay (no flash of
+   content) and opacity:1 after (until [data-boot] lifts → base takes over). */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"][data-boot] .panel > * {
+    animation: nerv-boot-content 820ms ease-out both;
+    animation-delay: calc(var(--boot-i, 0) * 105ms);
+  }
+}
+@keyframes nerv-boot-content {
+  0%, 62% { opacity: 0; transform: translateY(4px); }
+  82%     { opacity: 1; transform: none; }
+  100%    { opacity: 1; transform: none; }
+}
+
+/* ── One-shot timeline "graph builds itself" reveal ────────────────────────
+   Armed exactly once per repo-identity change / same-repo Local Changes→Timeline
+   switch (store.svelte.ts → appState.revealing). NOT a clip-path mask over the
+   whole graph (that reads as a cheap wipe) — instead the ACTUAL line is drawn:
+   every gutter edge stroke-draws itself (.nerv-edge-draw), every dot pops in
+   (.nerv-node-in), and every commit row fades in under it (.nerv-row-in). Each
+   element carries an inline animation-delay staggered bottom→top (set by
+   GraphHistory/GraphGutter), so the timeline reads as one continuous line growing
+   upward with the entries arriving beneath it. Same double-gate as the rest of
+   this file, so Classic / motion-off / reduced-motion render the static graph. */
+@media (prefers-reduced-motion: no-preference) {
+  /* Edges: pathLength="1" (set on the <path>) normalises every edge to length 1,
+     so dasharray:1 + dashoffset:-1→0 draws each segment from its bottom (parent)
+     end up toward its top (child) dot — matching the bottom→top global sweep. */
+  :root[data-theme="nerv"][data-motion="on"] .nerv-edge-draw {
+    stroke-dasharray: 1;
+    animation: nerv-edge-draw 320ms ease-out both;
+  }
+  /* Dots pop from their own centre (fill-box, not the SVG origin). */
+  :root[data-theme="nerv"][data-motion="on"] .nerv-node-in {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: nerv-node-in 240ms ease-out both;
+  }
+  /* Commit rows (+ the working-copy row) slide in from the left as the line reaches them. */
+  :root[data-theme="nerv"][data-motion="on"] .nerv-row-in {
+    animation: nerv-row-in 300ms ease-out both;
+  }
+}
+@keyframes nerv-edge-draw {
+  from { stroke-dashoffset: -1; }
+  to   { stroke-dashoffset: 0; }
+}
+@keyframes nerv-node-in {
+  from { opacity: 0; transform: scale(0.1); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes nerv-row-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Context menu + Settings dialog entrance (motion-polish round 2, Task 8) ──
+   Short fade + scale on mount so the transient popovers don't just snap into
+   existence. `both` holds the `from` frame before the animation starts (no
+   flash-of-final-state) and the `to` frame after it ends. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="nerv"][data-motion="on"] .menu {
+    animation: nerv-menu-in 140ms ease-out both;
+  }
+  :root[data-theme="nerv"][data-motion="on"] .dialog {
+    animation: nerv-dialog-in 180ms ease-out both;
+  }
+}
+@keyframes nerv-menu-in {
+  from { opacity: 0; transform: scale(0.97) translateY(-2px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes nerv-dialog-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}

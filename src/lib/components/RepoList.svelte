@@ -139,7 +139,7 @@
   .repo-row {
     display: flex;
     align-items: center;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
   .repo-row:hover .remove-btn {
     opacity: 1;
@@ -157,7 +157,7 @@
     padding: 5px 8px 5px 18px;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text);
     font-size: 12.5px;
     cursor: pointer;
@@ -215,7 +215,7 @@
     flex-shrink: 0;
     margin-right: 4px;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: none;
     color: var(--text-muted);
     font-size: 14px;
@@ -239,7 +239,7 @@
     padding: 5px 8px 5px 16px;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-muted);
     font-size: 12.5px;
     cursor: pointer;

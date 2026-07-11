@@ -114,7 +114,7 @@
     padding: 2px 10px;
     font-size: 11.5px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--btn-bg);
     color: var(--text);
     cursor: pointer;
@@ -142,7 +142,7 @@
     cursor: pointer;
   }
   .chip.active {
-    color: #fff;
+    color: var(--on-accent);
     background: var(--accent);
     border-color: var(--accent);
   }
@@ -208,7 +208,7 @@
     color: var(--text-muted);
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
   }
   .rev {

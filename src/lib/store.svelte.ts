@@ -3,8 +3,18 @@
 import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
-import { computeLanes, laneColor, type MergeInStyle } from "./graph";
+import {
+  computeLanes,
+  laneColor,
+  LANE_PALETTE,
+  NERV_LANE_PALETTE,
+  NERV_SCHEME_PALETTES,
+  schemeLanePalette,
+  type MergeInStyle,
+  type Scheme,
+} from "./graph";
 import { reorder } from "./reorder";
+import { tick } from "svelte";
 
 // Preferences persist via the Tauri Store plugin (a JSON file written by Rust) so
 // they survive a force-quit/crash — macOS WKWebView flushes localStorage only
@@ -60,6 +70,15 @@ function graphToCommit(g: GraphCommit): Commit {
 
 const LINESTYLE_KEY = "gitit.graphLineStyle.v1";
 const LINESTYLE_STORE_KEY = "graphLineStyle";
+
+const THEME_KEY = "gitit.theme.v1";       // localStorage (also read synchronously by themeMode.ts)
+const THEME_STORE_KEY = "theme";          // Tauri store (durable)
+
+const SCHEME_KEY = "gitit.scheme.v1";     // localStorage (also read synchronously by themeMode.ts)
+const SCHEME_STORE_KEY = "scheme";        // Tauri store (durable)
+
+const MOTION_KEY = "gitit.motion.v1";     // localStorage (also read synchronously by themeMode.ts)
+const MOTION_STORE_KEY = "motion";        // Tauri store (durable)
 
 const MERGEINSTYLE_KEY = "gitit.graphMergeInStyle.v1";
 const MERGEINSTYLE_STORE_KEY = "graphMergeInStyle";
@@ -167,15 +186,124 @@ function loadSyncRepoMode(): "tabs" | "sidebar" {
   }
 }
 
-function loadSyncLineStyle(): "curved" | "angular" {
-  if (isTauri()) return "curved";
+function loadSyncLineStyle(): "auto" | "curved" | "angular" {
+  if (isTauri()) return "auto";
   try {
-    if (typeof localStorage === "undefined") return "curved";
+    if (typeof localStorage === "undefined") return "auto";
     const raw = localStorage.getItem(LINESTYLE_KEY);
-    return raw === "angular" ? "angular" : "curved";
+    return raw === "auto" || raw === "angular" || raw === "curved" ? raw : "auto";
   } catch {
-    return "curved";
+    return "auto";
   }
+}
+
+// DEVIATION vs loadSyncLineStyle: reads localStorage UNCONDITIONALLY (incl. under
+// Tauri) so the store seed matches what themeMode.ts already painted pre-paint.
+function loadSyncTheme(): "classic" | "nerv" {
+  try {
+    if (typeof localStorage === "undefined") return "classic";
+    return localStorage.getItem(THEME_KEY) === "nerv" ? "nerv" : "classic";
+  } catch {
+    return "classic";
+  }
+}
+
+// Reflect the theme onto <html> imperatively — NO $effect (module-scope factory).
+function applyThemeAttr(t: "classic" | "nerv"): void {
+  if (typeof document === "undefined") return;
+  if (t === "nerv") document.documentElement.setAttribute("data-theme", "nerv");
+  else document.documentElement.removeAttribute("data-theme");
+}
+
+// One-shot NERV "boot reveal" pulse (Task 8) — mirrors themeMode.ts's launch-time
+// pulse for the Classic→NERV toggle path. Caller is responsible for only invoking
+// this when motion is on (see setTheme). CSS keyframes gated on [data-boot] +
+// reduced-motion live in nerv-motion.css.
+// Task 7: panels get an ascending --boot-i so nerv-motion.css can stagger the
+// per-panel cascade + bracket draw-on.
+// How long [data-boot] stays on <html>. Must outlast the full staggered materialize:
+// last panel starts at (panelCount-1)*BOOT_STAGGER_MS and runs ~MAT_MS, plus headroom.
+const BOOT_MS = 1600;
+// A single owned teardown timer. Two pulses can overlap (a cold Tauri launch fires
+// onMount + the async repo-load, and rapid repo switches stack) — without this guard
+// the FIRST pulse's setTimeout would strip data-boot / --boot-* mid-animation of the
+// LATEST pulse. Clearing the prior timer means only the latest pulse owns cleanup.
+let bootTimer: ReturnType<typeof setTimeout> | null = null;
+function pulseBootReveal(): void {
+  if (typeof document === "undefined") return;
+  if (bootTimer !== null) clearTimeout(bootTimer);
+  document.documentElement.dataset.boot = "";
+  const panels = document.querySelectorAll(".panel");
+  const SQUARE_PX = 24; // start size of the materialize square
+  panels.forEach((el, i) => {
+    const p = el as HTMLElement;
+    p.style.setProperty("--boot-i", String(i));
+    // --boot-sx/--boot-sy = the scale that shrinks the inset:0 overlay to a ~24px
+    // SQUARE (not a panel-shaped sliver); nerv-motion.css's materialize keyframe
+    // starts there and grows to scale(1,1) = the full panel. Computed here (not via
+    // CSS calc on a custom prop) so it's a plain, well-supported number.
+    p.style.setProperty("--boot-sx", (SQUARE_PX / Math.max(1, p.offsetWidth)).toFixed(4));
+    p.style.setProperty("--boot-sy", (SQUARE_PX / Math.max(1, p.offsetHeight)).toFixed(4));
+  });
+  bootTimer = setTimeout(() => {
+    bootTimer = null;
+    delete document.documentElement.dataset.boot;
+    panels.forEach((el) => {
+      const p = el as HTMLElement;
+      p.style.removeProperty("--boot-i");
+      p.style.removeProperty("--boot-sx");
+      p.style.removeProperty("--boot-sy");
+    });
+  }, BOOT_MS);
+}
+
+// Own-property check (not `in`) so a malformed localStorage/store value like
+// "__proto__" can't resolve through the prototype chain instead of failing validation.
+function isScheme(v: unknown): v is Scheme {
+  return typeof v === "string" && Object.prototype.hasOwnProperty.call(NERV_SCHEME_PALETTES, v);
+}
+
+// DEVIATION vs loadSyncLineStyle: reads localStorage UNCONDITIONALLY (incl. under
+// Tauri) so the store seed matches what themeMode.ts already painted pre-paint.
+function loadSyncScheme(): Scheme {
+  try {
+    if (typeof localStorage === "undefined") return "orange";
+    const raw = localStorage.getItem(SCHEME_KEY);
+    return isScheme(raw) ? raw : "orange";
+  } catch {
+    return "orange";
+  }
+}
+
+// Reflect the scheme onto <html> imperatively — NO $effect (module-scope factory).
+// Always set (even "orange") — harmless, and keeps the attribute present for CSS
+// that may later key off it regardless of value.
+function applySchemeAttr(s: Scheme): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.scheme = s;
+}
+
+// INVERTED default vs loadSyncTheme/loadSyncScheme: motion defaults to ON
+// (attribute PRESENT by default) — only an explicit "off" disables it, so an
+// absent/malformed key must not silently turn motion off. Still reads
+// localStorage UNCONDITIONALLY (incl. under Tauri) so the store seed matches
+// what themeMode.ts already painted pre-paint.
+function loadSyncMotion(): boolean {
+  try {
+    if (typeof localStorage === "undefined") return true;
+    return localStorage.getItem(MOTION_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+// Reflect motion onto <html> imperatively — NO $effect (module-scope factory).
+// INVERTED vs applyThemeAttr: "on" SETS the attribute (default-present); "off"
+// removes it.
+function applyMotionAttr(on: boolean): void {
+  if (typeof document === "undefined") return;
+  if (on) document.documentElement.setAttribute("data-motion", "on");
+  else document.documentElement.removeAttribute("data-motion");
 }
 
 function loadSyncMergeInStyle(): MergeInStyle {
@@ -542,6 +670,44 @@ function makeState() {
   let graphCommitsRepo = $state<string>("");
   let graphHasMore = $state(false);
   let graphLoadingMore = $state(false);
+  // ── Timeline "graph builds itself" reveal (Task 9) ─────────────────────────
+  // Plays ONCE when a repo's graph first appears — armed on a repo-identity change
+  // in setGraphCommits, or a genuine Local Changes→Timeline view switch (+page.svelte).
+  // Must NOT replay on scroll, on an fswatch/window-focus refresh (applyGraphRefresh),
+  // on paging (appendGraphCommits), or on same-repo git ops. NO $effect here: this is
+  // a module-scope factory, so an $effect throws effect_orphan (same reason the theme
+  // attrs are reflected imperatively). armReveal() bumps revealSeq and clears
+  // `revealing` via a seq-guarded setTimeout so a re-arm mid-reveal supersedes the
+  // older timer instead of clearing early.
+  let revealing = $state(false);
+  let revealSeq = 0;
+  // Base delay (ms) ADDED to every per-row/edge reveal animation. On a repo-switch
+  // materialize this pushes the DRAW to after the commits frame + content have faded
+  // in — WITHOUT delaying `revealing` itself. That distinction fixes the flash: if we
+  // instead delayed `revealing`, the content-fade would paint the whole timeline at
+  // rest first, then nerv-row-in would snap it hidden and redraw it. Arming `revealing`
+  // immediately means the rows carry the hidden nerv-row-in from-state from their first
+  // paint (held through this base delay via `both`), so the timeline is never shown at
+  // rest — only the offset draw plays. A view switch (no materialize) uses base 0.
+  let revealBaseMs = $state(0);
+  // Wipe duration (nerv-motion.css .nerv-graph-reveal, ~700ms) + a small buffer so
+  // `revealing` clears just after the staggered bottom→top draw finishes (max row
+  // delay ~≤650ms + the ~320ms edge-draw duration, plus headroom). If this fires
+  // before the last row's animation ends, that row would snap to its resting state.
+  const REVEAL_MS = 1100;
+  // The base offset for a repo-switch: commits is the last-staggered panel, its content
+  // fades in ~930ms into the boot, so the draw starts ~here (relative to the rows' mount).
+  const REVEAL_BASE_MAT_MS = 900;
+  function armReveal(baseMs = 0) {
+    revealSeq++;
+    const seq = revealSeq;
+    revealBaseMs = baseMs;
+    revealing = true; // ALWAYS synchronous — rows must carry nerv-row-in from first paint.
+    // The window must outlast the base offset + the staggered draw, else the last row snaps.
+    setTimeout(() => {
+      if (revealSeq === seq) revealing = false;
+    }, REVEAL_MS + baseMs);
+  }
   const rows = $derived(
     computeLanes(graphCommits.map((c) => ({ sha: c.sha, parents: c.parents }))),
   );
@@ -651,7 +817,7 @@ function makeState() {
     return m;
   });
 
-  let graphLineStyle = $state<"curved" | "angular">(loadSyncLineStyle());
+  let graphLineStyle = $state<"auto" | "curved" | "angular">(loadSyncLineStyle());
   let graphLineStyleTouched = false;
 
   // Working-copy/op status from repo_status; null in browser/sample mode (no op).
@@ -662,7 +828,10 @@ function makeState() {
     lsHydrate
       .then((store) => store.get<string>(LINESTYLE_STORE_KEY))
       .then((saved) => {
-        if ((saved === "curved" || saved === "angular") && !graphLineStyleTouched) {
+        if (
+          (saved === "auto" || saved === "curved" || saved === "angular") &&
+          !graphLineStyleTouched
+        ) {
           graphLineStyle = saved;
         }
       })
@@ -683,6 +852,129 @@ function makeState() {
       if (typeof localStorage !== "undefined") localStorage.setItem(LINESTYLE_KEY, snapshot);
     } catch (e) {
       console.warn("[gte] could not persist line style", e);
+    }
+  }
+
+  let theme = $state<"classic" | "nerv">(loadSyncTheme());
+  let themeTouched = false;
+
+  const themeHydrate = getStore();
+  if (themeHydrate) {
+    themeHydrate
+      .then((store) => store.get<string>(THEME_STORE_KEY))
+      .then((saved) => {
+        if ((saved === "classic" || saved === "nerv") && !themeTouched) {
+          theme = saved;
+          applyThemeAttr(saved);
+          // Refresh the pre-paint mirror themeMode.ts reads. The durable copy is the Tauri
+          // store; if localStorage was dropped/stale (the case this module exists to survive)
+          // the next launch would keep painting the stale theme until this async hydrate runs
+          // again — so write the accepted value back to the mirror now.
+          try {
+            if (typeof localStorage !== "undefined") localStorage.setItem(THEME_KEY, saved);
+          } catch (e) {
+            console.warn("[gte] could not refresh theme mirror", e);
+          }
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load theme", e));
+  }
+
+  function persistTheme() {
+    const snapshot = theme;
+    // DEVIATION vs persistLineStyle: write localStorage in BOTH branches so
+    // themeMode.ts's synchronous pre-paint read is always current.
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(THEME_KEY, snapshot);
+    } catch (e) {
+      console.warn("[gte] could not persist theme (localStorage)", e);
+    }
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(THEME_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist theme (store)", e));
+    }
+  }
+
+  let scheme = $state<Scheme>(loadSyncScheme());
+  let schemeTouched = false;
+
+  const schemeHydrate = getStore();
+  if (schemeHydrate) {
+    schemeHydrate
+      .then((store) => store.get<string>(SCHEME_STORE_KEY))
+      .then((saved) => {
+        if (isScheme(saved) && !schemeTouched) {
+          scheme = saved;
+          applySchemeAttr(saved);
+          // Refresh the pre-paint mirror themeMode.ts reads (see theme hydrate above).
+          try {
+            if (typeof localStorage !== "undefined") localStorage.setItem(SCHEME_KEY, saved);
+          } catch (e) {
+            console.warn("[gte] could not refresh scheme mirror", e);
+          }
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load scheme", e));
+  }
+
+  function persistScheme() {
+    const snapshot = scheme;
+    // DEVIATION vs persistLineStyle: write localStorage in BOTH branches so
+    // themeMode.ts's synchronous pre-paint read is always current.
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(SCHEME_KEY, snapshot);
+    } catch (e) {
+      console.warn("[gte] could not persist scheme (localStorage)", e);
+    }
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(SCHEME_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist scheme (store)", e));
+    }
+  }
+
+  let motion = $state<boolean>(loadSyncMotion());
+  let motionTouched = false;
+
+  const motionHydrate = getStore();
+  if (motionHydrate) {
+    motionHydrate
+      .then((store) => store.get<string>(MOTION_STORE_KEY))
+      .then((saved) => {
+        if ((saved === "on" || saved === "off") && !motionTouched) {
+          motion = saved === "on";
+          applyMotionAttr(motion);
+          // Refresh the pre-paint mirror themeMode.ts reads (see theme hydrate above).
+          try {
+            if (typeof localStorage !== "undefined") localStorage.setItem(MOTION_KEY, saved);
+          } catch (e) {
+            console.warn("[gte] could not refresh motion mirror", e);
+          }
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load motion", e));
+  }
+
+  function persistMotion() {
+    const snapshot = motion ? "on" : "off";
+    // DEVIATION vs persistLineStyle: write localStorage in BOTH branches so
+    // themeMode.ts's synchronous pre-paint read is always current.
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(MOTION_KEY, snapshot);
+    } catch (e) {
+      console.warn("[gte] could not persist motion (localStorage)", e);
+    }
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(MOTION_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist motion (store)", e));
     }
   }
 
@@ -1462,6 +1754,23 @@ function makeState() {
     get graphCommitsRepo() {
       return graphCommitsRepo;
     },
+    // Task 9 one-shot timeline reveal. `revealing` gates the row-cascade / edge-draw
+    // animations (GraphHistory/GraphGutter); armReveal() is also called from the
+    // view-switch effect in +page.svelte on a same-repo Local Changes→Timeline switch.
+    get revealing() {
+      return revealing;
+    },
+    // Base ms added to every reveal animation-delay (GraphHistory/GraphGutter) so the
+    // draw plays after the materialize frame on a repo switch; 0 on a view switch.
+    get revealBaseMs() {
+      return revealBaseMs;
+    },
+    armReveal,
+    // One-shot NERV boot reveal. Fired from +page.svelte's onMount (NOT at module
+    // load) so the .panel elements exist to receive --boot-i; onMount runs before
+    // the first browser paint, so the staggered cascade applies with no rest-state
+    // flash. Also fired by setTheme on a Classic→NERV toggle.
+    bootPulse: pulseBootReveal,
     get rows() {
       return rows;
     },
@@ -1489,15 +1798,17 @@ function makeState() {
     colorForRef(name: string, sha: string): string {
       const ov = branchColors[repo]?.[name];
       if (ov) return ov;
+      const palette = theme === "nerv" ? schemeLanePalette(scheme) : LANE_PALETTE;
       const idx = colorBySha.get(sha);
-      if (idx === undefined) return laneColor(0, null, {});
-      return overrideByIndex.get(idx) ?? laneColor(idx, null, {});
+      if (idx === undefined) return laneColor(0, null, {}, palette);
+      return overrideByIndex.get(idx) ?? laneColor(idx, null, {}, palette);
     },
     // The colour for a lane (by colorIndex): an override wins if a ref tip on that
     // lane has one, else the palette colour. Used by the gutter so an override
     // recolours the descending lane line, not just the sidebar dot.
     colorForIndex(idx: number): string {
-      return overrideByIndex.get(idx) ?? laneColor(idx, null, {});
+      const palette = theme === "nerv" ? schemeLanePalette(scheme) : LANE_PALETTE;
+      return overrideByIndex.get(idx) ?? laneColor(idx, null, {}, palette);
     },
     setBranchColor(name: string, hex: string) {
       branchColorsTouched = true;
@@ -1527,10 +1838,42 @@ function makeState() {
     get graphLineStyle() {
       return graphLineStyle;
     },
-    setGraphLineStyle(v: "curved" | "angular") {
+    get effectiveGraphLineStyle(): "curved" | "angular" {
+      if (graphLineStyle === "curved" || graphLineStyle === "angular") return graphLineStyle;
+      return theme === "nerv" ? "angular" : "curved"; // "auto"
+    },
+    setGraphLineStyle(v: "auto" | "curved" | "angular") {
       graphLineStyleTouched = true;
       graphLineStyle = v;
       persistLineStyle();
+    },
+    get theme() {
+      return theme;
+    },
+    setTheme(v: "classic" | "nerv") {
+      themeTouched = true;
+      theme = v;
+      applyThemeAttr(v);
+      persistTheme();
+      if (v === "nerv" && motion) pulseBootReveal();
+    },
+    get scheme() {
+      return scheme;
+    },
+    setScheme(v: Scheme) {
+      schemeTouched = true;
+      scheme = v;
+      applySchemeAttr(v);
+      persistScheme();
+    },
+    get motion() {
+      return motion;
+    },
+    setMotion(v: boolean) {
+      motionTouched = true;
+      motion = v;
+      applyMotionAttr(v);
+      persistMotion();
     },
     get graphMergeInStyle() {
       return graphMergeInStyle;
@@ -1737,6 +2080,11 @@ function makeState() {
       persistRelativeDates();
     },
     setGraphCommits(gc: GraphCommit[]) {
+      // Capture BEFORE reassigning graphCommitsRepo — a genuine repo-identity
+      // transition (incl. the first load, when graphCommitsRepo === "") arms the
+      // one-shot reveal below. applyGraphRefresh/appendGraphCommits deliberately do
+      // NOT arm, so fswatch/focus refreshes and paging never replay it.
+      const repoChanged = graphCommitsRepo !== repo;
       graphCommits = gc;
       graphCommitsRepo = repo;
       commits = gc.map(graphToCommit);
@@ -1745,6 +2093,21 @@ function makeState() {
       currentSha = null;
       // NOTE: lastUndo is intentionally NOT cleared here — a destructive op reloads the
       // graph and we want the UndoBar to remain visible after that refresh.
+      if (repoChanged) {
+        // In NERV + motion, a repo switch re-runs the "materialize" boot on every panel
+        // (square→outline→brackets); the timeline reveal is delayed so it draws AFTER the
+        // commits frame has settled. In Classic / motion-off there's no materialize, so
+        // the reveal arms immediately (it's inert there anyway — the CSS is NERV-gated).
+        const nervMaterialize = theme === "nerv" && motion;
+        // Defer the DOM-measuring pulse until AFTER Svelte flushes: during a repo
+        // switch the commits panel is unmounted (GraphSkeleton shows while repoLoading);
+        // setting graphCommitsRepo=repo above flips +page's skeleton guard, so the next
+        // flush (awaited by tick) mounts the commits .panel — only then can pulseBootReveal
+        // measure it and set its --boot-i/--boot-sx/--boot-sy. Firing synchronously would
+        // miss it → a panel-shaped sliver with no stagger. (Mirrors the onMount tick fix.)
+        if (nervMaterialize) void tick().then(pulseBootReveal);
+        armReveal(nervMaterialize ? REVEAL_BASE_MAT_MS : 0);
+      }
     },
     // Non-destructive graph update for a LIVE refresh (filesystem watcher / window
     // focus), as opposed to setGraphCommits (the repo-switch reset). Keeps the open

@@ -12,7 +12,7 @@
 
 A fast, native **macOS git client** — commit graph, branches, merges, rebases, working-copy diffs, and remotes — with **first-class commit-time editing**. Built with [Tauri 2](https://tauri.app) (Rust) and [SvelteKit 5](https://svelte.dev) (runes).
 
-> macOS only. The window uses native vibrancy (frosted-glass panels over the desktop) via `NSVisualEffect`.
+> macOS only. In its default **Classic** theme the window uses native vibrancy (frosted-glass panels over the desktop) via `NSVisualEffect`; the **NERV** theme swaps in a solid high-contrast console look (Settings → Appearance).
 
 ## Download
 
@@ -31,6 +31,7 @@ A fast, native **macOS git client** — commit graph, branches, merges, rebases,
 - **Remotes** — manage remotes; streamed **pull** (merge or rebase) and **push** (`--force-with-lease`, `--set-upstream`) with live progress, cancel, and an ahead/behind indicator. Credentials are prompted on demand and never stored.
 - **Commit-time editing** — select commits and shift them by an **offset**, set an **exact** time, or **compress** a range proportionally into a new window. Opens in an on-demand drawer; previews before it rewrites.
 - **Multi-repo** — open several repositories at once, as tabs or a sidebar list (your choice).
+- **Themes** — Settings → Appearance switches the whole UI between **Classic** (native macOS vibrancy) and **NERV**, a high-contrast HUD console theme with six accent schemes and optional ambient motion.
 
 ## Screenshots
 

@@ -81,7 +81,7 @@
   }
   .sha {
     flex: 0 0 auto;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--accent);
     background: none;

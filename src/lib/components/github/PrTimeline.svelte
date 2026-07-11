@@ -478,7 +478,7 @@
   .row.comment .card,
   .row.review .card {
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     padding: 10px 12px;
     margin-bottom: 12px;
     background: var(--panel-bg);
@@ -510,7 +510,7 @@
   .threads { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .thread {
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     padding: 8px 10px;
     background: var(--btn-bg);
   }
@@ -606,5 +606,5 @@
   .g.fail { color: var(--err, #c0392b); }
   .g.pending { color: var(--status-mod, #d29922); }
   .g.neutral { color: var(--text-muted); }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+  .mono { font-family: var(--font-mono); font-size: 11.5px; }
 </style>

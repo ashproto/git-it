@@ -146,7 +146,7 @@
     white-space: nowrap;
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .entry-actions {
     display: flex;
@@ -170,7 +170,7 @@
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: white;
+    color: var(--on-accent);
     padding: 4px 12px;
     font-size: 12px;
   }
@@ -183,6 +183,6 @@
   }
   button.danger:hover {
     background: var(--err, #c0392b);
-    color: white;
+    color: var(--on-accent);
   }
 </style>

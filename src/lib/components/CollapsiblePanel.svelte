@@ -199,7 +199,7 @@
 <style>
   .panel {
     background: var(--panel-bg);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     border: 1px solid var(--border);
     overflow: hidden;
   }
