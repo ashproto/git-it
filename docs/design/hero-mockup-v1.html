@@ -1,0 +1,282 @@
+<title>Git It — hero mockup</title>
+<style>
+  :root{
+    --void:#0A0C0F; --void2:#0E1216; --panel:#12171C;
+    --line:#232A31; --line2:#2E3742;
+    --bone:#EAE6DA; --haze:#8A94A0; --haze-dim:#5A636E;
+    --orange:#F2542D; --orange-deep:#C23A18;
+    --phosphor:#46E88B; --alert:#FF4438;
+    --font-display:"Futura Condensed ExtraBold","Futura-CondensedExtraBold","Futura","Helvetica Neue",Impact,sans-serif;
+    --font-body:"Helvetica Neue",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --font-mono:ui-monospace,"SF Mono","SFMono-Regular",Menlo,Monaco,"Cascadia Mono",monospace;
+    --edge:14px;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{margin:0;}
+  .page{
+    background:
+      radial-gradient(1100px 600px at 78% -8%, rgba(242,84,45,.10), transparent 60%),
+      radial-gradient(900px 700px at 8% 110%, rgba(70,232,139,.05), transparent 55%),
+      var(--void);
+    color:var(--bone);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    position:relative;
+    overflow-x:hidden;
+  }
+  /* ambient scanlines + grid */
+  .page::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:2;
+    background:
+      linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px) 0 0/100% 3px,
+      linear-gradient(90deg, rgba(255,255,255,.015) 1px, transparent 1px) 0 0/64px 100%;
+    mix-blend-mode:screen;opacity:.5;
+  }
+  .page::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:3;
+    background:radial-gradient(120% 90% at 50% 0%, transparent 60%, rgba(0,0,0,.55) 100%);
+  }
+  .wrap{max-width:1240px;margin:0 auto;padding:0 clamp(20px,4vw,48px);position:relative;z-index:5;}
+
+  /* ---- nav ---- */
+  nav{position:sticky;top:0;z-index:20;
+    backdrop-filter:blur(8px);background:linear-gradient(var(--void),rgba(10,12,15,.72));
+    border-bottom:1px solid var(--line);}
+  .nav-in{display:flex;align-items:center;justify-content:space-between;gap:20px;
+    height:60px;}
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-mono);
+    font-size:14px;letter-spacing:.16em;color:var(--bone);text-transform:uppercase;}
+  .brand svg{display:block;}
+  .nav-links{display:flex;align-items:center;gap:26px;font-family:var(--font-mono);
+    font-size:12px;letter-spacing:.14em;text-transform:uppercase;}
+  .nav-links a{color:var(--haze);text-decoration:none;position:relative;padding:4px 0;}
+  .nav-links a::before{content:"";position:absolute;left:-12px;top:50%;transform:translateY(-50%);
+    color:var(--orange);opacity:0;transition:opacity .18s;}
+  .nav-links a:hover{color:var(--bone);}
+  .nav-links a:hover::before{content:"›";opacity:1;}
+  .nav-links a:focus-visible{outline:2px solid var(--orange);outline-offset:3px;color:var(--bone);}
+  .nav-dl{color:var(--bone)!important;border:1px solid var(--orange);padding:8px 14px!important;
+    background:rgba(242,84,45,.08);}
+  .nav-dl:hover{background:var(--orange);color:var(--void)!important;}
+  .hide-sm{}
+  @media(max-width:720px){.hide-sm{display:none;}}
+
+  /* ---- hero ---- */
+  .hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);
+    gap:clamp(28px,4vw,56px);align-items:center;
+    padding:clamp(48px,8vh,104px) 0 clamp(40px,6vh,72px);}
+  @media(max-width:900px){.hero{grid-template-columns:1fr;gap:36px;}}
+
+  .eyebrow{display:inline-flex;align-items:center;gap:10px;font-family:var(--font-mono);
+    font-size:12.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--haze);
+    border:1px solid var(--line2);padding:7px 12px;border-radius:2px;background:var(--void2);}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--phosphor);
+    box-shadow:0 0 8px var(--phosphor);}
+  @media(prefers-reduced-motion:no-preference){.dot{animation:blink 2.4s steps(1) infinite;}}
+  @keyframes blink{0%,70%{opacity:1;}71%,100%{opacity:.25;}}
+
+  h1.headline{font-family:var(--font-display);font-weight:800;color:var(--bone);
+    margin:22px 0 0;line-height:.84;letter-spacing:-.005em;text-transform:uppercase;
+    font-size:clamp(3.4rem,13vw,9.2rem);text-wrap:balance;}
+  .headline .line{display:block;overflow:hidden;}
+  .headline .line > span{display:block;}
+  .headline em{font-style:normal;color:var(--orange);}
+  .tag-rev{font-family:var(--font-mono);font-size:12px;letter-spacing:.12em;color:var(--orange);
+    vertical-align:top;margin-left:10px;}
+
+  .anno{font-family:var(--font-mono);font-size:12.5px;letter-spacing:.06em;color:var(--haze);
+    margin:20px 0 0;text-transform:uppercase;border-left:2px solid var(--orange);padding-left:12px;}
+  .anno b{color:var(--bone);font-weight:600;}
+
+  .subhead{max-width:52ch;margin:20px 0 0;color:#C7CDD4;font-size:clamp(1rem,1.15vw,1.12rem);
+    line-height:1.6;}
+  .subhead .strong{color:var(--bone);}
+
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;margin-top:30px;}
+  .btn{font-family:var(--font-mono);font-size:13px;letter-spacing:.12em;text-transform:uppercase;
+    text-decoration:none;padding:15px 22px;display:inline-flex;align-items:center;gap:12px;
+    position:relative;border:1px solid transparent;transition:transform .12s,background .18s,color .18s;}
+  .btn:focus-visible{outline:2px solid var(--bone);outline-offset:3px;}
+  .btn-primary{background:var(--orange);color:var(--void);font-weight:600;}
+  .btn-primary:hover{background:#ff6a44;transform:translateY(-1px);}
+  .btn-ghost{color:var(--bone);border-color:var(--line2);background:var(--void2);}
+  .btn-ghost:hover{border-color:var(--bone);}
+  /* corner brackets */
+  .btn::before,.btn::after{content:"";position:absolute;width:8px;height:8px;opacity:0;transition:opacity .18s,inset .18s;}
+  .btn-ghost::before{left:5px;top:5px;border-left:2px solid var(--orange);border-top:2px solid var(--orange);}
+  .btn-ghost::after{right:5px;bottom:5px;border-right:2px solid var(--orange);border-bottom:2px solid var(--orange);}
+  .btn-ghost:hover::before,.btn-ghost:hover::after{opacity:1;}
+
+  .readout{display:flex;flex-wrap:wrap;gap:22px;margin-top:34px;font-family:var(--font-mono);
+    font-size:12.5px;letter-spacing:.08em;color:var(--haze);text-transform:uppercase;}
+  .readout .k{color:var(--bone);font-variant-numeric:tabular-nums;}
+  .readout .g{color:var(--phosphor);}
+  .readout span{display:inline-flex;gap:8px;align-items:baseline;}
+
+  /* ---- console panel ---- */
+  .console{position:relative;background:linear-gradient(var(--panel),var(--void2));
+    border:1px solid var(--line2);padding:0;min-width:0;}
+  .console .brk{position:absolute;width:14px;height:14px;z-index:2;}
+  .brk.tl{left:-1px;top:-1px;border-left:2px solid var(--orange);border-top:2px solid var(--orange);}
+  .brk.tr{right:-1px;top:-1px;border-right:2px solid var(--orange);border-top:2px solid var(--orange);}
+  .brk.bl{left:-1px;bottom:-1px;border-left:2px solid var(--orange);border-bottom:2px solid var(--orange);}
+  .brk.br{right:-1px;bottom:-1px;border-right:2px solid var(--orange);border-bottom:2px solid var(--orange);}
+  .con-head{display:flex;align-items:center;justify-content:space-between;
+    padding:11px 14px;border-bottom:1px solid var(--line);font-family:var(--font-mono);
+    font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--haze);}
+  .con-head .live{display:inline-flex;align-items:center;gap:7px;color:var(--phosphor);}
+  .con-body{padding:8px 6px 4px;position:relative;}
+  .con-hex{position:absolute;right:-38px;top:50%;transform:translateY(-50%);width:230px;height:230px;
+    opacity:.10;pointer-events:none;}
+  @media(prefers-reduced-motion:no-preference){.con-hex{animation:spin 60s linear infinite;transform-origin:50% 50%;}}
+  @keyframes spin{to{transform:translateY(-50%) rotate(360deg);}}
+  .con-foot{display:flex;justify-content:space-between;gap:10px;padding:11px 14px;
+    border-top:1px solid var(--line);font-family:var(--font-mono);font-size:11.5px;
+    letter-spacing:.08em;color:var(--haze-dim);text-transform:uppercase;}
+  .con-foot b{color:var(--bone);}
+  svg.graph{width:100%;height:auto;display:block;}
+  svg.graph text{font-family:var(--font-mono);}
+
+  /* ---- hazard divider ---- */
+  .hazard{height:26px;margin-top:8px;position:relative;
+    background:repeating-linear-gradient(-45deg,var(--orange) 0 14px,var(--void) 14px 28px);
+    opacity:.9;}
+  .hazard::after{content:"// SYSTEM SPEC";position:absolute;left:50%;top:50%;
+    transform:translate(-50%,-50%);background:var(--void);color:var(--haze);
+    font-family:var(--font-mono);font-size:11px;letter-spacing:.24em;padding:5px 16px;
+    border:1px solid var(--line2);text-transform:uppercase;}
+
+  /* ---- spec strip ---- */
+  .spec{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+    border:1px solid var(--line);margin:40px 0 64px;}
+  @media(max-width:760px){.spec{grid-template-columns:repeat(2,1fr);}}
+  .cell{background:var(--void2);padding:20px 18px;}
+  .cell .lbl{font-family:var(--font-mono);font-size:11px;letter-spacing:.18em;color:var(--haze-dim);
+    text-transform:uppercase;}
+  .cell .val{font-family:var(--font-mono);font-size:14.5px;letter-spacing:.02em;color:var(--bone);
+    margin-top:8px;text-transform:uppercase;}
+  .cell .val.o{color:var(--orange);}
+
+  /* ---- boot reveal ---- */
+  .reveal{opacity:1;}
+  @media(prefers-reduced-motion:no-preference){
+    .reveal{animation:rise .7s cubic-bezier(.2,.8,.2,1) both;}
+    .d1{animation-delay:.06s}.d2{animation-delay:.16s}.d3{animation-delay:.28s}
+    .d4{animation-delay:.42s}.d5{animation-delay:.56s}.d6{animation-delay:.7s}
+    .headline .line > span{transform:translateY(110%);animation:slideup .9s cubic-bezier(.16,1,.3,1) both;}
+    .headline .l1 > span{animation-delay:.18s}.headline .l2 > span{animation-delay:.30s}
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:none;}}
+  @keyframes slideup{from{transform:translateY(110%);}to{transform:translateY(0);}}
+</style>
+
+<div class="page">
+  <nav>
+    <div class="wrap nav-in">
+      <div class="brand">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 1.6 22 7.3v9.4L12 22.4 2 16.7V7.3z" stroke="#F2542D" stroke-width="1.4"/>
+          <circle cx="8" cy="14.5" r="1.7" fill="#8A94A0"/>
+          <circle cx="12" cy="9.5" r="1.7" fill="#F2542D"/>
+          <circle cx="16" cy="13" r="1.7" fill="#46E88B"/>
+          <path d="M8 14.5 12 9.5 16 13" stroke="#EAE6DA" stroke-width="1.3"/>
+        </svg>
+        Git It
+      </div>
+      <div class="nav-links">
+        <a class="hide-sm" href="#">Features</a>
+        <a class="hide-sm" href="#">Download</a>
+        <a class="hide-sm" href="#">Guides</a>
+        <a href="#">GitHub</a>
+        <a class="nav-dl" href="#">↓ Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="wrap">
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow reveal d1"><span class="dot"></span>macOS git client · Apple&nbsp;Silicon&nbsp;+&nbsp;Intel</span>
+
+        <h1 class="headline">
+          <span class="line l1"><span>Bend the</span></span>
+          <span class="line l2"><span><em>timeline.</em><span class="tag-rev">REV 0.2.0</span></span></span>
+        </h1>
+
+        <p class="anno reveal d3"><b>Commit-time editing</b> — shift, set, or compress any range. Preview, then undo.</p>
+
+        <p class="subhead reveal d4">Git It is a fast, native git client for macOS — <span class="strong">commit graph, branches, merges, per-hunk diffs, remotes,</span> and a built-in GitHub dashboard. Everything runs locally. No account, no telemetry.</p>
+
+        <div class="cta-row reveal d5">
+          <a class="btn btn-primary" href="#">↓ Download for macOS</a>
+          <a class="btn btn-ghost" href="#">View on GitHub ↗</a>
+        </div>
+
+        <div class="readout reveal d6">
+          <span><span class="k">0</span> Telemetry</span>
+          <span><span class="k">∞</span> Timelines</span>
+          <span><span class="k g">100%</span> Local</span>
+          <span><span class="g">●</span> Auto-updates</span>
+        </div>
+      </div>
+
+      <div class="console reveal d4" aria-hidden="true">
+        <i class="brk tl"></i><i class="brk tr"></i><i class="brk bl"></i><i class="brk br"></i>
+        <div class="con-head">
+          <span>◇ MAGI // Commit Graph</span>
+          <span class="live"><span class="dot"></span>LIVE</span>
+        </div>
+        <div class="con-body">
+          <svg class="con-hex" viewBox="0 0 100 100" fill="none" aria-hidden="true">
+            <path d="M50 3 92 27v46L50 97 8 73V27z" stroke="#F2542D" stroke-width="1"/>
+            <path d="M50 15 81 33v34L50 85 19 67V33z" stroke="#46E88B" stroke-width=".6"/>
+          </svg>
+          <svg class="graph" viewBox="0 0 360 300" fill="none" aria-hidden="true">
+            <!-- edges -->
+            <path d="M40 36 V96" stroke="#3A434E" stroke-width="2"/>
+            <path d="M40 96 C40 126 92 116 92 146" stroke="#46E88B" stroke-width="2"/>
+            <path d="M92 146 V206" stroke="#46E88B" stroke-width="2"/>
+            <path d="M40 96 V206" stroke="#3A434E" stroke-width="2"/>
+            <path d="M92 206 C92 236 40 226 40 256" stroke="#46E88B" stroke-width="2"/>
+            <path d="M40 206 V256" stroke="#3A434E" stroke-width="2"/>
+            <!-- nodes -->
+            <circle cx="40" cy="36" r="6.5" fill="#0E1216" stroke="#F2542D" stroke-width="2.4"/>
+            <circle cx="40" cy="96" r="6" fill="#0E1216" stroke="#8A94A0" stroke-width="2"/>
+            <circle cx="92" cy="146" r="6" fill="#0E1216" stroke="#46E88B" stroke-width="2"/>
+            <circle cx="40" cy="206" r="6" fill="#0E1216" stroke="#8A94A0" stroke-width="2"/>
+            <circle cx="40" cy="256" r="6" fill="#0E1216" stroke="#8A94A0" stroke-width="2"/>
+            <!-- labels -->
+            <text x="112" y="40" fill="#EAE6DA" font-size="12" letter-spacing="1">HEAD → main</text>
+            <text x="112" y="100" fill="#8A94A0" font-size="11.5">feat(rewrite): map epochs</text>
+            <text x="112" y="150" fill="#8A94A0" font-size="11.5">feat(graph): lane engine</text>
+            <text x="112" y="210" fill="#8A94A0" font-size="11.5">feat(diff): per-hunk stage</text>
+            <text x="112" y="260" fill="#8A94A0" font-size="11.5">chore: bootstrap</text>
+            <!-- rewrite annotation -->
+            <path d="M270 84 h60 M330 84 v40 M330 124 h-60" stroke="#F2542D" stroke-width="1.2"/>
+            <text x="272" y="78" fill="#F2542D" font-size="10.5" letter-spacing="1.5">REWRITE ⟳</text>
+            <text x="242" y="106" fill="#5A636E" font-size="10.5" text-decoration="line-through">14:22</text>
+            <text x="286" y="106" fill="#46E88B" font-size="10.5">09:05</text>
+          </svg>
+        </div>
+        <div class="con-foot">
+          <span><b>150</b> commits</span>
+          <span>3 branches · 2 remotes</span>
+          <span style="color:var(--phosphor)">clean</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="hazard"></div>
+
+  <div class="wrap">
+    <div class="spec">
+      <div class="cell"><div class="lbl">Platform</div><div class="val">macOS 12.3+</div></div>
+      <div class="cell"><div class="lbl">Architecture</div><div class="val">Apple Silicon · Intel</div></div>
+      <div class="cell"><div class="lbl">Engine</div><div class="val">Rust · Tauri 2 · Svelte 5</div></div>
+      <div class="cell"><div class="lbl">Price</div><div class="val o">Free · Open Source</div></div>
+    </div>
+  </div>
+</div>
