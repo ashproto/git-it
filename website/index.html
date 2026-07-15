@@ -717,7 +717,7 @@
                 <span class="live"><span class="dot"></span>LIVE</span>
               </div>
               <div class="con-body">
-                <svg class="graph" viewBox="0 0 490 300" fill="none" aria-hidden="true">
+                <svg class="graph" viewBox="0 0 490 205" fill="none" aria-hidden="true">
                   <!-- CLASSIC swatch (frosted glass) -->
                   <rect x="20" y="18" width="185" height="150" rx="8" fill="#AEBED0" opacity=".12"/>
                   <rect x="20" y="18" width="185" height="150" rx="8" fill="none" stroke="#5A6B7E" stroke-width="1.5"/>
@@ -729,9 +729,11 @@
                   <circle cx="118" cy="112" r="6" fill="none" stroke="#8A94A0" stroke-width="2.2"/>
                   <rect x="38" y="134" width="72" height="8" rx="3" fill="#8A94A0" opacity=".32"/>
                   <text x="20" y="188" fill="#8A94A0" font-size="11" letter-spacing="2">CLASSIC</text>
-                  <!-- toggle, switched to NERV -->
-                  <rect x="220" y="83" width="48" height="22" rx="11" fill="#0A0C0F" stroke="#F2542D" stroke-width="1.5"/>
-                  <circle cx="257" cy="94" r="7" fill="#F2542D"/>
+                  <!-- swap indicator: Classic and NERV interchange (a mark, not a control) -->
+                  <g stroke="#F2542D" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M224 88H264"/><path d="M258 83l6 5-6 5"/>
+                    <path d="M266 100H226"/><path d="M232 95l-6 5 6 5"/>
+                  </g>
                   <!-- NERV swatch (void console) -->
                   <rect x="285" y="18" width="185" height="150" rx="8" fill="#0A0C0F" stroke="#2E3742" stroke-width="1.5"/>
                   <g stroke="#000" opacity=".22"><path d="M285 30H470"/><path d="M285 42H470"/><path d="M285 54H470"/><path d="M285 66H470"/><path d="M285 78H470"/><path d="M285 90H470"/><path d="M285 102H470"/><path d="M285 114H470"/><path d="M285 126H470"/><path d="M285 138H470"/><path d="M285 150H470"/></g>
@@ -744,10 +746,6 @@
                   <rect x="392" y="50" width="40" height="14" rx="2" fill="#0A0C0F" stroke="#F2542D"/>
                   <text x="398" y="60" fill="#F2542D" font-size="9" letter-spacing="1">HEAD</text>
                   <text x="285" y="188" fill="#F2542D" font-size="11" letter-spacing="2">NERV</text>
-                  <!-- SCHEMES -->
-                  <text x="20" y="222" fill="#8A94A0" font-size="10.5" letter-spacing="2">SCHEMES //</text>
-                  <circle cx="60" cy="256" r="17" fill="none" stroke="#EAE6DA" stroke-width="1.5"/>
-                  <circle cx="60" cy="256" r="12" fill="#F2542D"/><circle cx="128" cy="256" r="12" fill="#46E88B"/><circle cx="196" cy="256" r="12" fill="#5AA9E6"/><circle cx="264" cy="256" r="12" fill="#E8A33D"/><circle cx="332" cy="256" r="12" fill="#9B7FE0"/><circle cx="400" cy="256" r="12" fill="#E0445A"/>
                 </svg>
               </div>
               <div class="con-foot">
@@ -756,7 +754,7 @@
                 <span style="color:var(--phosphor)">no restart</span>
               </div>
             </div>
-            <p class="visually-hidden">Diagram: two theme swatches side by side &mdash; a light frosted-glass &ldquo;Classic&rdquo; panel and a dark orange-on-void &ldquo;NERV&rdquo; console with corner brackets and a mini commit graph &mdash; joined by a toggle switched to NERV. Below, six accent-scheme colour chips (orange, phosphor green, steel blue, amber, violet, crimson), with orange selected.</p>
+            <p class="visually-hidden">Diagram: two theme swatches side by side &mdash; a light frosted-glass &ldquo;Classic&rdquo; panel and a dark orange-on-void &ldquo;NERV&rdquo; console with corner brackets and a mini commit graph &mdash; with a swap arrow between them, showing you can switch from one theme to the other.</p>
           </div>
         </div>
 
