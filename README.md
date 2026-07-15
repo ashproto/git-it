@@ -117,6 +117,8 @@ codesign --force --deep --sign - "src-tauri/target/release/bundle/macos/Git It.a
 
 For zero-friction installs, sign with an Apple Developer ID and notarize — `tauri.conf.json` supports `bundle.macOS.signingIdentity` and the notarization environment variables.
 
+Production releases are built, signed, and notarized automatically by GitHub Actions — see [`docs/RELEASING.md`](docs/RELEASING.md) for the release pipeline and the in-app updater (stable + beta channels).
+
 ## Known limitations
 
 - macOS only (the vibrancy/glass and titlebar handling are macOS-specific).
