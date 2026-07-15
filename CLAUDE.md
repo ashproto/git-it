@@ -48,9 +48,12 @@ Three-layer split; a **cargo workspace** (root `Cargo.toml`, members below) with
   `relay.rs` (Convex client + message loop), `auth.rs`, `repos.rs`, `crypto/` (HPKE/Ed25519 E2E).
 - **`src/`** — SvelteKit 5 SPA (static adapter, single `+page.svelte` route). `lib/store.svelte.ts`
   is central runes state; `lib/gitActions.ts` calls Tauri commands; `lib/graph/` renders the lane
-  graph; `lib/diff/` is Shiki-highlighted diffs; `lib/github/` is the GitHub dashboard screen.
+  graph; `lib/diff/` is Shiki-highlighted diffs; `lib/github/` is the GitHub dashboard screen;
+  `lib/theme/` (`nerv.css`, `nerv-motion.css`, `themeMode.ts`) is the Classic↔NERV theme system.
   **Pure logic modules are unit-tested with vitest** and must stay Tauri-free: `dates.ts`,
   `fileTree.ts`, `refTree.ts`, `commitBody.ts`, graph windowing (`.test.ts` alongside each).
+- **`website/`** — the static NERV-themed marketing site (git-it.app), deployed by
+  `.github/workflows/deploy-pages.yml`; plain HTML/CSS/JS, independent of the SvelteKit app build.
 
 **Data flow:** Svelte `invoke` (`@tauri-apps/api`) → `src-tauri/commands.rs` → `git-core` →
 shells out to system `git` (and `gh` for the GitHub screen).
@@ -65,6 +68,8 @@ shells out to system `git` (and `gh` for the GitHub screen).
   whole app during the call (this exact bug froze the GitHub screen).
 - Business logic that can be pure belongs in a testable `src/lib/*.ts` module (vitest), not inside
   a `.svelte` component — the graph/date/tree logic is covered this way.
+- **NERV theme CSS:** never use `:global()` in plain `src/lib/theme/nerv.css` — it isn't a Svelte
+  `<style>` block, so the browser silently drops the selector. Use bare `:root[data-theme="nerv"]`.
 
 ## Sibling repo (`../git-it-ios`)
 

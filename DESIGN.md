@@ -91,8 +91,8 @@ components:
 
 Git It ships **one product with two skins**. This document defines the shared
 **semantic-token contract** both skins implement, then describes each skin's
-design language and how components render in it. The upcoming theming work will
-let a user toggle between them in **Settings → Appearance**.
+design language and how components render in it. A Classic↔NERV toggle in
+**Settings → Appearance** ships this (`src/lib/components/SettingsPanel.svelte`).
 
 - **Classic** — what ships today. A native-macOS, information-dense git client
   in the **Fork / Tower / SourceTree** lineage: monochrome-neutral chrome, a
@@ -353,13 +353,15 @@ above; only these *treatments* differ.
   glass interplay is wanted (likely NERV ignores vibrancy). A user setting in
   **Settings → Appearance** writes `data-theme` to `<html>` and persists it
   (mirror the existing appearance settings + `tauriMode.ts`).
-- **Open decisions for that phase:** NERV lane palette final values; whether ref
-  chips go square in NERV; a NERV Shiki syntax theme; whether Classic's
-  automatic light/dark stays independent of the Classic/NERV toggle (recommended:
-  yes — theme = Classic/NERV; within Classic, macOS still drives light/dark).
-- **A real app icon** is still outstanding (current `src-tauri/icons/icon-source.svg`
-  is a placeholder; web favicon is stock SvelteKit) — out of scope here but
-  related brand work.
+- **Resolved during implementation:** per-scheme NERV lane palettes live in
+  `src/lib/graph/colors.ts` (`NERV_SCHEME_PALETTES`); the NERV Shiki syntax theme
+  is `src/lib/diff/nervShikiTheme.ts`; Classic's automatic light/dark stays
+  independent of the Classic/NERV toggle (theme = Classic/NERV; within Classic,
+  macOS still drives light/dark).
+- **A real app icon** shipped (`src-tauri/icons/icon-source.svg` — a hexagon emblem
+  enclosing the tri-color commit graph, in the NERV palette). The web favicon
+  (`static/favicon.png`) is still the stock SvelteKit mark — unrelated brand work,
+  still outstanding.
 
 ---
 
