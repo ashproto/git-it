@@ -8,6 +8,14 @@
 
   onMount(() => {
     void prerequisites.load();
+    // Re-probe when the user returns to the app while a prerequisite is still missing —
+    // e.g. after finishing the async Command Line Tools installer — so the banner clears
+    // and the editing controls re-enable without a restart. Stops once everything's met.
+    const onReturn = () => {
+      if (prerequisites.check && !prerequisites.canEditHistory) void prerequisites.refresh();
+    };
+    window.addEventListener("focus", onReturn);
+    return () => window.removeEventListener("focus", onReturn);
   });
 
   let check = $derived(prerequisites.check);

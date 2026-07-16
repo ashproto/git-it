@@ -10,6 +10,14 @@ function makePrerequisites() {
   let check = $state<PrerequisiteCheck | null>(null);
   let loading: Promise<void> | null = null;
 
+  async function probe() {
+    try {
+      check = await api.checkPrerequisites();
+    } catch {
+      check = null;
+    }
+  }
+
   return {
     get check() {
       return check;
@@ -20,16 +28,17 @@ function makePrerequisites() {
     get canEditHistory() {
       return check ? check.git && check.python3 && check.filterRepo : true;
     },
+    // Probe once, then share the result — deduped so the banner and ApplyPanel don't
+    // double-invoke.
     load() {
-      if (loading) return loading;
-      loading = (async () => {
-        try {
-          check = await api.checkPrerequisites();
-        } catch {
-          check = null;
-          loading = null; // allow a retry after a transient probe failure
-        }
-      })();
+      if (!loading) loading = probe();
+      return loading;
+    },
+    // Force a fresh probe. Used when the user returns to the app after fixing a
+    // prerequisite (e.g. finishing the async Command Line Tools installer), so the
+    // banner clears and the editing controls re-enable without a restart.
+    refresh() {
+      loading = probe();
       return loading;
     },
   };
