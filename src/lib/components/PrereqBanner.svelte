@@ -1,20 +1,24 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api } from "../api";
-  import type { PrerequisiteCheck } from "../types";
+  import { prerequisites } from "../prerequisites.svelte";
 
-  let check = $state<PrerequisiteCheck | null>(null);
   let installing = $state(false);
   let installStatus = $state<string | null>(null);
 
-  onMount(async () => {
-    try {
-      check = await api.checkPrerequisites();
-    } catch {
-      check = null;
-    }
+  onMount(() => {
+    void prerequisites.load();
+    // Re-probe when the user returns to the app while a prerequisite is still missing —
+    // e.g. after finishing the async Command Line Tools installer — so the banner clears
+    // and the editing controls re-enable without a restart. Stops once everything's met.
+    const onReturn = () => {
+      if (prerequisites.check && !prerequisites.canEditHistory) void prerequisites.refresh();
+    };
+    window.addEventListener("focus", onReturn);
+    return () => window.removeEventListener("focus", onReturn);
   });
 
+  let check = $derived(prerequisites.check);
   let ok = $derived(check ? check.git && check.python3 : true);
 
   async function installTools() {

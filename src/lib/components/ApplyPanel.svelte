@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { appState } from "../store.svelte";
   import { api } from "../api";
+  import { prerequisites } from "../prerequisites.svelte";
   import { toEpochTz } from "../dates";
   import type { DateMapping, RewriteOptions } from "../types";
 
@@ -15,7 +17,18 @@
 
   let busy = $state(false);
 
+  onMount(() => {
+    void prerequisites.load();
+  });
+
   async function rewrite() {
+    // Defense in depth: the button is already disabled when the probe failed, but never
+    // start a destructive history rewrite we know will fail for lack of git-filter-repo.
+    if (!prerequisites.canEditHistory) {
+      appState.status =
+        "Commit-time editing is unavailable — the bundled git-filter-repo couldn't run.";
+      return;
+    }
     if (appState.newDates.size === 0) {
       appState.status = "No new dates queued. Use an edit mode to preview changes first.";
       return;
@@ -89,7 +102,10 @@
     <button
       type="button"
       class="primary danger"
-      disabled={busy || appState.newDates.size === 0}
+      disabled={busy || appState.newDates.size === 0 || !prerequisites.canEditHistory}
+      title={!prerequisites.canEditHistory
+        ? "Commit-time editing needs the bundled git-filter-repo, which couldn't run on this machine."
+        : undefined}
       onclick={rewrite}
     >
       {busy ? "Rewriting…" : "Rewrite history"}

@@ -5,6 +5,8 @@
 [![Downloads](https://img.shields.io/github/downloads/ashproto/git-it/total)](https://github.com/ashproto/git-it/releases)
 ![Platform](https://img.shields.io/badge/platform-macOS%2012.3%2B-000000?logo=apple&logoColor=white)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202%20%2B%20SvelteKit-24C8DB?logo=tauri&logoColor=white)
+[![Website](https://img.shields.io/badge/website-git--it.app-F2542D)](https://git-it.app)
+[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-blue)](LICENSE)
 
 <p align="center">
   <img src="docs/screenshots/commit-graph.png" alt="Git It — the commit graph, refs sidebar, and toolbar" width="900">
