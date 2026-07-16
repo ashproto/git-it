@@ -44,7 +44,7 @@
     margin: 4px 0;
     padding: 8px 14px;
     background: var(--btn-bg);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 12.5px;
   }
   a {
@@ -55,7 +55,7 @@
     margin-top: 8px;
     padding: 6px 16px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--btn-bg);
     color: var(--text);
     cursor: pointer;

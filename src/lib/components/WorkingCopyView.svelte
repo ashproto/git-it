@@ -576,7 +576,7 @@
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     background: var(--panel-bg);
     overflow: hidden;
     /* Fill the available vertical space in the main column (the parent flex chain
@@ -658,7 +658,7 @@
   .ft-toggle.active {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .ft-toggle:hover {
     background: var(--btn-hover);
@@ -773,7 +773,7 @@
     text-align: center;
     font-size: 11px;
     font-weight: 700;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     border-radius: 3px;
     padding: 1px 3px;
   }
@@ -821,7 +821,7 @@
   }
 
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
 
   /* Stacked/narrow layout: the shell is content-sized (no full-height chain), so

@@ -150,10 +150,10 @@
   .readme :global(img) {
     max-width: 100%;
     height: auto;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
   .readme :global(code) {
-    font-family: ui-monospace, monospace;
+    font-family: var(--font-mono);
     font-size: 0.85em;
     background: var(--code-bg, rgba(128,128,128,0.12));
     padding: 0.1em 0.35em;
@@ -161,7 +161,7 @@
   }
   .readme :global(pre) {
     background: var(--code-bg, rgba(128,128,128,0.12));
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 10px 14px;
     overflow-x: auto;
     font-size: 12px;

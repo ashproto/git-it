@@ -92,7 +92,7 @@
     padding: 4px;
     background: var(--popover-bg, var(--panel-bg));
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
     backdrop-filter: blur(20px) saturate(140%);
     -webkit-backdrop-filter: blur(20px) saturate(140%);

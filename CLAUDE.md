@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Git It** — a native macOS git client (commit graph, branches, merges, rebases, working-copy
 diffs, remotes) with first-class commit-time editing. Also hosts the headless **agent** that
 lets the sibling iOS app drive local git remotely. Tauri 2 (Rust) + SvelteKit 5 (runes).
-macOS only; window uses native `NSVisualEffect` vibrancy (glass panels). Private; `UNLICENSED`
-— licensing is intentionally undecided, do not add a LICENSE.
+macOS only; window uses native `NSVisualEffect` vibrancy (glass panels). Licensed
+**CC BY-NC-SA 4.0** (source-available, noncommercial — see `LICENSE`); **not** OSI
+open source, so never describe it as "open source".
 
 ## Commands
 
@@ -28,7 +29,7 @@ Frontend-only changes hot-reload under `npm run tauri dev`. **Vitest and the bro
 cannot exercise Tauri-only paths** (anything behind `invoke`: native dialogs, working-copy
 staging, reword, real git). Those require a running `tauri dev`/`build`.
 
-Requires system `git` on `PATH`. Commit-time editing additionally shells out to `git-filter-repo`.
+Requires system `git` and `python3` on `PATH` (both ship with the Xcode Command Line Tools). Commit-time editing runs the **bundled** `git-filter-repo` script (`src-tauri/resources/git-filter-repo/`) via the host `python3` — it is not a `PATH` binary.
 
 ## Architecture
 
@@ -47,9 +48,12 @@ Three-layer split; a **cargo workspace** (root `Cargo.toml`, members below) with
   `relay.rs` (Convex client + message loop), `auth.rs`, `repos.rs`, `crypto/` (HPKE/Ed25519 E2E).
 - **`src/`** — SvelteKit 5 SPA (static adapter, single `+page.svelte` route). `lib/store.svelte.ts`
   is central runes state; `lib/gitActions.ts` calls Tauri commands; `lib/graph/` renders the lane
-  graph; `lib/diff/` is Shiki-highlighted diffs; `lib/github/` is the GitHub dashboard screen.
+  graph; `lib/diff/` is Shiki-highlighted diffs; `lib/github/` is the GitHub dashboard screen;
+  `lib/theme/` (`nerv.css`, `nerv-motion.css`, `themeMode.ts`) is the Classic↔NERV theme system.
   **Pure logic modules are unit-tested with vitest** and must stay Tauri-free: `dates.ts`,
   `fileTree.ts`, `refTree.ts`, `commitBody.ts`, graph windowing (`.test.ts` alongside each).
+- **`website/`** — the static NERV-themed marketing site (git-it.app), deployed by
+  `.github/workflows/deploy-pages.yml`; plain HTML/CSS/JS, independent of the SvelteKit app build.
 
 **Data flow:** Svelte `invoke` (`@tauri-apps/api`) → `src-tauri/commands.rs` → `git-core` →
 shells out to system `git` (and `gh` for the GitHub screen).
@@ -64,6 +68,8 @@ shells out to system `git` (and `gh` for the GitHub screen).
   whole app during the call (this exact bug froze the GitHub screen).
 - Business logic that can be pure belongs in a testable `src/lib/*.ts` module (vitest), not inside
   a `.svelte` component — the graph/date/tree logic is covered this way.
+- **NERV theme CSS:** never use `:global()` in plain `src/lib/theme/nerv.css` — it isn't a Svelte
+  `<style>` block, so the browser silently drops the selector. Use bare `:root[data-theme="nerv"]`.
 
 ## Sibling repo (`../git-it-ios`)
 

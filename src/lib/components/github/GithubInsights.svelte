@@ -156,7 +156,7 @@
   }
   .card {
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     padding: 14px;
     background: var(--panel-bg);
   }
@@ -258,7 +258,7 @@
     font-size: 9px;
     padding: 0 5px;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-muted);
     text-transform: uppercase;
   }

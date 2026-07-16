@@ -1,25 +1,47 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#3b4659"/>
-      <stop offset="1" stop-color="#0b1220"/>
+    <linearGradient id="void" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#12181F"/>
+      <stop offset="1" stop-color="#05070A"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FF7A52"/>
+      <stop offset="1" stop-color="#F2542D"/>
     </linearGradient>
     <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.13"/>
-      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/>
     </linearGradient>
-    <radialGradient id="hi" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    <radialGradient id="glowO">
+      <stop offset="0" stop-color="#FF6A44" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#FF6A44" stop-opacity="0"/>
     </radialGradient>
+    <radialGradient id="glowG">
+      <stop offset="0" stop-color="#46E88B" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#46E88B" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="scan" width="7" height="7" patternUnits="userSpaceOnUse">
+      <rect width="7" height="3.5" fill="#000000" opacity="0.16"/>
+    </pattern>
   </defs>
-  <rect x="40" y="40" width="944" height="944" rx="210" fill="url(#bg)"/>
+
+  <!-- console body -->
+  <rect x="40" y="40" width="944" height="944" rx="210" fill="url(#void)"/>
+  <rect x="40" y="40" width="944" height="944" rx="210" fill="url(#scan)"/>
   <rect x="40" y="40" width="944" height="944" rx="210" fill="url(#sheen)"/>
-  <path d="M315 512 L445 650 L705 360" fill="none" stroke="#ffffff" stroke-width="50" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="315" cy="512" r="50" fill="#4f8ef7"/>
-  <ellipse cx="299" cy="494" rx="22" ry="15" fill="url(#hi)"/>
-  <circle cx="445" cy="650" r="50" fill="#fbbf24"/>
-  <ellipse cx="429" cy="632" rx="22" ry="15" fill="url(#hi)"/>
-  <circle cx="705" cy="360" r="50" fill="#34d399"/>
-  <ellipse cx="689" cy="342" rx="22" ry="15" fill="url(#hi)"/>
+
+  <!-- hexagon emblem (variation B: warm fill + bright top edge) -->
+  <polygon points="512,169 842,357 842,667 512,855 182,667 182,357"
+           fill="#F2542D" fill-opacity="0.07" stroke="url(#edge)" stroke-width="35" stroke-linejoin="round"/>
+
+  <!-- commit graph: muted -> orange HEAD -> green, bone connector -->
+  <path d="M380 595 L512 430 L644 545" fill="none" stroke="#EAE6DA" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="512" cy="430" r="112" fill="url(#glowO)"/>
+  <circle cx="644" cy="545" r="100" fill="url(#glowG)"/>
+  <circle cx="380" cy="595" r="48" fill="#8A94A0" stroke="#0A0C0F" stroke-width="8"/>
+  <circle cx="512" cy="430" r="52" fill="#FF6A44" stroke="#0A0C0F" stroke-width="8"/>
+  <circle cx="644" cy="545" r="48" fill="#46E88B" stroke="#0A0C0F" stroke-width="8"/>
+
+  <!-- inner edge definition -->
+  <rect x="41.5" y="41.5" width="941" height="941" rx="208.5" fill="none" stroke="#2E3742" stroke-width="3" stroke-opacity="0.9"/>
 </svg>

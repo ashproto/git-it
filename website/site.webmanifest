@@ -1,0 +1,21 @@
+{
+  "name": "Git It",
+  "short_name": "Git It",
+  "description": "A native macOS git client.",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0A0C0F",
+  "background_color": "#0A0C0F",
+  "icons": [
+    {
+      "src": "/assets/img/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/assets/img/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

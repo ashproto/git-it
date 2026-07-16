@@ -1,4 +1,5 @@
 import { createHighlighter, type Highlighter } from "shiki";
+import { nervShikiTheme } from "./nervShikiTheme";
 
 // Curated language list — bounds the bundle size by not loading every grammar.
 // Must match the `language` values produced by parse.ts's EXT_LANG map + "text".
@@ -30,6 +31,19 @@ export const LANGS = [
 
 export type SupportedLang = (typeof LANGS)[number];
 
+// One Shiki theme per NERV scheme — DiffView picks "nerv-" + appState.scheme, so every
+// scheme needs a registered variant or the highlighter throws on an unknown theme name.
+const NERV_SHIKI = (
+  [
+    ["nerv-orange", "#F2542D"],
+    ["nerv-phosphor", "#46E88B"],
+    ["nerv-steel", "#5AA9E6"],
+    ["nerv-amber", "#E8A33D"],
+    ["nerv-violet", "#9B7FE0"],
+    ["nerv-crimson", "#E0445A"],
+  ] as const
+).map(([name, accent]) => nervShikiTheme(name, accent));
+
 // Memoised promise — created once, shared across all callers.
 // Shiki's grammars and themes are bundled by Vite as dynamic-import chunks:
 // offline, no CDN, no network required at runtime.
@@ -38,7 +52,7 @@ let hp: Promise<Highlighter> | null = null;
 export function getHighlighter(): Promise<Highlighter> {
   if (!hp) {
     hp = createHighlighter({
-      themes: ["github-light", "github-dark"],
+      themes: ["github-light", "github-dark", ...NERV_SHIKI],
       langs: [...LANGS],
     }).catch((e) => {
       // If Shiki fails to initialise (e.g. in SSR / test env), reset so a

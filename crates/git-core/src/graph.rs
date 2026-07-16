@@ -6,19 +6,24 @@ use std::process::Command;
 
 /// The short branch HEAD points at, or None when detached / unborn.
 fn current_branch(repo: &Path) -> Option<String> {
+    // NOT `--short`/`--abbrev-ref`: those abbreviate to the shortest UNAMBIGUOUS
+    // name, so when a tag shares the branch's name (e.g. a rolling `next` release
+    // tag) they return "heads/next" instead of "next" — which breaks is_head
+    // matching. Read the full ref and strip refs/heads/ ourselves.
     let out = Command::new("git")
         .current_dir(repo)
-        .args(["symbolic-ref", "--short", "-q", "HEAD"])
+        .args(["symbolic-ref", "-q", "HEAD"])
         .output()
         .ok()?;
     if !out.status.success() {
         return None;
     }
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() {
+    let name = s.strip_prefix("refs/heads/").unwrap_or(&s);
+    if name.is_empty() {
         None
     } else {
-        Some(s)
+        Some(name.to_string())
     }
 }
 
@@ -443,6 +448,37 @@ mod tests {
         assert!(refs.iter().any(|x| x.name == "feature" && x.kind == RefKind::Local));
         assert!(refs.iter().any(|x| x.name == "v1" && x.kind == RefKind::Tag));
         assert!(!refs.iter().any(|x| x.kind == RefKind::Remote));
+    }
+
+    #[test]
+    fn load_graph_marks_head_branch_shadowed_by_same_named_tag() {
+        // A branch and a tag sharing a name (e.g. a rolling `next` release tag)
+        // makes `git symbolic-ref --short HEAD` abbreviate to "heads/next"
+        // (disambiguated), which used to break is_head matching so the app never
+        // showed the branch as current.
+        let r = TempRepo::new();
+        r.write_commit("a.txt", "a");
+        r.git(&["branch", "next"]);
+        r.git(&["tag", "next"]);
+        // Plain `next` DWIMs to the branch and attaches HEAD (refs/heads/next), which is what
+        // the assertion below needs. No `--end-of-options`: the operand is a hardcoded literal
+        // (not user input, so the shell-safety rule doesn't apply) and `git checkout` rejects
+        // the marker on some Git versions. Not `refs/heads/next` either — that DETACHES HEAD,
+        // which would make is_head below fail.
+        r.git(&["checkout", "-q", "next"]);
+
+        let commits = load_graph(&r.path, 50, 0).unwrap();
+        let head_sha = r.rev("HEAD");
+        let c = commits.iter().find(|c| c.sha == head_sha).expect("HEAD commit in graph");
+        let next_local = c
+            .refs
+            .iter()
+            .find(|d| d.name == "next" && d.kind == RefKind::Local)
+            .expect("local branch `next` should decorate HEAD");
+        assert!(
+            next_local.is_head,
+            "branch `next` must be is_head even with a same-named tag",
+        );
     }
 
     #[test]

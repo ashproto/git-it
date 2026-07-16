@@ -12,7 +12,7 @@
 
 A fast, native **macOS git client** — commit graph, branches, merges, rebases, working-copy diffs, and remotes — with **first-class commit-time editing**. Built with [Tauri 2](https://tauri.app) (Rust) and [SvelteKit 5](https://svelte.dev) (runes).
 
-> macOS only. The window uses native vibrancy (frosted-glass panels over the desktop) via `NSVisualEffect`.
+> macOS only. In its default **Classic** theme the window uses native vibrancy (frosted-glass panels over the desktop) via `NSVisualEffect`; the **NERV** theme swaps in a solid high-contrast console look (Settings → Appearance).
 
 ## Download
 
@@ -31,6 +31,7 @@ A fast, native **macOS git client** — commit graph, branches, merges, rebases,
 - **Remotes** — manage remotes; streamed **pull** (merge or rebase) and **push** (`--force-with-lease`, `--set-upstream`) with live progress, cancel, and an ahead/behind indicator. Credentials are prompted on demand and never stored.
 - **Commit-time editing** — select commits and shift them by an **offset**, set an **exact** time, or **compress** a range proportionally into a new window. Opens in an on-demand drawer; previews before it rewrites.
 - **Multi-repo** — open several repositories at once, as tabs or a sidebar list (your choice).
+- **Themes** — Settings → Appearance switches the whole UI between **Classic** (native macOS vibrancy) and **NERV**, a high-contrast HUD console theme with six accent schemes and optional ambient motion.
 
 ## Screenshots
 
@@ -51,19 +52,15 @@ A fast, native **macOS git client** — commit graph, branches, merges, rebases,
 
 ## Prerequisites
 
-Git It shells out to the system `git`, so you need it on `PATH`:
+Git It needs `git` and `python3`, both of which ship with the **Xcode Command Line Tools**:
 
 ```sh
-brew install git
+xcode-select --install
 ```
 
-The **commit-time editing** feature additionally uses [`git-filter-repo`](https://github.com/newren/git-filter-repo):
+[`git-filter-repo`](https://github.com/newren/git-filter-repo) — used by the **commit-time editing** feature — is bundled inside the app and run with the host's `python3`, so there is nothing extra to install.
 
-```sh
-brew install git-filter-repo
-```
-
-The app shows a startup banner if `git` (or, for time editing, `git-filter-repo`) is missing. No Python interpreter is bundled — `git-filter-repo` is the only Python dependency and runs on the host.
+If `git` or `python3` is missing, the app shows a startup banner with an **Install Command Line Tools** button (it runs `xcode-select --install` for you). No Python interpreter is bundled — only the interpreter is host-provided; the `git-filter-repo` script itself ships with the app.
 
 ## Install (end users)
 
@@ -120,13 +117,23 @@ codesign --force --deep --sign - "src-tauri/target/release/bundle/macos/Git It.a
 
 For zero-friction installs, sign with an Apple Developer ID and notarize — `tauri.conf.json` supports `bundle.macOS.signingIdentity` and the notarization environment variables.
 
+Production releases are built, signed, and notarized automatically by GitHub Actions — see [`docs/RELEASING.md`](docs/RELEASING.md) for the release pipeline and the in-app updater (stable + beta channels).
+
 ## Known limitations
 
 - macOS only (the vibrancy/glass and titlebar handling are macOS-specific).
-- `git` must be on `PATH`; `git-filter-repo` too if you use commit-time editing. The startup banner surfaces this.
+- `git` and `python3` must be present (both come with the Xcode Command Line Tools); commit-time editing runs the bundled `git-filter-repo` via the host `python3`. The startup banner surfaces a missing prerequisite and offers to install the tools.
 - Ad-hoc-signed builds trigger a Gatekeeper warning on first launch.
 - Very large histories load incrementally but aren't yet DOM-virtualized.
 
 ## License
 
-Not yet decided. Until a license is chosen, all rights are reserved — please don't redistribute. A license will be added before any public release.
+**Free · source-available · noncommercial** — Git It is licensed under [Creative Commons Attribution-NonCommercial-ShareAlike 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) (CC BY-NC-SA 4.0). See [`LICENSE`](LICENSE) for the full terms.
+
+- **Use it for anything, including at work.** Managing your repositories with Git It — personal or commercial — is fine. The noncommercial term is about the app itself, not the work you produce with it.
+- **Don't commercialize the app.** No reselling, repackaging-and-selling, or offering it as a paid hosted service.
+- **ShareAlike.** Distribute modified versions under these same terms.
+
+Want a commercial arrangement this license doesn't cover? Open an issue. This is a source-available, noncommercial license — **not** an OSI-approved open-source license.
+
+Git It bundles [`git-filter-repo`](https://github.com/newren/git-filter-repo) under the MIT License; its notice ships at [`src-tauri/resources/git-filter-repo/COPYING.mit`](src-tauri/resources/git-filter-repo/COPYING.mit).

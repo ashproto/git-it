@@ -34,6 +34,8 @@ export type SafetyRef = {
 export type PrerequisiteCheck = {
   git: boolean;
   gitVersion: string | null;
+  python3: boolean;
+  python3Version: string | null;
   filterRepo: boolean;
   filterRepoVersion: string | null;
 };

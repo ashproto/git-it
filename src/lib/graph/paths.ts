@@ -73,5 +73,6 @@ export function angularEdgePath(edge: Edge, topY: number, g: GeomConfig): string
   if (x1 === x2) return `M${x1} ${y1} L${x2} ${y2}`;
   const my = y1 + g.rowHeight / 2;
   if (edge.kind === "branch") return `M${x1} ${y1} L${x1} ${my} L${x2} ${y2}`;
-  return `M${x1} ${y1} L${x2} ${my} L${x2} ${y2}`;
+  const s = Math.min(g.rowHeight * 0.42, g.rowHeight / 2 - 1); // clearly-visible straight stub
+  return `M${x1} ${y1} L${x1} ${y1 + s} L${x2} ${y2 - s} L${x2} ${y2}`;
 }

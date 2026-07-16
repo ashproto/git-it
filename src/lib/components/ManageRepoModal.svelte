@@ -131,7 +131,7 @@
     overflow: hidden;
     background: var(--popover-bg, var(--panel-bg));
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     padding: 16px 18px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
     backdrop-filter: blur(20px) saturate(140%);
@@ -200,7 +200,7 @@
     text-align: left;
     padding: 7px 10px;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--text-muted);
     font-size: 12.5px;
@@ -215,7 +215,7 @@
 
   .nav-item.active {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
 
   .nav-item:focus-visible {
@@ -232,6 +232,6 @@
   .content:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 </style>

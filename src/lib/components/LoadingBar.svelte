@@ -4,16 +4,29 @@
 </script>
 
 {#if busy}
-  <div class="loadbar" role="progressbar" aria-busy="true" aria-label="Loading">
-    <div class="seg"></div>
+  <!-- Zero-height wrapper: the bar itself is absolutely positioned so toggling it
+       on/off never reflows the page. Previously the bar took 3px of flow height, so
+       every appearance shoved all content below it down 3px then snapped back — a
+       visible jank on every repo switch / nav. -->
+  <div class="loadbar-wrap">
+    <div class="loadbar" role="progressbar" aria-busy="true" aria-label="Loading">
+      <div class="seg"></div>
+    </div>
   </div>
 {/if}
 
 <style>
-  .loadbar {
+  .loadbar-wrap {
     position: relative;
+    height: 0; /* no flow height — the bar overlays the top edge of the content below */
+  }
+  .loadbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
     height: 3px;
-    width: 100%;
     overflow: hidden;
     background: color-mix(in srgb, var(--accent) 12%, transparent);
   }

@@ -89,12 +89,36 @@ fn parent_count(repo: &Path, sha: &str) -> usize {
     parts.len().saturating_sub(1)
 }
 
-/// Spawn `git filter-repo` with the generated callback and stream stdout/stderr lines.
-/// `on_line` is called for every line from either stream.
+/// Assemble the full argv for a git-filter-repo run from an invocation prefix
+/// (e.g. `["python3", "/…/git-filter-repo"]`), the generated commit-callback,
+/// and an optional `--refs` range. Pure — no process spawn — so it is unit-tested.
+pub fn build_filter_repo_argv(
+    prefix: &[String],
+    callback: &str,
+    refs: Option<&str>,
+) -> Vec<String> {
+    let mut argv: Vec<String> = prefix.to_vec();
+    argv.push("--commit-callback".to_string());
+    argv.push(callback.to_string());
+    if let Some(range) = refs {
+        argv.push("--refs".to_string());
+        argv.push(range.to_string());
+    }
+    argv.push("--force".to_string());
+    argv.push("--partial".to_string());
+    argv.push("--replace-refs".to_string());
+    argv.push("delete-no-add".to_string());
+    argv
+}
+
+/// Spawn the bundled git-filter-repo (via `filter_repo_argv`, e.g.
+/// `["python3", "/…/git-filter-repo"]`) with the generated callback and stream
+/// stdout/stderr lines. `on_line` is called for every line from either stream.
 pub fn rewrite_history<F>(
     repo: &Path,
     mappings: &[DateMapping],
     options: &RewriteOptions,
+    filter_repo_argv: &[String],
     on_line: F,
 ) -> Result<(), String>
 where
@@ -130,39 +154,41 @@ where
         }
     }
 
-    let mut cmd = Command::new("git-filter-repo");
-    cmd.current_dir(repo)
-        .arg("--commit-callback")
-        .arg(&callback);
-
-    if options.optimize_range {
+    let refs: Option<String> = if options.optimize_range {
         let target_shas: Vec<String> = mappings.iter().map(|m| m.sha.clone()).collect();
-        if let Some(earliest) = find_earliest_target(repo, &target_shas) {
-            if parent_count(repo, &earliest) > 0 {
-                let range = format!("{}^..HEAD", earliest);
+        match find_earliest_target(repo, &target_shas) {
+            Some(earliest) if parent_count(repo, &earliest) > 0 => {
                 on_line(format!(
                     "[rewrite] limiting range to {}^..HEAD (older commits untouched)",
                     &earliest[..12.min(earliest.len())]
                 ));
-                cmd.arg("--refs").arg(range);
-            } else {
-                on_line("[rewrite] earliest target is a root commit; rewriting HEAD ancestry".to_string());
-                cmd.arg("--refs").arg("HEAD");
+                Some(format!("{}^..HEAD", earliest))
             }
+            Some(_) => {
+                on_line("[rewrite] earliest target is a root commit; rewriting HEAD ancestry".to_string());
+                Some("HEAD".to_string())
+            }
+            None => None,
         }
-    }
+    } else {
+        None
+    };
 
-    cmd.arg("--force")
-        .arg("--partial")
-        .arg("--replace-refs")
-        .arg("delete-no-add");
+    let argv = build_filter_repo_argv(filter_repo_argv, &callback, refs.as_deref());
+    let (program, args) = argv
+        .split_first()
+        .ok_or("empty git-filter-repo invocation (no argv prefix)")?;
 
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut cmd = Command::new(program);
+    cmd.current_dir(repo)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| {
         format!(
-            "Failed to spawn git-filter-repo: {}. Is it installed? (brew install git-filter-repo)",
-            e
+            "Failed to launch bundled git-filter-repo ({}): {}. Is python3 available? (Install the Xcode Command Line Tools.)",
+            program, e
         )
     })?;
 
@@ -205,4 +231,55 @@ where
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prefix() -> Vec<String> {
+        vec![
+            "python3".to_string(),
+            "/opt/Git It.app/Contents/Resources/git-filter-repo/git-filter-repo".to_string(),
+        ]
+    }
+
+    #[test]
+    fn argv_without_refs() {
+        let argv = build_filter_repo_argv(&prefix(), "cb", None);
+        assert_eq!(
+            argv,
+            vec![
+                "python3",
+                "/opt/Git It.app/Contents/Resources/git-filter-repo/git-filter-repo",
+                "--commit-callback",
+                "cb",
+                "--force",
+                "--partial",
+                "--replace-refs",
+                "delete-no-add",
+            ]
+        );
+    }
+
+    #[test]
+    fn argv_with_refs() {
+        let argv = build_filter_repo_argv(&prefix(), "cb", Some("abc123^..HEAD"));
+        // --refs <range> sits between the callback and the trailing flags.
+        assert_eq!(
+            argv,
+            vec![
+                "python3",
+                "/opt/Git It.app/Contents/Resources/git-filter-repo/git-filter-repo",
+                "--commit-callback",
+                "cb",
+                "--refs",
+                "abc123^..HEAD",
+                "--force",
+                "--partial",
+                "--replace-refs",
+                "delete-no-add",
+            ]
+        );
+    }
 }

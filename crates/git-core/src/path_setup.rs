@@ -1,8 +1,10 @@
 /// When the app/agent is launched from Finder/Dock/launchd, it inherits a bare
 /// PATH (typically /usr/bin:/bin:/usr/sbin:/sbin) — not the user's shell PATH.
-/// That means `git` is found but `git-filter-repo` (in /opt/homebrew/bin on
-/// Apple Silicon, /usr/local/bin on Intel) is not. Prepend both Homebrew bins so
-/// child processes can find it. Call once at process startup, before threads.
+/// System `git`/`python3` (Xcode CLT, in /usr/bin) are found, but Homebrew-
+/// installed tools — notably `gh` for the GitHub screen — live in /opt/homebrew/bin
+/// (Apple Silicon) or /usr/local/bin (Intel) and are not. Prepend both Homebrew
+/// bins so child processes can find them. (`git-filter-repo` no longer relies on
+/// this: it's bundled and run via python3.) Call once at startup, before threads.
 pub fn ensure_homebrew_path() {
     let current = std::env::var("PATH").unwrap_or_default();
     let extras = ["/opt/homebrew/bin", "/usr/local/bin"];

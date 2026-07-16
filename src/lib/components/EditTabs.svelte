@@ -315,12 +315,12 @@
     display: flex;
     gap: 2px;
     background: var(--input-bg);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 2px;
   }
   .mode-tabs button {
     padding: 4px 10px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -367,12 +367,12 @@
   .num {
     width: 4rem;
     padding: 4px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--input-bg);
     color: var(--text);
     font-size: 12px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .spacer {
     width: 6px;
@@ -384,12 +384,12 @@
     overflow-wrap: anywhere;
   }
   .preview-line .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     color: var(--text);
   }
   button {
     padding: 5px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);
@@ -402,7 +402,7 @@
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: white;
+    color: var(--on-accent);
   }
   button.primary:hover {
     background: var(--accent-hover);

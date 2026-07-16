@@ -98,7 +98,7 @@
 <style>
   .conflict {
     border: 1px solid var(--err);
-    border-radius: 8px;
+    border-radius: var(--radius-dialog);
     padding: 10px 12px;
     background: var(--panel-bg);
     display: flex;
@@ -142,7 +142,7 @@
     align-items: center;
     gap: 8px;
     padding: 4px 6px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
   .files li:hover {
     background: var(--row-hover);
@@ -161,7 +161,7 @@
     gap: 6px;
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .done {
     margin: 0;
@@ -175,7 +175,7 @@
   }
   button {
     padding: 4px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);
@@ -192,7 +192,7 @@
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   button.danger {
     margin-left: auto;

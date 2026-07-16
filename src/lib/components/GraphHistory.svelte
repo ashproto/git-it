@@ -33,12 +33,54 @@
   const BUFFER = 8;
   let anchorIndex = $state<number | null>(null);
 
+  // ── Task 9: one-shot "graph builds itself" reveal ───────────────────────────
+  // While appState.revealing (armed once per repo-identity change / same-repo
+  // view switch — see store.svelte.ts), the scroll viewport (.wrap) plays a
+  // single bottom→top clip-path wipe (.nerv-graph-reveal, nerv-motion.css),
+  // double-gated on [data-theme="nerv"][data-motion="on"] + reduced-motion, so
+  // Classic / motion-off / reduced-motion render instantly.
+  const revealing = $derived(appState.revealing);
+
   // Virtualization: only the rows in [winStart, winEnd) are in the DOM; two
   // spacer divs reserve the height of the rows above/below so the scrollbar,
   // scroll position and infinite-scroll trigger behave exactly as a full list.
   let wrapEl = $state<HTMLElement>();
   let headEl = $state<HTMLElement>();
   let histEl = $state<HTMLElement>();
+
+  // NERV timeline reveal — genuine per-element draw (nerv-motion.css): each gutter
+  // edge stroke-draws (.nerv-edge-draw) and each dot pops (.nerv-node-in), and each
+  // commit row fades in (.nerv-row-in), staggered bottom→top so the whole timeline
+  // reads as one continuous line growing upward with the entries arriving under it.
+  // `revealBottomIndex` (the last row of the first viewport) gets delay 0; rows above
+  // it climb by `revealStep` ms each. Both are captured once when `revealing` flips on
+  // (untracked geometry read) so mid-reveal scrolling doesn't recompute the stagger.
+  // Gating (theme/motion/reduced-motion) lives entirely in the CSS classes, so these
+  // values are inert in Classic / motion-off.
+  let revealBottomIndex = $state(0);
+  let revealStep = $state(20);
+  // Base delay (store): on a repo-switch materialize the draw is pushed past the frame,
+  // while `revealing` is already true so the rows carry the hidden from-state immediately
+  // (no flash of the timeline at rest). 0 on a view switch → draw plays now.
+  const revealBase = $derived(appState.revealBaseMs);
+  const revealRowDelay = (i: number) => revealBase + Math.max(0, revealBottomIndex - i) * revealStep;
+  $effect(() => {
+    if (!revealing) return;
+    untrack(() => {
+      if (!wrapEl) return;
+      const visRows = Math.max(1, Math.ceil(wrapEl.clientHeight / rowHeight));
+      // Anchor the sweep's delay-0 origin to the bottom of the VISIBLE CONTENT, not
+      // the viewport bottom: with few commits in a tall pane, the last real commit
+      // (commits.length-1) is well above the fold, so anchoring to the viewport would
+      // waste the first ~½s sweeping empty space below it before anything animates.
+      revealBottomIndex = Math.max(0, Math.min(winStart + visRows - 1, commits.length - 1));
+      // Base the stagger on the rows actually swept so short graphs stay visibly
+      // staggered (not instant) and tall ones stay snappy (~≤600ms of stagger).
+      const sweptRows = Math.max(1, revealBottomIndex - winStart + 1);
+      revealStep = Math.min(24, Math.max(10, Math.floor(600 / sweptRows)));
+    });
+  });
+
   let winStart = $state(0);
   // Seed a generous initial window so the very first paint shows rows before the
   // geometry effect refines the range (avoids an empty flash on mount).
@@ -445,12 +487,16 @@
           {rows}
           {heads}
           {rowHeight}
-          lineStyle={appState.graphLineStyle}
+          lineStyle={appState.effectiveGraphLineStyle}
           mergeInStyle={appState.graphMergeInStyle}
           curviness={appState.graphCurviness}
           renderStart={winStart}
           renderEnd={winEnd}
           colorOf={(idx) => appState.colorForIndex(idx)}
+          reveal={revealing}
+          {revealBottomIndex}
+          {revealStep}
+          {revealBase}
         />
       </div>
 
@@ -486,9 +532,10 @@
         <div
           class="row wc-row"
           class:selected={appState.workingCopySelected}
+          class:nerv-row-in={revealing}
           role="row"
           tabindex="0"
-          style={`height:${rowHeight}px`}
+          style={`height:${rowHeight}px${revealing ? `;animation-delay:${revealRowDelay(-1)}ms` : ""}`}
           onmousedown={selectWorkingCopy}
           onkeydown={(e) => { if (e.key === " " || e.key === "Enter") selectWorkingCopy(); }}
         >
@@ -515,7 +562,8 @@
           class:edited={appState.newDates.has(commit.sha)}
           class:search-hit={searchHits?.has(i) ?? false}
           class:search-active={i === searchActiveRow}
-          style={`height:${rowHeight}px`}
+          class:nerv-row-in={revealing}
+          style={`height:${rowHeight}px${revealing ? `;animation-delay:${revealRowDelay(i)}ms` : ""}`}
           onmousedown={(e) => onRowMouseDown(e, commit.sha, i)}
           oncontextmenu={(e) => onRowContext(e, commit.sha, i)}
           onkeydown={(e) => { if (e.key === " " || e.key === "Enter") onRowMouseDown(e as unknown as MouseEvent, commit.sha, i); }}
@@ -567,7 +615,7 @@
   }
   button {
     padding: 4px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--btn-bg);
     color: var(--text);
@@ -578,7 +626,7 @@
     background: var(--btn-hover);
   }
   .wrap {
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     overflow: auto;
     /* Fill the (fill-mode) panel body so the graph occupies the full timeline
@@ -760,7 +808,7 @@
     flex: 0 0 auto;
     margin-left: 6px;
     padding: 0 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--accent);
     color: var(--accent);
     font-size: 11px;
@@ -776,7 +824,7 @@
     flex: 0 0 auto;
     font-size: 11px;
     padding: 0 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--ref-color, var(--border));
     color: var(--ref-color, var(--text-muted));
     white-space: nowrap;
@@ -788,7 +836,7 @@
     background: color-mix(in srgb, var(--ref-color, var(--accent)) 16%, transparent);
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
   }
   .empty {

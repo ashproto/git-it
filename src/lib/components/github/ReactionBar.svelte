@@ -157,7 +157,7 @@
   .pick {
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 14px;
     line-height: 1;
     padding: 3px 4px;

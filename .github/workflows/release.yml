@@ -73,7 +73,7 @@ jobs:
   build-macos:
     permissions:
       contents: read
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: decide
     if: ${{ needs.decide.outputs.skip != 'true' }}
     strategy:
@@ -167,7 +167,7 @@ jobs:
 
       - name: Normalize macOS artifact filenames
         shell: bash
-        working-directory: src-tauri/target/${{ matrix.target }}/release/bundle
+        working-directory: target/${{ matrix.target }}/release/bundle
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -186,9 +186,9 @@ jobs:
         with:
           name: release-macos-${{ matrix.arch }}
           path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+            target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
 
   release:
@@ -219,6 +219,7 @@ jobs:
           path: release-assets/macos-x86_64
 
       - name: Group the changelog
+        id: group
         env:
           PREV_TAG: ${{ needs.decide.outputs.previous_tag }}
           VERSION: ${{ needs.decide.outputs.version }}
@@ -227,13 +228,18 @@ jobs:
           [ -n "$PREV_TAG" ] && range="${PREV_TAG}..HEAD"
           git log "$range" --no-merges --pretty='%s' \
             | node scripts/ci/gen-changelog.mjs > grouped-changelog.md
+          echo "chars=$(wc -c < grouped-changelog.md | tr -d ' ')" >> "$GITHUB_OUTPUT"
           echo "----- grouped-changelog.md -----"
           cat grouped-changelog.md
 
       - name: Rewrite the changelog (GitHub Models)
         id: changelog_ai
+        # gpt-5 via GitHub Models caps the request body near 4000 tokens; skip the
+        # AI rewrite for an oversized changelog (e.g. the first release, which spans
+        # all history) and fall back to the grouped changelog in the next step.
+        if: ${{ fromJSON(steps.group.outputs.chars) <= 10000 }}
         continue-on-error: true
-        uses: actions/ai-inference@v1
+        uses: actions/ai-inference@v2
         with:
           model: openai/gpt-5
           system-prompt: |

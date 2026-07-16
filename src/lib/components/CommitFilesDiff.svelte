@@ -126,7 +126,7 @@
   .ft-toggle.active {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .ft-toggle:hover {
     background: var(--btn-hover);
@@ -159,7 +159,7 @@
     padding: 4px 8px;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text);
     font-size: 12.5px;
     cursor: pointer;
@@ -175,7 +175,7 @@
     flex-shrink: 0;
     width: 12px;
     text-align: center;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 700;
   }

@@ -5,6 +5,56 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Git It</title>
+    <!-- No-FOUC theme resolution. The SPA bundle (which runs src/lib/theme/themeMode.ts +
+         src/lib/tauriMode.ts) is a deferred module, so the browser paints this shell BEFORE
+         it evaluates — and the theme background CSS lives in +page.svelte, later still. That
+         let the wrong background flash on launch: NERV showed the transparent glass, and
+         Classic briefly showed a solid dark box. This synchronous head script + critical CSS
+         run before the first paint, so the very first frame already has the right background.
+         Keep the theme + scheme keys / Tauri globals / --bg colour in sync with themeMode.ts,
+         tauriMode.ts and +page.svelte. -->
+    <script>
+      (function () {
+        try {
+          var d = document.documentElement;
+          if (localStorage.getItem("gitit.theme.v1") === "nerv") d.setAttribute("data-theme", "nerv");
+          // Mirror the saved NERV colour scheme too. The scheme-gated NERV rules ship in the
+          // render-blocking bundle CSS, but data-scheme is only set by the deferred themeMode.ts —
+          // so without this a non-orange scheme (phosphor/steel/…) paints its first frame on the
+          // default orange accent, then flips: a scheme-flavoured launch flash. Same validated set
+          // themeMode.ts uses; unknown/absent → "orange" (the default).
+          var scheme = localStorage.getItem("gitit.scheme.v1");
+          var VALID = ["orange", "phosphor", "steel", "amber", "violet", "crimson"];
+          d.setAttribute("data-scheme", VALID.indexOf(scheme) >= 0 ? scheme : "orange");
+          var w = window;
+          if (
+            "__TAURI_INTERNALS__" in w ||
+            "__TAURI__" in w ||
+            "isTauri" in w ||
+            "__TAURI_IPC__" in w ||
+            "__TAURI_METADATA__" in w
+          ) {
+            d.setAttribute("data-tauri", "true");
+          }
+        } catch (e) {
+          /* localStorage can throw in locked-down contexts — the bundle applies the theme a tick later. */
+        }
+      })();
+    </script>
+    <style>
+      /* Critical first-paint background only. Default transparent = the Tauri window's native
+         vibrancy shows through (Classic glass); NERV paints its solid backdrop. The full theme
+         CSS (tokens, glass tints, panels) loads with the bundle and takes over from here. */
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+      :root[data-theme="nerv"],
+      :root[data-theme="nerv"] body {
+        background: #0a0c0f;
+      }
+    </style>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

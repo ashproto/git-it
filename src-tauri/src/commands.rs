@@ -14,8 +14,43 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 #[tauri::command]
-pub fn check_prerequisites() -> PrerequisiteCheck {
-    git_ops::check_prerequisites()
+pub fn check_prerequisites(app: tauri::AppHandle) -> PrerequisiteCheck {
+    let argv = crate::filter_repo::filter_repo_argv(&app);
+    git_ops::check_prerequisites(&argv)
+}
+
+/// Launch Apple's Command Line Tools installer (`xcode-select --install`), which
+/// delivers both `git` and `python3`. The command exits nonzero when the tools
+/// are already installed or an install is already in progress — both are benign,
+/// so we surface a friendly message rather than treating them as failures.
+#[tauri::command(async)]
+pub fn install_command_line_tools() -> Result<String, String> {
+    use std::process::Command;
+    let output = Command::new("xcode-select")
+        .arg("--install")
+        .output()
+        .map_err(|e| format!("Could not run xcode-select: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if output.status.success() {
+        Ok(if stdout.is_empty() {
+            "Opening the Command Line Tools installer…".to_string()
+        } else {
+            stdout
+        })
+    } else {
+        // Nonzero: usually "already installed" or "install requested" — informative, not an error.
+        let msg = if !stderr.is_empty() { stderr } else { stdout };
+        if msg.to_lowercase().contains("already installed") {
+            Ok("The Command Line Tools are already installed.".to_string())
+        } else if msg.is_empty() {
+            Ok("Command Line Tools install requested.".to_string())
+        } else {
+            Ok(msg)
+        }
+    }
 }
 
 #[tauri::command]
@@ -74,6 +109,7 @@ pub fn preview_callback(mappings: Vec<DateMapping>, update_author: bool) -> Stri
 
 #[tauri::command]
 pub async fn rewrite_history(
+    app: tauri::AppHandle,
     repo: String,
     mappings: Vec<DateMapping>,
     options: RewriteOptions,
@@ -81,6 +117,9 @@ pub async fn rewrite_history(
 ) -> Result<(), String> {
     let auto_bundle = options.auto_bundle;
     let repo_path = PathBuf::from(repo);
+    // Resolve the bundled git-filter-repo invocation prefix before spawn_blocking:
+    // the AppHandle is not 'static-safe to move, but the resolved Vec<String> is.
+    let filter_repo_argv = crate::filter_repo::filter_repo_argv(&app);
 
     if auto_bundle {
         let _ = on_event.send("[bundle] creating safety bundle...".to_string());
@@ -102,7 +141,7 @@ pub async fn rewrite_history(
     // The closure captures the channel by clone; tauri::ipc::Channel is cheaply cloneable.
     let chan = on_event.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        rewrite::rewrite_history(&repo_path, &mappings, &options, move |line| {
+        rewrite::rewrite_history(&repo_path, &mappings, &options, &filter_repo_argv, move |line| {
             let _ = chan.send(line);
         })
     })

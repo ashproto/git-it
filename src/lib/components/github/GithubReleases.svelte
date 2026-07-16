@@ -175,7 +175,7 @@
   }
   .chart {
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     padding: 12px 14px;
     background: var(--panel-bg);
   }
@@ -288,7 +288,7 @@
     font-size: 10px;
     padding: 0 6px;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     text-transform: uppercase;
   }
   .when {
@@ -335,7 +335,7 @@
     font-variant-numeric: tabular-nums;
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
   }
   .note {
     margin: 14px 2px;

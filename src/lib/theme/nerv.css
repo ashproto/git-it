@@ -1,0 +1,302 @@
+/* NERV theme — global, data-theme-scoped. @font-face declarations are unconditional
+   but cost nothing until NERV actually renders these families. SIL OFL notices ship
+   in static/fonts/{Anton-OFL,IBMPlex-OFL}.txt. */
+
+/* Registers --b (the B3 corner-bracket arm length) as an interpolatable
+   <length-percentage> custom property. Without this, --b is a plain custom
+   property and the browser can only discretely swap it — no transition is
+   possible, which is why panel-hover previously had to fake motion with
+   filter:brightness alone. Must be a top-level @property (not nested) —
+   registered once here, ahead of the B3 rules that consume --b. */
+@property --b {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 14px;
+}
+
+@font-face { font-family: "Anton"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/fonts/anton-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); }
+
+/* ── Phase A: stuck-in-Classic color fixes ──────────────────────────────────
+   Theme-scoped overrides only (all selectors gated by :root[data-theme="nerv"]),
+   so Classic — which never sets data-theme — renders byte-identically. Each rule
+   retargets an existing component class whose hardcoded Classic literal would
+   read wrong on the NERV void. Selectors were checked to be unique to their
+   component (StatusBar uses .left.detached, not .ref.detached). */
+
+/* Sidebar detached-HEAD row — this is a WARNING, not decoration, so it stays
+   amber (var(--err)) in every scheme rather than following the accent (else
+   the Phosphor scheme would paint detached-HEAD green). */
+:root[data-theme="nerv"] .ref.detached {
+  background: color-mix(in srgb, var(--err) 10%, transparent);
+}
+:root[data-theme="nerv"] .ref.detached .rn {
+  color: color-mix(in srgb, var(--err) 75%, var(--text));
+}
+:root[data-theme="nerv"] .ref.detached .warn-icon {
+  color: var(--err);
+}
+
+/* WorkingCopyView status-glyph tints — retint the hardcoded Classic green/amber/
+   red backgrounds to NERV equivalents. The glyph text colour already themes via
+   var(--status-*); only the background literals are stuck. .glyph.s-{add,mod,del}
+   is a compound selector unique to WorkingCopyView. s-mod follows --status-mod
+   (amber, warning-family), not the accent. */
+:root[data-theme="nerv"] .glyph.s-add { background: rgba(70, 232, 139, 0.1); }
+:root[data-theme="nerv"] .glyph.s-mod { background: color-mix(in srgb, var(--status-mod) 10%, transparent); }
+:root[data-theme="nerv"] .glyph.s-del { background: rgba(255, 68, 56, 0.1); }
+
+/* PrereqBanner is a WARNING banner — heading + border + background wash stay
+   amber (var(--err)) in every scheme, matching .ref.detached above. The CTA
+   button is a primary action, not the warning itself, so it intentionally
+   stays on the accent. */
+:root[data-theme="nerv"] .banner {
+  background: color-mix(in srgb, var(--err) 8%, transparent);
+  border-color: var(--err);
+}
+:root[data-theme="nerv"] .banner strong {
+  color: var(--err);
+}
+:root[data-theme="nerv"] .banner .actions button {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* ── Phase A: NERV display type (Anton) ─────────────────────────────────────
+   Anton is applied SPARINGLY — only to chrome headers and section labels, never
+   to content (e.g. commit-subject .title, of which there are ~46). Classic is
+   unaffected (data-theme-scoped). These selectors are the panel/section/dialog
+   headers scouted in the components. font-size/weight stay as the component set
+   them (density preserved); only the family + a touch of tracking change. */
+:root[data-theme="nerv"] .panel-header,
+:root[data-theme="nerv"] .group-label,
+:root[data-theme="nerv"] .section-title,
+:root[data-theme="nerv"] .dialog .header h3 {
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  font-weight: 400; /* Anton ships a single 400 weight; avoid faux-bold synthesis */
+}
+
+/* ══ Phase B — HUD decoration (all rules bare :root[data-theme="nerv"], NEVER :global()
+   which is Svelte-only and dead in this plain .css; pointer-events:none/additive; Classic
+   untouched). Blueprint: docs/superpowers/plans/2026-07-07-nerv-spike-findings.md ══ */
+
+/* B1 — scanline + grid overlay. Single fixed root ::after painting STATIC gradients:
+   composites once, no per-frame backdrop re-sample, so it does NOT reintroduce the
+   backdrop-filter framerate wall (+page.svelte:777-785). Tiny alphas = texture, not scrim. */
+:root[data-theme="nerv"]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 3px),
+    linear-gradient(color-mix(in srgb, var(--accent) 1.5%, transparent), color-mix(in srgb, var(--accent) 1.5%, transparent));
+}
+/* Static by design; reduced-motion is a no-op but kept explicit for intent. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="nerv"]::after { animation: none; }
+}
+
+/* B3 — corner brackets on the shared .panel / .dialog DOM classes (Svelte keeps the plain
+   DOM class, so these global rules reach every host). One ::after paints all four L-marks,
+   FLUSH-INSET (inset:0, at the padding-box corners) so overflow:hidden/auto hosts never clip
+   them. position:relative is verified layout-neutral (no abs descendant resolves to the root). */
+:root[data-theme="nerv"] .panel,
+:root[data-theme="nerv"] .dialog {
+  position: relative;
+}
+:root[data-theme="nerv"] .panel::after,
+:root[data-theme="nerv"] .dialog::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  --b: 14px;
+  --w: 1.5px;
+  --c: var(--accent);
+  background:
+    linear-gradient(var(--c), var(--c)) 0 0 / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 0 0 / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 100% 0 / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 100% 0 / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 0 100% / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 0 100% / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 100% 100% / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 100% 100% / var(--w) var(--b);
+  background-repeat: no-repeat;
+}
+/* GitHub screen is tokens-only — suppress its one .panel (ReviewBar) frame AND its
+   materialize overlay (nerv-motion.css .panel::before), so the frameless GitHub panel
+   never flashes a boot fill/outline. */
+:root[data-theme="nerv"] .gh .panel::after,
+:root[data-theme="nerv"] .gh .panel::before { content: none; }
+
+/* Context menu (ContextMenu.svelte) — same B3 corner-bracket treatment as .panel/
+   .dialog, so the right-click popover reads as a NERV console menu. .menu is
+   already position:fixed (main popover) / position:absolute (.submenu) — BOTH are
+   positioned, so the ::after (position:absolute; inset:0) anchors to the menu box
+   directly. We must NOT override `position` here: a global `position:relative`
+   out-specifies the component-scoped `position:fixed` and drops the menu into
+   document flow (it lands bottom-right and shoves panels around). No pre-existing
+   ::after on .menu to collide with. */
+:root[data-theme="nerv"] .menu::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  --b: 14px;
+  --w: 1.5px;
+  --c: var(--accent);
+  background:
+    linear-gradient(var(--c), var(--c)) 0 0 / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 0 0 / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 100% 0 / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 100% 0 / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 0 100% / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 0 100% / var(--w) var(--b),
+    linear-gradient(var(--c), var(--c)) 100% 100% / var(--b) var(--w),
+    linear-gradient(var(--c), var(--c)) 100% 100% / var(--w) var(--b);
+  background-repeat: no-repeat;
+}
+
+/* Collapsed panel (CollapsiblePanel's header-only state) — extend each corner's
+   two gradient arms past the box's midpoint so opposite arms meet, turning the
+   four L-marks into one continuous frame around the header. State rule (always
+   on in NERV, not gated on data-motion); the gated --b transition in
+   nerv-motion.css (same .panel::after selector) animates the sweep when motion
+   is on, and this snaps straight to the closed frame when it's off. */
+:root[data-theme="nerv"] .panel.collapsed::after {
+  --b: 51%; /* arms meet → outline (51% closes the seam) */
+}
+
+/* B2 — status bar as a mono console readout (uppercase, tracked, mono). */
+:root[data-theme="nerv"] .status-bar {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+/* Op spinner → phosphor "● LIVE" dot (only visible during an operation). This
+   is the STATIC appearance; the blink animation lives in nerv-motion.css,
+   gated on data-motion="on" + prefers-reduced-motion:no-preference (Task 7) —
+   motion-off/reduced-motion still shows a solid dot, just not blinking.
+   `animation: none` is load-bearing: StatusBar.svelte's base `.spinner` carries
+   `animation: pulse …`, which this rule does NOT otherwise override — so without it
+   the Classic pulse leaks through in static NERV (motion-off / reduced-motion). The
+   gated nerv-motion.css rule ([data-motion="on"]) is more specific and re-enables the
+   blink when motion is on. */
+:root[data-theme="nerv"] .spinner {
+  border: none;
+  border-radius: 50%;
+  background: var(--status-add);
+  animation: none;
+}
+
+/* Persistent "live" dot — always present in NERV (unlike .spinner above,
+   which only renders during an in-flight op), signalling the console is
+   live at idle too. Base display:none lives in StatusBar.svelte so Classic
+   never shows it. Idle: phosphor green; busy: switches to the scheme accent.
+   The pulse animation itself is gated in nerv-motion.css. */
+:root[data-theme="nerv"] .live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-add);
+}
+:root[data-theme="nerv"] .live-dot.busy {
+  background: var(--accent);
+}
+
+/* B4 — console header sigil (◇) on panel + dialog titles (Anton already applied in
+   Phase A). Sparingly: only the shared panel-header <h2> and dialog <h3>. */
+:root[data-theme="nerv"] .panel-header h2::before,
+:root[data-theme="nerv"] .dialog h3::before {
+  content: "◇ ";
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+/* Hazard-stripe divider under panel headers — replaces the 1px border with a thin
+   orange/void diagonal band (the primary, highest-reach section divider). Kept subtle
+   so it reads alongside the corner brackets rather than fighting them. */
+:root[data-theme="nerv"] .panel:not(.collapsed) .panel-header {
+  border-bottom-color: transparent;
+  background-image: repeating-linear-gradient(
+    -45deg, color-mix(in srgb, var(--accent) 35%, transparent) 0 5px, transparent 5px 10px);
+  background-repeat: no-repeat;
+  background-position: bottom left;
+  background-size: 100% 2px;
+}
+
+/* B5 — toolbar buttons (Fetch/Pull/Push [+ split push-main/push-arrow], Manage/
+   Settings gears) styled as website-style ghost console buttons — mirrors
+   website/assets/css/styles.css .btn-ghost (mono, uppercase, tracked, hairline
+   border, corner-bracket L-marks). Compact toolbar sizing (padding/font-size/
+   gear dimensions) is UNCHANGED — set in +page.svelte's untouched Classic rules
+   (~958-1044) and simply inherited here; only family/case/tracking/border/fill/
+   radius/pseudo-marks are added. All buttons stay ghost (no accent fill) for a
+   uniform, clean toolbar. Verified: .fetch-btn/.push-main/.push-arrow/.gear-btn
+   have no pre-existing ::before/::after in Classic, so no collision. The bracket
+   marks are opacity:0 at rest; the gated hover reveal + lift live in
+   nerv-motion.css (same selectors). */
+:root[data-theme="nerv"] .fetch-btn,
+:root[data-theme="nerv"] .gear-btn {
+  position: relative;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-color: var(--border);
+  background: var(--btn-bg);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+}
+:root[data-theme="nerv"] .fetch-btn::before,
+:root[data-theme="nerv"] .fetch-btn::after,
+:root[data-theme="nerv"] .gear-btn::before,
+:root[data-theme="nerv"] .gear-btn::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+:root[data-theme="nerv"] .fetch-btn::before,
+:root[data-theme="nerv"] .gear-btn::before {
+  left: 2px;
+  top: 2px;
+  border-left: 1px solid var(--accent);
+  border-top: 1px solid var(--accent);
+}
+:root[data-theme="nerv"] .fetch-btn::after,
+:root[data-theme="nerv"] .gear-btn::after {
+  right: 2px;
+  bottom: 2px;
+  border-right: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+}
+
+/* ── Scheme presets — recolor --accent/--accent-hover only; every other NERV
+   token (including --err/--status-mod, decoupled to amber above) is untouched,
+   so warnings/detached-HEAD/modified stay amber regardless of scheme. Bare
+   selectors (NOT :global() — that's Svelte-only and silently dropped in a plain
+   .css file); specificity (0,3,0) beats the base :root[data-theme="nerv"] block
+   (0,2,0). "orange" is the base NERV palette itself, so it has no block here. */
+:root[data-theme="nerv"][data-scheme="phosphor"] { --accent: #46E88B; --accent-hover: #6cf3a5; }
+:root[data-theme="nerv"][data-scheme="steel"]    { --accent: #5AA9E6; --accent-hover: #7cbef0; }
+:root[data-theme="nerv"][data-scheme="amber"]    { --accent: #E8A33D; --accent-hover: #f2b85c; }
+:root[data-theme="nerv"][data-scheme="violet"]   { --accent: #9B7FE0; --accent-hover: #b49bee; }
+:root[data-theme="nerv"][data-scheme="crimson"]  { --accent: #E0445A; --accent-hover: #ec6376; }

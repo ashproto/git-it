@@ -44,6 +44,10 @@ pub struct SafetyRef {
 pub struct PrerequisiteCheck {
     pub git: bool,
     pub git_version: Option<String>,
+    pub python3: bool,
+    pub python3_version: Option<String>,
+    /// Reflects the *bundled* git-filter-repo script: true iff
+    /// `<argv-prefix> --version` runs successfully (needs python3 + the script).
     pub filter_repo: bool,
     pub filter_repo_version: Option<String>,
 }
