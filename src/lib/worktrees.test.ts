@@ -43,6 +43,7 @@ describe("worktree helpers", () => {
     expect(worktreeIsDirty(worktree())).toBe(false);
     expect(worktreeIsDirty(worktree({ status: { ...worktree().status!, untracked: 1 } }))).toBe(true);
     expect(worktreeIsDirty(worktree({ status: { ...worktree().status!, operation: "rebase" } }))).toBe(true);
+    expect(worktreeIsDirty(worktree({ status: { ...worktree().status!, operation: "bisect" } }))).toBe(true);
   });
 
   it("allows only a verified clean linked worktree to be removed", () => {
@@ -55,6 +56,9 @@ describe("worktree helpers", () => {
     expect(
       worktreeRemovalBlocker(worktree({ status: { ...worktree().status!, unstaged: 1 } })),
     ).toContain("uncommitted changes");
+    expect(
+      worktreeRemovalBlocker(worktree({ status: { ...worktree().status!, operation: "bisect" } })),
+    ).toContain("operation in progress");
   });
 
   it("prioritizes the most useful status label", () => {

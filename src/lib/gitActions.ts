@@ -16,6 +16,16 @@ function isTauri(): boolean {
 
 const PAGE = 150;
 
+// Coordinate preserving graph refreshes with incremental page loads. A failed
+// operation may still have changed refs (for example, local delete succeeded but
+// remote delete failed), so its refresh must supersede any page fetched from the
+// pre-operation graph rather than letting stale decorations append afterward.
+let graphRefreshGeneration = 0;
+let graphPageLoadPromise: Promise<void> | null = null;
+let preservingGraphRefreshPromise: Promise<void> | null = null;
+let graphReloadPromise: Promise<void> | null = null;
+let preservingGraphRefreshQueued = false;
+
 export async function refreshStatus(): Promise<void> {
   if (!isTauri() || !appState.repo) {
     appState.setRepoStatus(null);
@@ -49,8 +59,11 @@ export async function refreshRefs(): Promise<void> {
     api.listWorktrees(target),
   ]);
   if (appState.repo !== target) return;
-  if (refs.status === "fulfilled") appState.setRefsDetailed(refs.value);
-  else console.warn("[gte] refs refresh failed", refs.reason);
+  if (refs.status === "fulfilled") appState.setRefsDetailed(refs.value, target);
+  else {
+    appState.invalidateRefsDetailed(target);
+    console.warn("[gte] refs refresh failed", refs.reason);
+  }
   if (remotes.status === "fulfilled") appState.setRemotes(remotes.value);
   else console.warn("[gte] remotes refresh failed", remotes.reason);
   if (worktrees.status === "fulfilled") appState.setWorktrees(worktrees.value);
@@ -111,26 +124,99 @@ function scheduleLocalRefresh(): void {
 // applies it NON-destructively — preserving the open commit, multi-selection,
 // queued time-edits and scroll. It also skips while a page-load is in flight so a
 // background event can't interleave into a non-contiguous graph.
-async function liveRefreshGraph(): Promise<void> {
-  if (!isTauri() || !appState.repo) return;
-  if (appState.graphLoadingMore) return; // don't fight an in-flight loadMoreGraph
-  const target = appState.repo;
-  const count = Math.max(PAGE, appState.graphCommits.length);
-  let gc: GraphCommit[];
-  try {
-    gc = await api.loadGraph(target, count, 0);
-  } catch (e) {
-    console.warn("[gte] live graph refresh failed", e);
-    return; // transient — keep the current view
+function refreshGraphPreservingState(waitForPageLoad: boolean): Promise<void> {
+  if (!isTauri() || !appState.repo) return Promise.resolve();
+  if (graphReloadPromise) {
+    // A full reload owns the canonical graph replacement. A required refresh
+    // runs after it; ordinary watcher events coalesce into one queued snapshot.
+    if (waitForPageLoad) {
+      return graphReloadPromise.then(() => refreshGraphPreservingState(true));
+    }
+    preservingGraphRefreshQueued = true;
+    return graphReloadPromise;
   }
-  if (appState.repo !== target) return;
-  appState.applyGraphRefresh(gc);
-  appState.setGraphHasMore(gc.length >= count);
-  await refreshStatus();
-  if (appState.repo !== target) return;
-  await refreshWorkingChanges();
-  if (appState.repo !== target) return;
-  await refreshRefs();
+  if (preservingGraphRefreshPromise) {
+    // A failed op needs a snapshot requested after that op completed. If a
+    // watcher/focus refresh was already in flight, let it settle and then take
+    // another snapshot rather than accepting its potentially pre-op result.
+    if (waitForPageLoad) {
+      return preservingGraphRefreshPromise.then(() => refreshGraphPreservingState(true));
+    }
+    // The active request may have captured its snapshot before this newer
+    // watcher/focus event. Remember one dirty bit so the event is not lost.
+    preservingGraphRefreshQueued = true;
+    return preservingGraphRefreshPromise;
+  }
+  if (appState.graphLoadingMore && !waitForPageLoad) {
+    preservingGraphRefreshQueued = true;
+    return graphPageLoadPromise ?? Promise.resolve();
+  }
+
+  const task = (async () => {
+    const target = appState.repo;
+    if (!target) return;
+
+    if (appState.graphLoadingMore) {
+      // Invalidate the page before waiting: its response was requested against
+      // the old ref state and must not append even if the commit count is equal.
+      graphRefreshGeneration += 1;
+      const pendingPage = graphPageLoadPromise;
+      if (pendingPage) await pendingPage;
+      else {
+        while (appState.repo === target && appState.graphLoadingMore) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      }
+    }
+    if (appState.repo !== target) return;
+
+    const generation = ++graphRefreshGeneration;
+    const count = Math.max(PAGE, appState.graphCommits.length);
+    let gc: GraphCommit[] | null = null;
+    try {
+      gc = await api.loadGraph(target, count, 0);
+    } catch (e) {
+      console.warn("[gte] preserving graph refresh failed", e);
+    }
+    if (appState.repo !== target || generation !== graphRefreshGeneration) return;
+    if (gc) {
+      appState.applyGraphRefresh(gc);
+      appState.setGraphHasMore(gc.length >= count);
+    }
+    await refreshStatus();
+    if (appState.repo !== target) return;
+    await refreshWorkingChanges();
+    if (appState.repo !== target) return;
+    await refreshRefs();
+  })();
+
+  const tracked = task.finally(() => {
+    if (preservingGraphRefreshPromise === tracked) {
+      preservingGraphRefreshPromise = null;
+      runQueuedPreservingGraphRefresh();
+    }
+  });
+  preservingGraphRefreshPromise = tracked;
+  return tracked;
+}
+
+function runQueuedPreservingGraphRefresh(): void {
+  if (
+    !preservingGraphRefreshQueued ||
+    preservingGraphRefreshPromise ||
+    graphReloadPromise ||
+    graphPageLoadPromise
+  ) {
+    return;
+  }
+  preservingGraphRefreshQueued = false;
+  void refreshGraphPreservingState(false).catch((e) => {
+    console.warn("[gte] queued graph refresh failed", e);
+  });
+}
+
+async function liveRefreshGraph(): Promise<void> {
+  await refreshGraphPreservingState(false);
 }
 
 // Coalesced live refresh. Triggered by a "git" filesystem event (a commit/branch/
@@ -193,64 +279,98 @@ export async function reloadGraph(): Promise<void> {
   // with a stale repo's (the flicker fix keeps the old data visible until here).
   const target = appState.repo;
   if (!target) return;
-  try {
-    let gc: GraphCommit[];
+  const generation = ++graphRefreshGeneration;
+  const task = (async () => {
     try {
-      gc = await api.loadGraph(target, PAGE, 0);
-    } catch (e) {
-      // Load failed (repo moved / deleted / corrupt). Because the flicker fix keeps
-      // the PREVIOUS repo's data on screen until this point, we must clear it on
-      // failure for the still-current repo — otherwise one repo's history would show
-      // under another's name. Bail silently if a newer switch already superseded us.
-      if (appState.repo === target) {
-        appState.setGraphCommits([]);
-        appState.setGraphHasMore(false);
-        appState.setRepoStatus(null);
-        appState.setRefsDetailed([]);
-        appState.setWorktrees([]);
-        appState.setWorkingChanges([]);
-        appState.status = `Could not open ${target}: ${e}`;
+      let gc: GraphCommit[];
+      try {
+        gc = await api.loadGraph(target, PAGE, 0);
+      } catch (e) {
+        // Load failed (repo moved / deleted / corrupt). Because the flicker fix keeps
+        // the PREVIOUS repo's data on screen until this point, we must clear it on
+        // failure for the still-current repo — otherwise one repo's history would show
+        // under another's name. Bail silently if a newer switch already superseded us.
+        if (appState.repo === target && generation === graphRefreshGeneration) {
+          // Any page requested while this reload was in flight was based on the
+          // failed snapshot and must not append after we clear the graph.
+          graphRefreshGeneration += 1;
+          appState.setGraphCommits([]);
+          appState.setGraphHasMore(false);
+          appState.setRepoStatus(null);
+          appState.setRefsDetailed([]);
+          appState.setWorktrees([]);
+          appState.setWorkingChanges([]);
+          appState.status = `Could not open ${target}: ${e}`;
+        }
+        return;
       }
-      return;
+      if (appState.repo !== target || generation !== graphRefreshGeneration) return;
+      // Invalidate pages that started before or during this reload. The first
+      // increment above rejects older requests; this one rejects requests made
+      // while loadGraph itself was still in flight.
+      graphRefreshGeneration += 1;
+      // Once the new repository's graph replaces the old one, old worktree paths
+      // must no longer remain visible or actionable while their refresh settles.
+      // Same-repository reloads keep the cached list on transient failures.
+      if (appState.repoLoading) appState.setWorktrees([]);
+      appState.setGraphCommits(gc);
+      appState.setGraphHasMore(gc.length === PAGE);
+      await refreshStatus();
+      if (appState.repo !== target) return;
+      await refreshWorkingChanges();
+      if (appState.repo !== target) return;
+      await refreshRefs();
+    } finally {
+      // Clear the switch-in-progress flag (set by `set repo`) so remote actions
+      // re-enable — but only if we're still the current repo, so a superseding
+      // switch's own flag isn't cleared out from under it.
+      if (appState.repo === target) appState.setRepoLoading(false);
     }
-    if (appState.repo !== target) return;
-    // Once the new repository's graph replaces the old one, old worktree paths
-    // must no longer remain visible or actionable while their refresh settles.
-    // Same-repository reloads keep the cached list on transient failures.
-    if (appState.repoLoading) appState.setWorktrees([]);
-    appState.setGraphCommits(gc);
-    appState.setGraphHasMore(gc.length === PAGE);
-    await refreshStatus();
-    if (appState.repo !== target) return;
-    await refreshWorkingChanges();
-    if (appState.repo !== target) return;
-    await refreshRefs();
-  } finally {
-    // Clear the switch-in-progress flag (set by `set repo`) so remote actions
-    // re-enable — but only if we're still the current repo, so a superseding
-    // switch's own flag isn't cleared out from under it.
-    if (appState.repo === target) appState.setRepoLoading(false);
-  }
+  })();
+  const tracked = task.finally(() => {
+    if (graphReloadPromise === tracked) {
+      graphReloadPromise = null;
+      runQueuedPreservingGraphRefresh();
+    }
+  });
+  graphReloadPromise = tracked;
+  await tracked;
 }
 
 export async function loadMoreGraph(): Promise<void> {
   if (!isTauri() || !appState.repo) return;
-  if (!appState.graphHasMore || appState.graphLoadingMore) return;
+  if (!appState.graphHasMore || appState.graphLoadingMore || preservingGraphRefreshPromise) return;
   appState.setGraphLoadingMore(true);
+  const target = appState.repo;
   const offset = appState.graphCommits.length;
-  try {
-    const gc = await api.loadGraph(appState.repo, PAGE, offset);
-    // If a live/switch refresh reset the list underneath us while this page was in
-    // flight, drop the now-stale page — appending it would leave a hole and corrupt
-    // the lane geometry.
-    if (appState.graphCommits.length !== offset) return;
-    appState.appendGraphCommits(gc);
-    appState.setGraphHasMore(gc.length === PAGE);
-  } catch (e) {
-    console.warn("[gte] load more failed", e);
-  } finally {
-    appState.setGraphLoadingMore(false);
-  }
+  const generation = graphRefreshGeneration;
+  const task = (async () => {
+    try {
+      const gc = await api.loadGraph(target, PAGE, offset);
+      // If a preserving refresh or repo switch superseded this request, discard
+      // its pre-refresh decorations even when the graph length stayed the same.
+      if (
+        appState.repo !== target ||
+        graphRefreshGeneration !== generation ||
+        appState.graphCommits.length !== offset
+      )
+        return;
+      appState.appendGraphCommits(gc);
+      appState.setGraphHasMore(gc.length === PAGE);
+    } catch (e) {
+      console.warn("[gte] load more failed", e);
+    } finally {
+      appState.setGraphLoadingMore(false);
+    }
+  })();
+  const tracked = task.finally(() => {
+    if (graphPageLoadPromise === tracked) {
+      graphPageLoadPromise = null;
+      runQueuedPreservingGraphRefresh();
+    }
+  });
+  graphPageLoadPromise = tracked;
+  await tracked;
 }
 
 // Jump to a commit by SHA, paging in more history first if it isn't loaded yet.
@@ -315,12 +435,14 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
     return true;
   } catch (e) {
     // A partial success (e.g. the local branch was deleted but its remote delete failed)
-    // should still update the sidebar — but use the NON-destructive refreshRefs(), not
-    // reloadGraph(). reloadGraph() resets graphCommits via setGraphCommits(), which clears
-    // the user's queued commit-time edits (newDates), selection, and currentSha; an
-    // unrelated failed op (rejected checkout, branch-already-exists, fetch error) must not
-    // silently discard those. refreshRefs() only re-reads the ref/remote lists.
-    try { await refreshRefs(); } catch (err) { console.warn("[gte] refs refresh after failed op", err); }
+    // should update every graph decoration as well as the sidebar. Use the
+    // preserving refresh: reloadGraph()/setGraphCommits() would clear queued
+    // commit-time edits, selection, and currentSha after an unrelated failure.
+    try {
+      await refreshGraphPreservingState(true);
+    } catch (err) {
+      console.warn("[gte] preserving graph refresh after failed op", err);
+    }
     appState.status = `${label} failed: ${firstLine(e)}`;
     // The status bar alone is too easy to miss for a discrete action the user just took
     // (user-reported "no feedback for if something went wrong") — surface it as a dialog.
