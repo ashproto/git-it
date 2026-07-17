@@ -11,19 +11,18 @@ export function sparklinePoints(values: number[], w: number, h: number): string 
     .join(" ");
 }
 
-/** A cold-stats failure is worth retrying; a missing repo / auth / remote problem is not.
- *  GitHub computes /stats/commit_activity lazily (HTTP 202 the first time), so the initial
- *  request can fail transiently — a rate limit, a 202 surfaced as an error, an unparseable
- *  placeholder body. Those clear on their own; NotFound/NotAuthed/NoRemote/NotInstalled won't. */
+/** Only a transient cold-cache failure is worth the short fixed backoff. GitHub computes
+ *  /stats/commit_activity lazily (HTTP 202 the first time), which can surface as an
+ *  unparseable placeholder body — an `Other`/parse error — or a non-GithubError network
+ *  blip. Explicit terminal states are NOT retried: `RateLimited` won't clear inside the
+ *  backoff window (and re-hitting it prolongs the throttle), and Forbidden / NotFound /
+ *  NotAuthed / NoRemote / NotInstalled are permanent. Reserve the retries for the
+ *  computing/parse case; a real rate limit should surface (and wait for its reset) instead. */
 export function isRetryableActivityError(e: unknown): boolean {
-  const kind =
-    e && typeof e === "object" && "kind" in e ? (e as GithubError).kind : "Other";
-  return (
-    kind !== "NotFound" &&
-    kind !== "NotAuthed" &&
-    kind !== "NoRemote" &&
-    kind !== "NotInstalled"
-  );
+  if (e && typeof e === "object" && "kind" in e) {
+    return (e as GithubError).kind === "Other";
+  }
+  return true; // non-GithubError throw → treat as a transient blip
 }
 
 /** Fetch commit activity, retrying through GitHub's lazy-computation window.
