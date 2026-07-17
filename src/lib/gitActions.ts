@@ -302,7 +302,13 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
     appState.status = `${label} — done.`;
     return true;
   } catch (e) {
+    // The op may have PARTIALLY applied (e.g. the local branch was deleted but the
+    // remote delete failed), so repaint — a stale view looks like "nothing happened".
+    try { await reloadGraph(); } catch (err) { console.warn("[gte] graph refresh after failed op", err); }
     appState.status = `${label} failed: ${firstLine(e)}`;
+    // The status bar alone is too easy to miss for a discrete action the user just took
+    // (user-reported "no feedback for if something went wrong") — surface it as a dialog.
+    void dialogs.alert({ title: `${label} failed`, message: errorText(e) });
     return false;
   } finally {
     appState.setNavBusy(false);
@@ -310,15 +316,19 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
   }
 }
 
-// Git error/output text is often multiline; toasts get only the first line (contract d).
-// GitHub commands reject with a serialized GithubError OBJECT ({kind, message?}) — String()
-// on that yields "[object Object]", so unwrap it first (mirrors errText in githubActions).
-function firstLine(e: unknown): string {
+// Full error text. GitHub commands reject with a serialized GithubError OBJECT
+// ({kind, message?}) — String() on that yields "[object Object]", so unwrap it first
+// (mirrors errText in githubActions). Used verbatim in the error dialog.
+function errorText(e: unknown): string {
   if (e && typeof e === "object" && "kind" in e) {
     const g = e as { kind: string; message?: string };
-    return String(g.kind === "Other" ? (g.message ?? g.kind) : g.kind).split("\n")[0];
+    return String(g.kind === "Other" ? (g.message ?? g.kind) : g.kind);
   }
-  return String(e).split("\n")[0];
+  return String(e);
+}
+// First line only — git output is often multiline; the compact status bar gets one line.
+function firstLine(e: unknown): string {
+  return errorText(e).split("\n")[0];
 }
 
 // Run an OpOutcome-returning op. Always refreshes graph+status (even on error) so
