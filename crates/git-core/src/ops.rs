@@ -73,6 +73,10 @@ pub fn delete_remote_branch(repo: &Path, remote: &str, branch: &str) -> Result<(
     let mut p = Command::new("git");
     p.current_dir(repo)
         .env("GIT_TERMINAL_PROMPT", "0")
+        // Pin the C locale so the "already gone" diagnostic we match below is git's stable
+        // English text, not a translation from the user's LANG/LC_* — the app shells out to
+        // whatever git is on their PATH, which may ship localized messages.
+        .env("LC_ALL", "C")
         // Options first, then --end-of-options, so BOTH the remote name and the branch
         // operand are guarded against leading-dash flag injection.
         .args(["push", "--delete", "--end-of-options", remote, branch]);
@@ -80,6 +84,7 @@ pub fn delete_remote_branch(repo: &Path, remote: &str, branch: &str) -> Result<(
         Ok(_) => Ok(()),
         // Only the "already gone" case is safe to swallow; every other failure (auth,
         // network, protected branch) must still surface — the remote ref may live on.
+        // The message is reliably English thanks to the LC_ALL=C pin above.
         Err(e) if e.contains("remote ref does not exist") => {
             prune_remote_tracking_ref(repo, remote, branch)
         }
