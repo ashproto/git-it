@@ -16,15 +16,24 @@ function makePrerequisites() {
   // yet" (check null, probeFailed false). Keeps history editing disabled while set.
   let probeFailed = $state(false);
   let loading: Promise<void> | null = null;
+  // Monotonic probe id. refresh() can start a probe while another is still in flight, so
+  // only the LATEST probe may commit its result — otherwise a stale/out-of-order completion
+  // (e.g. an older failure resolving after a newer success) would clobber the current state
+  // and wrongly re-disable editing.
+  let probeSeq = 0;
 
   async function probe() {
     // Non-Tauri (browser preview) has no backend to probe — leave the state "unknown"
     // (not a failure) so canEditHistory stays optimistic there.
     if (!isTauri()) return;
+    const seq = ++probeSeq;
     try {
-      check = await api.checkPrerequisites();
+      const result = await api.checkPrerequisites();
+      if (seq !== probeSeq) return; // superseded by a newer probe — drop this result
+      check = result;
       probeFailed = false;
     } catch {
+      if (seq !== probeSeq) return; // superseded by a newer probe — drop this stale failure
       check = null;
       probeFailed = true;
       // Clear the cached promise so a later load()/refresh() re-probes a transient failure
