@@ -38,16 +38,23 @@ export async function refreshWorkingChanges(): Promise<void> {
   }
 }
 
-// Refresh the detailed ref list (ahead/behind/upstream) and the remotes list.
+// Refresh the detailed ref list (ahead/behind/upstream), remotes, and worktrees.
 // Tauri-only; silently no-ops in browser preview.
 export async function refreshRefs(): Promise<void> {
   if (!isTauri() || !appState.repo) return;
-  try {
-    appState.setRefsDetailed(await api.listRefs(appState.repo));
-    appState.setRemotes(await api.remotes(appState.repo));
-  } catch (e) {
-    console.warn("[gte] refs/remotes refresh failed", e);
-  }
+  const target = appState.repo;
+  const [refs, remotes, worktrees] = await Promise.allSettled([
+    api.listRefs(target),
+    api.remotes(target),
+    api.listWorktrees(target),
+  ]);
+  if (appState.repo !== target) return;
+  if (refs.status === "fulfilled") appState.setRefsDetailed(refs.value);
+  else console.warn("[gte] refs refresh failed", refs.reason);
+  if (remotes.status === "fulfilled") appState.setRemotes(remotes.value);
+  else console.warn("[gte] remotes refresh failed", remotes.reason);
+  if (worktrees.status === "fulfilled") appState.setWorktrees(worktrees.value);
+  else console.warn("[gte] worktrees refresh failed", worktrees.reason);
 }
 
 // ── Live working-copy watching (filesystem watcher + focus refresh) ───────────
@@ -200,12 +207,17 @@ export async function reloadGraph(): Promise<void> {
         appState.setGraphHasMore(false);
         appState.setRepoStatus(null);
         appState.setRefsDetailed([]);
+        appState.setWorktrees([]);
         appState.setWorkingChanges([]);
         appState.status = `Could not open ${target}: ${e}`;
       }
       return;
     }
     if (appState.repo !== target) return;
+    // Once the new repository's graph replaces the old one, old worktree paths
+    // must no longer remain visible or actionable while their refresh settles.
+    // Same-repository reloads keep the cached list on transient failures.
+    if (appState.repoLoading) appState.setWorktrees([]);
     appState.setGraphCommits(gc);
     appState.setGraphHasMore(gc.length === PAGE);
     await refreshStatus();
@@ -575,9 +587,10 @@ export const gitActions = {
     deleteRemote = false,
     remote?: string,
     remoteBranch?: string,
+    worktreePath?: string,
   ) =>
     run(`Delete branch ${name}`, () =>
-      api.deleteBranch(appState.repo, name, force, deleteRemote, remote, remoteBranch),
+      api.deleteBranch(appState.repo, name, force, deleteRemote, remote, remoteBranch, worktreePath),
     ),
   deleteRemoteBranch: (remote: string, branch: string) =>
     run(`Delete remote branch ${remote}/${branch}`, () =>

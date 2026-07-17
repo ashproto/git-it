@@ -1,6 +1,6 @@
 // Centralized reactive app state using Svelte 5 runes.
 // Components import this module and read/write fields directly.
-import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile } from "./types";
+import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile, WorktreeInfo } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
 import {
@@ -1585,9 +1585,11 @@ function makeState() {
 
   // ── Remote state (Phase 6) ────────────────────────────────────────────────
   // refsDetailed: the result of api.listRefs (includes upstream/ahead/behind).
+  // worktrees: registered main + linked worktrees, including their checked-out branches.
   // remotes: the result of api.remotes (name + url).
   // remoteOpActive / remoteLog: live progress for an in-flight pull/push.
   let refsDetailed = $state<Ref[]>([]);
+  let worktrees = $state<WorktreeInfo[]>([]);
   let remotesState = $state<RemoteInfo[]>([]);
   let remoteOpActive = $state<boolean>(false);
   // True from the moment a repo switch begins until that repo's reloadGraph finishes.
@@ -1644,6 +1646,7 @@ function makeState() {
           workingChanges = [];
           workingChangesRev = 0;
           refsDetailed = [];
+          worktrees = [];
           remotesState = [];
           graphCommits = [];
           commits = [];
@@ -2214,6 +2217,12 @@ function makeState() {
     },
     setRefsDetailed(v: Ref[]) {
       refsDetailed = v;
+    },
+    get worktrees() {
+      return worktrees;
+    },
+    setWorktrees(v: WorktreeInfo[]) {
+      worktrees = v;
     },
     get remotes() {
       return remotesState;

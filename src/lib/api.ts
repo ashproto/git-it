@@ -40,6 +40,7 @@ import type {
   WorkingFile,
   UpdateInfo,
   DownloadEvent,
+  WorktreeInfo,
 } from "./types";
 
 export async function pickRepoFolder(initial?: string): Promise<string | null> {
@@ -69,6 +70,7 @@ export const api = {
   loadGraph: (repo: string, count: number, skip = 0) =>
     invoke<GraphCommit[]>("load_graph", { repo, count, skip }),
   listRefs: (repo: string) => invoke<Ref[]>("list_refs", { repo }),
+  listWorktrees: (repo: string) => invoke<WorktreeInfo[]>("list_worktrees", { repo }),
   repoStatus: (repo: string) => invoke<RepoStatus>("repo_status", { repo }),
   checkout: (repo: string, target: string) => invoke<string>("checkout", { repo, target }),
   createBranch: (repo: string, name: string, startPoint: string) =>
@@ -82,12 +84,14 @@ export const api = {
     deleteRemote?: boolean,
     remote?: string,
     remoteBranch?: string,
+    worktreePath?: string,
   ) =>
     invoke<void>("delete_branch", {
       repo, name, force,
       deleteRemote: deleteRemote ?? false,
       remote: remote ?? null,
       remoteBranch: remoteBranch ?? null,
+      worktreePath: worktreePath ?? null,
     }),
   createTag: (repo: string, name: string, target: string, message?: string) =>
     invoke<void>("create_tag", { repo, name, target, message: message ?? null }),

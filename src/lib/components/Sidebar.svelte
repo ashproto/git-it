@@ -9,14 +9,20 @@
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
   import RefTree from "./RefTree.svelte";
   import StashPanel from "./StashPanel.svelte";
+  import WorktreePanel from "./WorktreePanel.svelte";
   import { githubState } from "../githubState.svelte";
   import { prForBranch } from "../github/branchPr";
+  import { worktreeForBranch } from "../worktrees";
 
   const refs = $derived(appState.refsByKind);
   // Folderize slashed ref names (feature/x → feature ▸ x), Fork/SourceTree-style.
   const localTree = $derived(buildRefTree(refs.local));
   const remoteTree = $derived(buildRefTree(refs.remote));
   const tagTree = $derived(buildRefTree(refs.tags));
+
+  function worktreeFor(branch: string) {
+    return worktreeForBranch(appState.worktrees, branch);
+  }
 
   // Uncommitted-change count for the pinned "Working Copy" entry — mirrors the
   // count used by the synthetic graph row.
@@ -76,7 +82,8 @@
       tracking !== null && appState.refsByKind.remote.some((r) => r.name === tracking);
     const upstream = remoteExists ? tracking : null;
     const remoteGone = tracking !== null && !remoteExists;
-    const res = await dialogs.confirmBranchDelete({ branch: name, upstream, remoteGone });
+    const worktree = worktreeFor(name) ?? null;
+    const res = await dialogs.confirmBranchDelete({ branch: name, upstream, remoteGone, worktree });
     if (!res.confirmed) return;
     let remote: string | undefined;
     let remoteBranch: string | undefined;
@@ -85,7 +92,14 @@
       remote = upstream.slice(0, slash);
       remoteBranch = upstream.slice(slash + 1);
     }
-    await gitActions.deleteBranch(name, res.force, res.deleteRemote && !!upstream, remote, remoteBranch);
+    await gitActions.deleteBranch(
+      name,
+      res.force,
+      res.deleteRemote && !!upstream,
+      remote,
+      remoteBranch,
+      res.removeWorktree && worktree ? worktree.path : undefined,
+    );
   }
 
   function onRefContext(event: MouseEvent, r: RefEntry, kind: "local" | "remote" | "tag") {
@@ -287,8 +301,14 @@
         <span class="rn">HEAD detached @ {refs.head[0].sha.slice(0, 7)}</span>
       </button>
     {/if}
-    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} selectedKey={selectedRefKey} onSelect={selectRef} />
+    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} selectedKey={selectedRefKey} onSelect={selectRef} {worktreeFor} />
     {#if refs.local.length === 0}<p class="none">No local branches</p>{/if}
+  </CollapsiblePanel>
+
+  <CollapsiblePanel title="Worktrees">
+    {#snippet headerActions()}<span class="ref-count">{appState.worktrees.length}</span>{/snippet}
+    <WorktreePanel worktrees={appState.worktrees} />
+    {#if appState.worktrees.length === 0}<p class="none">No worktrees</p>{/if}
   </CollapsiblePanel>
 
   <CollapsiblePanel title="Remotes">

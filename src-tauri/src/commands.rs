@@ -7,7 +7,7 @@ use git_core::ops_remote;
 use git_core::ops_rewrite;
 use git_core::ops_worktree;
 use git_core::rewrite;
-use git_core::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RemoteInfo, RemoteOutcome, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile};
+use git_core::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RemoteInfo, RemoteOutcome, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile, WorktreeInfo};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::ipc::Channel;
@@ -159,6 +159,11 @@ pub fn list_refs(repo: String) -> Result<Vec<Ref>, String> {
     graph::list_refs(&PathBuf::from(repo))
 }
 
+#[tauri::command(async)]
+pub fn list_worktrees(repo: String) -> Result<Vec<WorktreeInfo>, String> {
+    ops::list_worktrees(&PathBuf::from(repo))
+}
+
 #[tauri::command]
 pub fn repo_status(repo: String) -> Result<RepoStatus, String> {
     graph::repo_status(&PathBuf::from(repo))
@@ -189,6 +194,7 @@ pub fn delete_branch(
     delete_remote: Option<bool>,
     remote: Option<String>,
     remote_branch: Option<String>,
+    worktree_path: Option<String>,
 ) -> Result<(), String> {
     ops::delete_branch(
         &PathBuf::from(repo),
@@ -197,6 +203,7 @@ pub fn delete_branch(
         delete_remote.unwrap_or(false),
         remote.as_deref(),
         remote_branch.as_deref(),
+        worktree_path.as_deref(),
     )
 }
 

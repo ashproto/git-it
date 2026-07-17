@@ -115,6 +115,7 @@ pub fn run() {
             commands::load_commits,
             commands::load_graph,
             commands::list_refs,
+            commands::list_worktrees,
             commands::repo_status,
             commands::checkout,
             commands::create_branch,

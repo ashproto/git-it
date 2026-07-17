@@ -98,6 +98,21 @@ export type RepoStatus = {
   operation: string | null;
 };
 
+export type WorktreeInfo = {
+  path: string;
+  head: string | null;
+  branch: string | null;
+  isMain: boolean;
+  isCurrent: boolean;
+  detached: boolean;
+  bare: boolean;
+  locked: boolean;
+  lockedReason: string | null;
+  prunable: boolean;
+  prunableReason: string | null;
+  status: RepoStatus | null;
+};
+
 export type OpOutcome = {
   conflicted: boolean;
   files: string[];

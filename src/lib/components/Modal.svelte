@@ -1,17 +1,30 @@
 <script lang="ts">
   import { dialogs } from "../dialogs.svelte";
+  import { worktreeRemovalBlocker } from "../worktrees";
+  import WorktreeIcon from "./WorktreeIcon.svelte";
 
   let inputValue = $state("");
   let inputEl = $state<HTMLInputElement | undefined>();
   let credUsernameEl = $state<HTMLInputElement | undefined>();
   let prTitleEl = $state<HTMLInputElement | undefined>();
   let okAlertEl = $state<HTMLButtonElement | undefined>();
+  let branchDeleteCancelEl = $state<HTMLButtonElement | undefined>();
+  let lastFocusedDialogResolve: unknown;
 
   // When a prompt opens, seed + focus the field.
   // When a credentials dialog opens, focus the username input.
   // When a create-PR dialog opens, focus the title input.
   $effect(() => {
     const s = dialogs.state;
+    if (s.kind === "none") {
+      lastFocusedDialogResolve = undefined;
+      return;
+    }
+    // Checkbox and field updates replace dialog state, but preserve the
+    // promise resolver. Focus only for a newly opened dialog so toggling an
+    // option never jumps keyboard focus back to Cancel.
+    if (s.resolve === lastFocusedDialogResolve) return;
+    lastFocusedDialogResolve = s.resolve;
     if (s.kind === "prompt") {
       inputValue = s.value;
       inputEl?.focus();
@@ -23,6 +36,8 @@
       prTitleEl?.select();
     } else if (s.kind === "alert") {
       okAlertEl?.focus();
+    } else if (s.kind === "branchDelete") {
+      branchDeleteCancelEl?.focus();
     }
   });
 
@@ -45,10 +60,7 @@
   }
 
   function handleBranchDeleteKey(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      dialogs.resolveBranchDelete(true);
-    } else if (e.key === "Escape") {
+    if (e.key === "Escape") {
       e.preventDefault();
       dialogs.resolveBranchDelete(false);
     }
@@ -203,6 +215,32 @@
     <div class="dialog" role="dialog" aria-modal="true" aria-label={dialogs.state.title}>
       <h3>{dialogs.state.title}</h3>
       <p class="msg">Delete branch "{dialogs.state.branch}"?</p>
+      {#if dialogs.state.worktree}
+        {@const blocker = worktreeRemovalBlocker(dialogs.state.worktree)}
+        <div class="worktree-context">
+          <span class="worktree-icon" aria-hidden="true"><WorktreeIcon size={16} /></span>
+          <span class="worktree-copy">
+            <strong>Branch is checked out in a worktree</strong>
+            <span class="worktree-path" title={dialogs.state.worktree.path}>{dialogs.state.worktree.path}</span>
+          </span>
+        </div>
+        {#if blocker}
+          <p class="worktree-blocker">{blocker}</p>
+        {:else}
+          <p class="worktree-consequence">
+            Removing it deletes the worktree folder, including ignored files inside it. Git It will
+            refuse if tracked or untracked changes are present.
+          </p>
+          <label class="backup-row worktree-opt-in">
+            <input
+              type="checkbox"
+              checked={dialogs.state.removeWorktree}
+              onchange={(e) => dialogs.setBranchDeleteWorktree((e.currentTarget as HTMLInputElement).checked)}
+            />
+            Remove this worktree, then delete the branch
+          </label>
+        {/if}
+      {/if}
       <label class="backup-row">
         <input
           type="checkbox"
@@ -224,13 +262,15 @@
         <p class="msg muted">Remote branch already deleted.</p>
       {/if}
       <div class="actions">
-        <button type="button" onclick={() => dialogs.resolveBranchDelete(false)}>Cancel</button>
+        <button bind:this={branchDeleteCancelEl} type="button" onclick={() => dialogs.resolveBranchDelete(false)}>Cancel</button>
         <button
           type="button"
           class="primary danger"
+          disabled={!!dialogs.state.worktree &&
+            (!dialogs.state.removeWorktree || !!worktreeRemovalBlocker(dialogs.state.worktree))}
           onclick={() => dialogs.resolveBranchDelete(true)}
         >
-          Delete
+          {dialogs.state.worktree ? "Remove worktree & delete branch" : "Delete"}
         </button>
       </div>
     </div>
@@ -548,6 +588,55 @@
     border: none;
     background: none;
     cursor: pointer;
+  }
+  .worktree-context {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 9px 10px;
+    margin: -4px 0 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--accent) 7%, var(--input-bg));
+  }
+  .worktree-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--accent);
+  }
+  .worktree-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 12px;
+  }
+  .worktree-path {
+    overflow: hidden;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .worktree-blocker {
+    margin: -4px 0 14px;
+    color: var(--danger);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .worktree-consequence {
+    margin: -4px 0 10px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .worktree-opt-in {
+    align-items: flex-start;
+    font-weight: 600;
+    line-height: 1.4;
   }
   .hint {
     margin: 0 0 14px;
