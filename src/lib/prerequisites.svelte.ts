@@ -6,19 +6,29 @@
 import { api } from "./api";
 import type { PrerequisiteCheck } from "./types";
 
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 function makePrerequisites() {
   let check = $state<PrerequisiteCheck | null>(null);
+  // True once a probe has REJECTED without producing a result — distinct from "not probed
+  // yet" (check null, probeFailed false). Keeps history editing disabled while set.
+  let probeFailed = $state(false);
   let loading: Promise<void> | null = null;
 
   async function probe() {
+    // Non-Tauri (browser preview) has no backend to probe — leave the state "unknown"
+    // (not a failure) so canEditHistory stays optimistic there.
+    if (!isTauri()) return;
     try {
       check = await api.checkPrerequisites();
+      probeFailed = false;
     } catch {
       check = null;
-      // Clear the cached promise so a later load()/refresh() actually re-probes. Without
-      // this, a transient failure leaves `loading` holding this (resolved) promise, so
-      // load() no-ops forever and canEditHistory stays true — history editing wrongly
-      // enabled, and the banner hidden, for the rest of the session.
+      probeFailed = true;
+      // Clear the cached promise so a later load()/refresh() re-probes a transient failure
+      // instead of no-op'ing on this (resolved) promise for the rest of the session.
       loading = null;
     }
   }
@@ -27,11 +37,14 @@ function makePrerequisites() {
     get check() {
       return check;
     },
-    // Commit-time editing needs git + python3 + a working bundled filter-repo. Unknown
-    // (not yet probed / non-Tauri) → treated as available so we never block prematurely;
-    // a genuinely-missing tool still fails loudly at run time.
+    // True only when a SUCCESSFUL probe confirms git + python3 + a working bundled
+    // filter-repo. Before the first probe resolves — and in non-Tauri — we stay optimistic
+    // (check null, probeFailed false) so the control doesn't flash disabled. But once a
+    // probe has FAILED we keep editing DISABLED: a destructive history rewrite must never
+    // run on unverified prerequisites. A later successful probe re-enables it.
     get canEditHistory() {
-      return check ? check.git && check.python3 && check.filterRepo : true;
+      if (check) return check.git && check.python3 && check.filterRepo;
+      return !probeFailed;
     },
     // Probe once, then share the result — deduped so the banner and ApplyPanel don't
     // double-invoke.
