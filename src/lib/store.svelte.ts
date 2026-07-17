@@ -1,6 +1,6 @@
 // Centralized reactive app state using Svelte 5 runes.
 // Components import this module and read/write fields directly.
-import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile } from "./types";
+import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile, WorktreeInfo } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { Store } from "@tauri-apps/plugin-store";
 import {
@@ -728,25 +728,40 @@ function makeState() {
   // list_refs) so tags/branches on commits not yet paged into the graph still show
   // up without scrolling, then overlaid with the loaded-graph decorations — which
   // are authoritative for is_head and supply the detached-HEAD pseudo-ref that
-  // list_refs doesn't return. In the browser preview refsDetailed is empty, so it
+  // list_refs doesn't return. When no inventory has been loaded for this repo, it
   // falls back to the graph decorations (keeps working without a list_refs call).
   const refsByKind = $derived.by(() => {
     const local = new Map<string, RefEntry>();
     const remote = new Map<string, RefEntry>();
     const tags = new Map<string, RefEntry>();
     const head: RefEntry[] = []; // detached-HEAD decoration (RefKind "head")
-    for (const r of refsDetailed) {
-      // Carry ahead/behind for local branches (used by the sidebar's ↑/↓ badges).
-      const entry: RefEntry =
-        r.kind === "local"
-          ? { name: r.name, sha: r.target_sha, isHead: false, ahead: r.ahead, behind: r.behind }
-          : { name: r.name, sha: r.target_sha, isHead: false };
-      if (r.kind === "local") local.set(r.name, entry);
-      else if (r.kind === "remote") remote.set(r.name, entry);
-      else if (r.kind === "tag") tags.set(r.name, entry);
+    // list_refs is the complete inventory in the desktop app. Once it has loaded,
+    // graph decorations may enrich an existing ref but must not resurrect one
+    // that disappeared from a newer ref refresh. Browser preview has no detailed
+    // inventory, so it intentionally keeps the graph-only fallback below.
+    const hasDetailedInventory = refsDetailedRepo === repo;
+    if (hasDetailedInventory) {
+      for (const r of refsDetailed) {
+        // Carry ahead/behind for local branches (used by the sidebar's ↑/↓ badges).
+        const entry: RefEntry =
+          r.kind === "local"
+            ? { name: r.name, sha: r.target_sha, isHead: false, ahead: r.ahead, behind: r.behind }
+            : { name: r.name, sha: r.target_sha, isHead: false };
+        if (r.kind === "local") local.set(r.name, entry);
+        else if (r.kind === "remote") remote.set(r.name, entry);
+        else if (r.kind === "tag") tags.set(r.name, entry);
+      }
     }
     for (const c of graphCommits) {
       for (const r of c.refs) {
+        if (
+          hasDetailedInventory &&
+          ((r.kind === "local" && !local.has(r.name)) ||
+            (r.kind === "remote" && !remote.has(r.name)) ||
+            (r.kind === "tag" && !tags.has(r.name)))
+        ) {
+          continue;
+        }
         // Graph decorations are authoritative for sha + is_head but carry no
         // ahead/behind — preserve those from the list_refs seed above (if any).
         const prev = r.kind === "local" ? local.get(r.name) : undefined;
@@ -1585,9 +1600,16 @@ function makeState() {
 
   // ── Remote state (Phase 6) ────────────────────────────────────────────────
   // refsDetailed: the result of api.listRefs (includes upstream/ahead/behind).
+  // worktrees: registered main + linked worktrees, including their checked-out branches.
   // remotes: the result of api.remotes (name + url).
   // remoteOpActive / remoteLog: live progress for an in-flight pull/push.
   let refsDetailed = $state<Ref[]>([]);
+  // The repository for which refsDetailed is a complete, successfully loaded
+  // inventory. null means the retained array is only a cache and graph refs are
+  // the best available source; this also makes a successful empty inventory
+  // distinguishable from a failed or not-yet-run list_refs call.
+  let refsDetailedRepo = $state<string | null>(null);
+  let worktrees = $state<WorktreeInfo[]>([]);
   let remotesState = $state<RemoteInfo[]>([]);
   let remoteOpActive = $state<boolean>(false);
   // True from the moment a repo switch begins until that repo's reloadGraph finishes.
@@ -1607,7 +1629,7 @@ function makeState() {
     refsByKind.local.find((r) => r.isHead)?.name ?? null,
   );
   const currentUpstreamRef = $derived(
-    currentBranchName
+    currentBranchName && refsDetailedRepo === repo
       ? (refsDetailed.find((r) => r.kind === "local" && r.name === currentBranchName) ?? null)
       : null,
   );
@@ -1637,6 +1659,7 @@ function makeState() {
         currentSha = null;
         selected = new Set();
         newDates = new Map();
+        refsDetailedRepo = null;
         if (v === "") {
           // Closing the LAST repo: clear the displayed data so the empty state
           // shows — nothing will reload it.
@@ -1644,6 +1667,7 @@ function makeState() {
           workingChanges = [];
           workingChangesRev = 0;
           refsDetailed = [];
+          worktrees = [];
           remotesState = [];
           graphCommits = [];
           commits = [];
@@ -2210,10 +2234,20 @@ function makeState() {
     },
     // ── Remote detailed refs + remotes (Phase 6) ──────────────────────────────
     get refsDetailed() {
-      return refsDetailed;
+      return refsDetailedRepo === repo ? refsDetailed : [];
     },
-    setRefsDetailed(v: Ref[]) {
+    setRefsDetailed(v: Ref[], sourceRepo = repo) {
       refsDetailed = v;
+      refsDetailedRepo = sourceRepo;
+    },
+    invalidateRefsDetailed(sourceRepo: string) {
+      if (repo === sourceRepo) refsDetailedRepo = null;
+    },
+    get worktrees() {
+      return worktrees;
+    },
+    setWorktrees(v: WorktreeInfo[]) {
+      worktrees = v;
     },
     get remotes() {
       return remotesState;

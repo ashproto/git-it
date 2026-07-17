@@ -1,6 +1,690 @@
 use crate::git_ops;
-use std::path::Path;
-use std::process::Command;
+use crate::graph;
+use crate::types::WorktreeInfo;
+use std::fs;
+use std::fs::OpenOptions;
+use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::str;
+
+#[derive(Debug, Default)]
+struct ParsedWorktree {
+    seen: bool,
+    path: String,
+    head: Option<String>,
+    branch: Option<String>,
+    detached: bool,
+    bare: bool,
+    locked: bool,
+    locked_reason: Option<String>,
+    prunable: bool,
+    prunable_reason: Option<String>,
+}
+
+fn finish_worktree(
+    current: &mut ParsedWorktree,
+    out: &mut Vec<ParsedWorktree>,
+) -> Result<(), String> {
+    if !current.seen {
+        return Ok(());
+    }
+    if current.path.is_empty() {
+        return Err("git worktree output contained a record without a path".to_string());
+    }
+    out.push(std::mem::take(current));
+    Ok(())
+}
+
+/// Parse the stable NUL-delimited worktree porcelain format. Splitting each
+/// field at only its first space preserves spaces and newlines inside paths and
+/// lock/prune reasons. Invalid UTF-8 is rejected instead of being made lossy:
+/// this path may later identify a destructive removal target.
+fn parse_worktree_porcelain(raw: &[u8]) -> Result<Vec<ParsedWorktree>, String> {
+    let mut out = Vec::new();
+    let mut current = ParsedWorktree::default();
+
+    for field in raw.split(|b| *b == 0) {
+        if field.is_empty() {
+            finish_worktree(&mut current, &mut out)?;
+            continue;
+        }
+        let split = field.iter().position(|b| *b == b' ');
+        let (key_raw, value_raw) = match split {
+            Some(i) => (&field[..i], &field[i + 1..]),
+            None => (field, &[][..]),
+        };
+        let key = str::from_utf8(key_raw)
+            .map_err(|_| "git worktree output contained an invalid UTF-8 field name".to_string())?;
+        let value = str::from_utf8(value_raw)
+            .map_err(|_| format!("git worktree {key} contained an invalid UTF-8 value"))?;
+
+        // Be tolerant of a missing blank separator while still keeping records
+        // isolated if a future Git version starts a new `worktree` field.
+        if key == "worktree" && current.seen {
+            finish_worktree(&mut current, &mut out)?;
+        }
+        current.seen = true;
+        match key {
+            "worktree" => current.path = value.to_string(),
+            "HEAD" => current.head = Some(value.to_string()),
+            "branch" => current.branch = value.strip_prefix("refs/heads/").map(str::to_string),
+            "detached" => current.detached = true,
+            "bare" => current.bare = true,
+            "locked" => {
+                current.locked = true;
+                current.locked_reason = (!value.is_empty()).then(|| value.to_string());
+            }
+            "prunable" => {
+                current.prunable = true;
+                current.prunable_reason = (!value.is_empty()).then(|| value.to_string());
+            }
+            _ => {} // forward-compatible: ignore fields added by future Git versions
+        }
+    }
+    finish_worktree(&mut current, &mut out)?;
+    Ok(out)
+}
+
+fn same_existing_path(a: &Path, b: &Path) -> bool {
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+struct WorktreeHeadLock {
+    path: PathBuf,
+    // Keeping the descriptor open makes ownership of the standard Git lock
+    // unambiguous until removal finishes.
+    _file: fs::File,
+}
+
+struct BranchDeleteSafety {
+    branch_oid: String,
+    // Verify-only entries held by the prepared transaction. Some assert a ref's
+    // exact OID; `None` asserts that a configured-but-gone upstream stays absent.
+    verifications: Vec<(String, Option<String>)>,
+}
+
+/// A prepared `git update-ref` transaction holds the branch ref lock while the
+/// worktree folder is removed. The expected old OID makes a concurrent ref
+/// update fail before any filesystem deletion, and dropping an uncommitted
+/// transaction aborts it so the branch remains intact.
+struct PreparedBranchDelete {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    stdout: BufReader<ChildStdout>,
+    finished: bool,
+}
+
+impl PreparedBranchDelete {
+    fn prepare(
+        repo: &Path,
+        refname: &str,
+        expected_oid: &str,
+        verifications: &[(String, Option<String>)],
+    ) -> Result<Self, String> {
+        let mut child = Command::new("git")
+            .current_dir(repo)
+            .env("LC_ALL", "C")
+            .args(["update-ref", "--stdin"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to start the branch delete transaction: {e}"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Git did not open the branch transaction input.".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Git did not open the branch transaction output.".to_string())?;
+        let mut transaction = Self {
+            child,
+            stdin: Some(stdin),
+            stdout: BufReader::new(stdout),
+            finished: false,
+        };
+        transaction.send("start")?;
+        transaction.expect_response("start: ok")?;
+        transaction.send(&format!("delete {refname} {expected_oid}"))?;
+        let zero_oid = "0".repeat(expected_oid.len());
+        for (verification_ref, expected_oid) in verifications {
+            match expected_oid {
+                Some(oid) => transaction.send(&format!("verify {verification_ref} {oid}"))?,
+                // An all-zero old OID asserts that the ref does not exist. Match
+                // the repository's object format (SHA-1 or SHA-256) by deriving
+                // the width from the branch OID already being deleted.
+                None => transaction.send(&format!("verify {verification_ref} {zero_oid}"))?,
+            }
+        }
+        transaction.send("prepare")?;
+        transaction.expect_response("prepare: ok")?;
+        Ok(transaction)
+    }
+
+    fn send(&mut self, command: &str) -> Result<(), String> {
+        let stdin = self
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "The branch transaction is already closed.".to_string())?;
+        writeln!(stdin, "{command}")
+            .and_then(|_| stdin.flush())
+            .map_err(|e| format!("Could not communicate with the branch transaction: {e}"))
+    }
+
+    fn expect_response(&mut self, expected: &str) -> Result<(), String> {
+        let mut response = String::new();
+        let read = self
+            .stdout
+            .read_line(&mut response)
+            .map_err(|e| format!("Could not read the branch transaction response: {e}"))?;
+        if read == 0 {
+            return Err("Git ended the branch transaction unexpectedly.".to_string());
+        }
+        if response.trim_end() != expected {
+            return Err(format!(
+                "Git returned an unexpected branch transaction response: {}",
+                response.trim_end()
+            ));
+        }
+        Ok(())
+    }
+
+    fn commit(mut self) -> Result<(), String> {
+        self.send("commit")?;
+        self.expect_response("commit: ok")?;
+        self.stdin.take();
+        let status = self
+            .child
+            .wait()
+            .map_err(|e| format!("Could not finish the branch transaction: {e}"))?;
+        self.finished = true;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Git could not commit the prepared branch deletion.".to_string())
+        }
+    }
+}
+
+impl Drop for PreparedBranchDelete {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        let _ = self.send("abort");
+        let _ = self.expect_response("abort: ok");
+        self.stdin.take();
+        let _ = self.child.wait();
+    }
+}
+
+impl Drop for WorktreeHeadLock {
+    fn drop(&mut self) {
+        // A successful `git worktree remove` deletes the administrative
+        // directory (and therefore this lock) for us. On any earlier failure,
+        // release only the lock file we created.
+        if self.path.exists() {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+fn git_path_output(repo: &Path, args: &[&str], description: &str) -> Result<PathBuf, String> {
+    let output = Command::new("git")
+        .current_dir(repo)
+        .args(args)
+        .output()
+        .map_err(|e| format!("Failed to resolve {description}: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("Could not resolve {description}.")
+        } else {
+            stderr.into_owned()
+        });
+    }
+    let stdout = str::from_utf8(&output.stdout)
+        .map_err(|_| format!("Git returned an invalid UTF-8 {description}."))?;
+    // Remove exactly Git's record terminator, preserving any newline that is
+    // actually part of the path.
+    let value = stdout.strip_suffix('\n').unwrap_or(stdout);
+    let value = value.strip_suffix('\r').unwrap_or(value);
+    if value.is_empty() {
+        return Err(format!("Git returned an empty {description}."));
+    }
+    let path = PathBuf::from(value);
+    if !path.is_absolute() {
+        return Err(format!("Git returned a non-absolute {description}."));
+    }
+    fs::canonicalize(&path).map_err(|e| format!("Could not verify {description}: {e}"))
+}
+
+fn acquire_worktree_head_lock(repo: &Path, worktree: &Path) -> Result<WorktreeHeadLock, String> {
+    let repo_common = git_path_output(
+        repo,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        "repository Git directory",
+    )?;
+    let worktree_common = git_path_output(
+        worktree,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        "worktree Git directory",
+    )?;
+    if repo_common != worktree_common {
+        return Err(
+            "The requested path is no longer a worktree of this repository. Refresh and try again."
+                .to_string(),
+        );
+    }
+    let admin_dir = git_path_output(
+        worktree,
+        &["rev-parse", "--absolute-git-dir"],
+        "worktree administrative directory",
+    )?;
+    let lock_path = admin_dir.join("HEAD.lock");
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+        .map_err(|e| {
+            if e.kind() == ErrorKind::AlreadyExists {
+                "Another Git operation is using this worktree. Wait for it to finish, then try again."
+                    .to_string()
+            } else {
+                format!("Could not lock the worktree for safe removal: {e}")
+            }
+        })?;
+    Ok(WorktreeHeadLock {
+        path: lock_path,
+        _file: file,
+    })
+}
+
+fn exact_ref_oid_if_exists(repo: &Path, refname: &str) -> Result<Option<String>, String> {
+    let output = Command::new("git")
+        .current_dir(repo)
+        // Full refnames avoid DWIM ambiguity; --quiet gives a distinct exit 1
+        // with no fatal diagnostic when the exact ref is simply absent.
+        .args(["rev-parse", "--verify", "--quiet", refname])
+        .output()
+        .map_err(|e| format!("Failed to inspect branch: {e}"))?;
+    if !output.status.success() {
+        if output.status.code() == Some(1) {
+            return Ok(None);
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            "Could not inspect the branch reference.".to_string()
+        } else {
+            stderr.into_owned()
+        });
+    }
+    let oid = str::from_utf8(&output.stdout)
+        .map_err(|_| "Git returned an invalid branch object ID.".to_string())?
+        .trim();
+    if oid.is_empty() {
+        return Err("Git returned an empty branch object ID.".to_string());
+    }
+    Ok(Some(oid.to_string()))
+}
+
+fn exact_ref_oid(repo: &Path, refname: &str) -> Result<String, String> {
+    exact_ref_oid_if_exists(repo, refname)?.ok_or_else(|| {
+        format!(
+            "Branch '{}' no longer exists. Refresh and try again.",
+            refname.strip_prefix("refs/heads/").unwrap_or(refname)
+        )
+    })
+}
+
+fn branch_upstream(repo: &Path, refname: &str) -> Result<Option<String>, String> {
+    let output = Command::new("git")
+        .current_dir(repo)
+        .args(["for-each-ref", "--format=%(refname)%00%(upstream)", refname])
+        .output()
+        .map_err(|e| format!("Failed to inspect branch upstream: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            "Could not inspect the branch upstream.".to_string()
+        } else {
+            stderr.into_owned()
+        });
+    }
+    let stdout = str::from_utf8(&output.stdout)
+        .map_err(|_| "Git returned an invalid UTF-8 branch upstream.".to_string())?;
+    for line in stdout.lines() {
+        let Some((candidate, upstream)) = line.split_once('\0') else {
+            continue;
+        };
+        if candidate == refname {
+            return Ok((!upstream.is_empty()).then(|| upstream.to_string()));
+        }
+    }
+    Err(
+        "The branch disappeared while its worktree was being checked. Refresh and try again."
+            .to_string(),
+    )
+}
+
+fn head_delete_baseline(repo: &Path) -> Result<(String, (String, Option<String>)), String> {
+    let symbolic = Command::new("git")
+        .current_dir(repo)
+        .args(["symbolic-ref", "--quiet", "HEAD"])
+        .output()
+        .map_err(|e| format!("Failed to inspect HEAD: {e}"))?;
+    if symbolic.status.success() {
+        let baseline_ref = str::from_utf8(&symbolic.stdout)
+            .map_err(|_| "Git returned an invalid HEAD reference.".to_string())?
+            .trim();
+        if baseline_ref.is_empty() {
+            return Err("Git returned an empty HEAD reference.".to_string());
+        }
+        let oid = exact_ref_oid(repo, baseline_ref)?;
+        return Ok((oid.clone(), (baseline_ref.to_string(), Some(oid))));
+    }
+
+    // Detached HEAD is a direct ref, so verify-and-lock HEAD itself.
+    let output = Command::new("git")
+        .current_dir(repo)
+        .args(["rev-parse", "--verify", "HEAD^{commit}"])
+        .output()
+        .map_err(|e| format!("Failed to inspect HEAD: {e}"))?;
+    if !output.status.success() {
+        return Err(
+            "HEAD is unavailable, so safe branch deletion could not be verified."
+                .to_string(),
+        );
+    }
+    let oid = str::from_utf8(&output.stdout)
+        .map_err(|_| "Git returned an invalid HEAD object ID.".to_string())?
+        .trim();
+    if oid.is_empty() {
+        return Err("Git returned an empty HEAD object ID.".to_string());
+    }
+    let oid = oid.to_string();
+    Ok((oid.clone(), ("HEAD".to_string(), Some(oid))))
+}
+
+/// Mirror `git branch -d`'s safety rule before deleting the worktree folder:
+/// the branch must be merged into its configured upstream, or into HEAD when it
+/// has no resolvable upstream. The latter includes a configured remote-tracking
+/// ref that has already been deleted, matching Git's own `branch -d` behavior.
+/// The chosen baseline—and, when relevant, the continued absence of a gone
+/// upstream—is verified and held by the same prepared ref transaction that
+/// deletes the branch.
+fn ensure_branch_safely_deletable(repo: &Path, branch: &str) -> Result<BranchDeleteSafety, String> {
+    let refname = format!("refs/heads/{branch}");
+    let branch_oid = exact_ref_oid(repo, &refname)?;
+    let upstream = branch_upstream(repo, &refname)?;
+    let (base_oid, verifications) = match upstream.as_deref() {
+        Some(upstream_ref) => match exact_ref_oid_if_exists(repo, upstream_ref)? {
+            Some(oid) => (
+                oid.clone(),
+                vec![(upstream_ref.to_string(), Some(oid))],
+            ),
+            None => {
+                let (head_oid, head_verification) = head_delete_baseline(repo)?;
+                (
+                    head_oid,
+                    vec![head_verification, (upstream_ref.to_string(), None)],
+                )
+            }
+        },
+        None => {
+            let (head_oid, head_verification) = head_delete_baseline(repo)?;
+            (head_oid, vec![head_verification])
+        }
+    };
+
+    let output = Command::new("git")
+        .current_dir(repo)
+        .args(["merge-base", "--is-ancestor", &branch_oid, &base_oid])
+        .output()
+        .map_err(|e| format!("Failed to verify whether the branch is merged: {e}"))?;
+    if output.status.success() {
+        return Ok(BranchDeleteSafety {
+            branch_oid,
+            verifications,
+        });
+    }
+    if output.status.code() == Some(1) {
+        return Err(format!(
+            "Branch '{branch}' is not fully merged. Its worktree was not removed. Enable Force delete to discard unmerged commits."
+        ));
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(if stderr.trim().is_empty() {
+        "Could not verify whether the branch is fully merged; its worktree was not removed."
+            .to_string()
+    } else {
+        stderr.into_owned()
+    })
+}
+
+/// List every worktree registered with this repository. The main worktree is
+/// always first in Git's porcelain output. Missing/prunable entries stay
+/// visible but have no status, so the UI can explain why they are not removable.
+pub fn list_worktrees(repo: &Path) -> Result<Vec<WorktreeInfo>, String> {
+    let output = Command::new("git")
+        .current_dir(repo)
+        .args(["worktree", "list", "--porcelain", "-z"])
+        .output()
+        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!(
+                "git worktree list failed with exit code {:?}",
+                output.status.code()
+            )
+        } else {
+            stderr.into_owned()
+        });
+    }
+
+    parse_worktree_porcelain(&output.stdout)?
+        .into_iter()
+        .enumerate()
+        .map(|(index, parsed)| {
+            let path = PathBuf::from(&parsed.path);
+            let is_current = same_existing_path(repo, &path);
+            let status = if !parsed.bare && !parsed.prunable && path.exists() {
+                graph::repo_status(&path).ok()
+            } else {
+                None
+            };
+            Ok(WorktreeInfo {
+                path: parsed.path,
+                head: parsed.head,
+                branch: parsed.branch,
+                is_main: index == 0,
+                is_current,
+                detached: parsed.detached,
+                bare: parsed.bare,
+                locked: parsed.locked,
+                locked_reason: parsed.locked_reason,
+                prunable: parsed.prunable,
+                prunable_reason: parsed.prunable_reason,
+                status,
+            })
+        })
+        .collect()
+}
+
+fn remove_linked_worktree_for_branch(
+    repo: &Path,
+    branch: &str,
+    requested_path: &str,
+    force: bool,
+) -> Result<String, String> {
+    let initial_matches: Vec<WorktreeInfo> = list_worktrees(repo)?
+        .into_iter()
+        .filter(|w| w.branch.as_deref() == Some(branch))
+        .collect();
+    if initial_matches.len() > 1 {
+        return Err(format!(
+            "Branch '{branch}' is associated with multiple worktrees; refusing an ambiguous removal."
+        ));
+    }
+    let initial = initial_matches.into_iter().next().ok_or_else(|| {
+        format!(
+            "The requested worktree is no longer associated with branch '{branch}'. Refresh and try again."
+        )
+    })?;
+    if !same_existing_path(Path::new(&initial.path), Path::new(requested_path)) {
+        return Err(format!(
+            "The requested worktree is no longer associated with branch '{branch}'. Refresh and try again."
+        ));
+    }
+    if initial.is_current {
+        return Err(
+            "Cannot remove the current worktree. Open this repository from another worktree first."
+                .to_string(),
+        );
+    }
+    if initial.is_main {
+        return Err("Cannot remove the repository's main worktree.".to_string());
+    }
+
+    // HEAD.lock is Git's own exclusion mechanism. Freeze the target before the
+    // authoritative second listing so a concurrent checkout, commit, reset, or
+    // merge cannot repurpose it during removal. The prepared transaction below
+    // separately verifies and locks the merge-safety baseline.
+    let _target_head_lock = acquire_worktree_head_lock(repo, Path::new(&initial.path))?;
+    let branch_worktrees: Vec<WorktreeInfo> = list_worktrees(repo)?
+        .into_iter()
+        .filter(|w| w.branch.as_deref() == Some(branch))
+        .collect();
+    if branch_worktrees.len() > 1 {
+        return Err(format!(
+            "Branch '{branch}' is associated with multiple worktrees; refusing an ambiguous removal."
+        ));
+    }
+    let worktree = branch_worktrees.into_iter().next().ok_or_else(|| {
+        format!(
+            "The requested worktree is no longer associated with branch '{branch}'. Refresh and try again."
+        )
+    })?;
+    if !same_existing_path(Path::new(&worktree.path), Path::new(requested_path)) {
+        return Err(format!(
+            "The requested worktree is no longer associated with branch '{branch}'. Refresh and try again."
+        ));
+    }
+    if worktree.is_current {
+        return Err(
+            "Cannot remove the current worktree. Open this repository from another worktree first."
+                .to_string(),
+        );
+    }
+    if worktree.is_main {
+        return Err("Cannot remove the repository's main worktree.".to_string());
+    }
+    if worktree.bare || worktree.detached {
+        return Err(
+            "The selected worktree no longer has the requested branch checked out.".to_string(),
+        );
+    }
+    if worktree.locked {
+        let detail = worktree
+            .locked_reason
+            .as_deref()
+            .map(|reason| format!(": {reason}"))
+            .unwrap_or_default();
+        return Err(format!(
+            "The worktree is locked{detail}. Unlock it before removing it."
+        ));
+    }
+    if worktree.prunable {
+        return Err(
+            "The worktree is stale or missing. Prune its Git metadata before deleting the branch."
+                .to_string(),
+        );
+    }
+    let status = worktree.status.as_ref().ok_or_else(|| {
+        "Could not verify that the worktree is clean, so it was not removed.".to_string()
+    })?;
+    if status.staged > 0
+        || status.unstaged > 0
+        || status.untracked > 0
+        || status.conflicted > 0
+        || status.operation.is_some()
+    {
+        return Err(
+            "The worktree has uncommitted changes or an operation in progress. Commit, stash, or discard them before removing it."
+                .to_string(),
+        );
+    }
+
+    let authoritative = PathBuf::from(&worktree.path);
+    if !authoritative.is_absolute() {
+        return Err(
+            "Git returned a non-absolute worktree path; refusing to remove it.".to_string(),
+        );
+    }
+    let refname = format!("refs/heads/{branch}");
+    let safety = if force {
+        BranchDeleteSafety {
+            branch_oid: exact_ref_oid(repo, &refname)?,
+            verifications: Vec::new(),
+        }
+    } else {
+        ensure_branch_safely_deletable(repo, branch)?
+    };
+    // `prepare` atomically verifies and locks both the exact branch tip and the
+    // merge-safety baseline before any filesystem deletion.
+    let branch_delete = PreparedBranchDelete::prepare(
+        repo,
+        &refname,
+        &safety.branch_oid,
+        &safety.verifications,
+    )?;
+    // HEAD.lock prevents a concurrent checkout/commit/reset, but Git can still
+    // start a marker-only operation such as `git bisect start`. Re-read status
+    // after preparing the ref transaction and immediately before removal so an
+    // operation that began after the authoritative listing is still preserved.
+    let final_status = graph::repo_status(&authoritative).map_err(|_| {
+        "Could not reverify that the worktree is clean, so it was not removed.".to_string()
+    })?;
+    if final_status.staged > 0
+        || final_status.unstaged > 0
+        || final_status.untracked > 0
+        || final_status.conflicted > 0
+        || final_status.operation.is_some()
+    {
+        return Err(
+            "The worktree has uncommitted changes or an operation in progress. Commit, stash, or discard them before removing it."
+                .to_string(),
+        );
+    }
+    let mut remove = Command::new("git");
+    // Deliberately no --force: Git gets the final race-safe say and refuses if
+    // files become dirty after the status snapshot above.
+    remove
+        .current_dir(repo)
+        .args(["worktree", "remove", "--"])
+        .arg(&authoritative);
+    git_ops::run(&mut remove)?;
+    branch_delete.commit().map_err(|error| {
+        format!(
+            "Removed worktree at '{}', but the prepared branch delete failed: {error}",
+            worktree.path
+        )
+    })?;
+    // `update-ref` removes the ref and reflog; mirror `git branch -d`'s config
+    // cleanup. A missing section is normal for branches without local config.
+    let section = format!("branch.{branch}");
+    let _ = Command::new("git")
+        .current_dir(repo)
+        .args(["config", "--remove-section", &section])
+        .output();
+    Ok(worktree.path)
+}
 
 /// Switch to a branch, or check out a commit (detached HEAD). Git refuses if the
 /// working tree has conflicting local changes; that refusal surfaces as Err.
@@ -32,11 +716,11 @@ pub fn rename_branch(repo: &Path, old: &str, new: &str) -> Result<(), String> {
 }
 
 /// Delete a branch. `force` uses -D (drops even unmerged commits); without it,
-/// -d refuses to delete a branch whose commits aren't merged into HEAD. When
-/// `delete_remote` is set and a remote/branch is given, ALSO delete the upstream
-/// branch via `git push <remote> --delete`. The local delete runs first; if it
-/// fails the remote delete is skipped. If the local succeeds but the remote delete
-/// fails, return an Err describing the partial outcome.
+/// -d semantics require the branch to be merged into its upstream or HEAD. For
+/// a linked worktree, a prepared ref transaction holds the exact branch and
+/// safety-baseline OIDs while the clean worktree is removed. When
+/// `delete_remote` is set, the local delete still runs first; a remote failure
+/// is returned as an explicit partial outcome.
 pub fn delete_branch(
     repo: &Path,
     name: &str,
@@ -44,11 +728,16 @@ pub fn delete_branch(
     delete_remote: bool,
     remote: Option<&str>,
     remote_branch: Option<&str>,
+    worktree_path: Option<&str>,
 ) -> Result<(), String> {
-    let flag = if force { "-D" } else { "-d" };
-    let mut c = Command::new("git");
-    c.current_dir(repo).args(["branch", flag, "--", name]);
-    git_ops::run(&mut c)?;
+    if let Some(path) = worktree_path {
+        remove_linked_worktree_for_branch(repo, name, path, force)?;
+    } else {
+        let flag = if force { "-D" } else { "-d" };
+        let mut c = Command::new("git");
+        c.current_dir(repo).args(["branch", flag, "--", name]);
+        git_ops::run(&mut c)?;
+    }
 
     if delete_remote {
         if let (Some(rem), Some(rb)) = (remote, remote_branch) {
@@ -311,12 +1000,618 @@ mod tests {
         r.commit("b.txt", "B"); // feat now has a commit not in main
         r.git(&["checkout", "-q", "main"]);
         assert!(
-            delete_branch(&r.path, "feat", false, false, None, None).is_err(),
+            delete_branch(&r.path, "feat", false, false, None, None, None).is_err(),
             "safe delete must refuse an unmerged branch"
         );
         assert!(r.has_ref("refs/heads/feat"));
-        delete_branch(&r.path, "feat", true, false, None, None).unwrap();
+        delete_branch(&r.path, "feat", true, false, None, None, None).unwrap();
         assert!(!r.has_ref("refs/heads/feat"));
+    }
+
+    #[test]
+    fn parses_worktree_porcelain_with_flags_reasons_and_spaces() {
+        let raw = b"worktree /tmp/main repo\0HEAD aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\0branch refs/heads/main\0\0worktree /tmp/linked repo\0HEAD bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\0branch refs/heads/feature/worktree\0locked in use by another process\0prunable gitdir file points to non-existent location\0\0worktree /tmp/detached\0HEAD cccccccccccccccccccccccccccccccccccccccc\0detached\0\0";
+
+        let parsed = parse_worktree_porcelain(raw).unwrap();
+
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].path, "/tmp/main repo");
+        assert_eq!(parsed[0].branch.as_deref(), Some("main"));
+        assert_eq!(parsed[1].path, "/tmp/linked repo");
+        assert_eq!(parsed[1].branch.as_deref(), Some("feature/worktree"));
+        assert!(parsed[1].locked);
+        assert_eq!(
+            parsed[1].locked_reason.as_deref(),
+            Some("in use by another process")
+        );
+        assert!(parsed[1].prunable);
+        assert_eq!(
+            parsed[1].prunable_reason.as_deref(),
+            Some("gitdir file points to non-existent location")
+        );
+        assert!(parsed[2].detached);
+        assert_eq!(parsed[2].branch, None);
+    }
+
+    #[test]
+    fn list_worktrees_reports_main_linked_branch_and_dirty_status() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("linked worktree");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        fs::write(wt.join("dirty.txt"), "dirty").unwrap();
+
+        let worktrees = list_worktrees(&r.path).unwrap();
+
+        assert_eq!(worktrees.len(), 2);
+        assert!(worktrees[0].is_main);
+        assert!(worktrees[0].is_current);
+        let linked = worktrees
+            .iter()
+            .find(|w| w.branch.as_deref() == Some("feature"))
+            .unwrap();
+        assert!(same_existing_path(Path::new(&linked.path), &wt));
+        assert!(!linked.is_main);
+        assert!(!linked.is_current);
+        assert_eq!(linked.status.as_ref().map(|s| s.untracked), Some(1));
+    }
+
+    #[test]
+    fn delete_branch_can_remove_its_clean_linked_worktree_first() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("linked");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        fs::write(wt.join("feature.txt"), "published feature").unwrap();
+        r.git(&["-C", wt.to_str().unwrap(), "add", "feature.txt"]);
+        r.git(&[
+            "-C",
+            wt.to_str().unwrap(),
+            "commit",
+            "-q",
+            "-m",
+            "published feature",
+        ]);
+        r.git(&[
+            "update-ref",
+            "refs/remotes/origin/feature",
+            "refs/heads/feature",
+        ]);
+        r.git(&["remote", "add", "origin", "unused-test-remote"]);
+        r.git(&["config", "branch.feature.remote", "origin"]);
+        r.git(&[
+            "config",
+            "branch.feature.merge",
+            "refs/heads/feature",
+        ]);
+        r.git(&["config", "branch.feature.description", "temporary branch"]);
+
+        delete_branch(
+            &r.path,
+            "feature",
+            false,
+            false,
+            None,
+            None,
+            Some(wt.to_str().unwrap()),
+        )
+        .unwrap();
+
+        assert!(!wt.exists());
+        assert!(!r.has_ref("refs/heads/feature"));
+        let config = Command::new("git")
+            .current_dir(&r.path)
+            .args(["config", "--get", "branch.feature.description"])
+            .output()
+            .unwrap();
+        assert!(!config.status.success(), "deleted branch config must be removed");
+    }
+
+    #[test]
+    fn safe_delete_falls_back_to_head_when_configured_upstream_is_gone() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("merged-linked");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        fs::write(wt.join("feature.txt"), "merged feature").unwrap();
+        r.git(&["-C", wt.to_str().unwrap(), "add", "feature.txt"]);
+        r.git(&[
+            "-C",
+            wt.to_str().unwrap(),
+            "commit",
+            "-q",
+            "-m",
+            "merged feature",
+        ]);
+        r.git(&["merge", "-q", "--ff-only", "feature"]);
+        r.git(&["remote", "add", "origin", "unused-test-remote"]);
+        r.git(&["config", "branch.feature.remote", "origin"]);
+        r.git(&[
+            "config",
+            "branch.feature.merge",
+            "refs/heads/feature",
+        ]);
+
+        assert_eq!(
+            branch_upstream(&r.path, "refs/heads/feature").unwrap().as_deref(),
+            Some("refs/remotes/origin/feature")
+        );
+        assert!(!r.has_ref("refs/remotes/origin/feature"));
+
+        delete_branch(
+            &r.path,
+            "feature",
+            false,
+            false,
+            None,
+            None,
+            Some(wt.to_str().unwrap()),
+        )
+        .unwrap();
+
+        assert!(!wt.exists());
+        assert!(!r.has_ref("refs/heads/feature"));
+    }
+
+    #[test]
+    fn gone_upstream_fallback_still_refuses_an_unmerged_branch() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("unmerged-gone-upstream");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        fs::write(wt.join("feature.txt"), "unmerged feature").unwrap();
+        r.git(&["-C", wt.to_str().unwrap(), "add", "feature.txt"]);
+        r.git(&[
+            "-C",
+            wt.to_str().unwrap(),
+            "commit",
+            "-q",
+            "-m",
+            "unmerged feature",
+        ]);
+        r.git(&["remote", "add", "origin", "unused-test-remote"]);
+        r.git(&["config", "branch.feature.remote", "origin"]);
+        r.git(&[
+            "config",
+            "branch.feature.merge",
+            "refs/heads/feature",
+        ]);
+
+        let err = delete_branch(
+            &r.path,
+            "feature",
+            false,
+            false,
+            None,
+            None,
+            Some(wt.to_str().unwrap()),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("not fully merged"), "unexpected error: {err}");
+        assert!(wt.exists());
+        assert!(r.has_ref("refs/heads/feature"));
+    }
+
+    #[test]
+    fn live_upstream_remains_the_safe_delete_baseline() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let upstream_oid = r.rev("main");
+        let wt = r.path.join("live-upstream");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        fs::write(wt.join("feature.txt"), "merged into HEAD only").unwrap();
+        r.git(&["-C", wt.to_str().unwrap(), "add", "feature.txt"]);
+        r.git(&[
+            "-C",
+            wt.to_str().unwrap(),
+            "commit",
+            "-q",
+            "-m",
+            "feature commit",
+        ]);
+        r.git(&["merge", "-q", "--ff-only", "feature"]);
+        r.git(&[
+            "update-ref",
+            "refs/remotes/origin/feature",
+            &upstream_oid,
+        ]);
+        r.git(&["remote", "add", "origin", "unused-test-remote"]);
+        r.git(&["config", "branch.feature.remote", "origin"]);
+        r.git(&[
+            "config",
+            "branch.feature.merge",
+            "refs/heads/feature",
+        ]);
+
+        let err = delete_branch(
+            &r.path,
+            "feature",
+            false,
+            false,
+            None,
+            None,
+            Some(wt.to_str().unwrap()),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("not fully merged"), "unexpected error: {err}");
+        assert!(wt.exists());
+        assert!(r.has_ref("refs/heads/feature"));
+    }
+
+    #[test]
+    fn prepared_branch_delete_blocks_concurrent_ref_movement_and_aborts_cleanly() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        r.git(&["branch", "feature", "main"]);
+        r.commit("b.txt", "B");
+        r.git(&["remote", "add", "origin", "unused-test-remote"]);
+        r.git(&["config", "branch.feature.remote", "origin"]);
+        r.git(&[
+            "config",
+            "branch.feature.merge",
+            "refs/heads/feature",
+        ]);
+        let safety = ensure_branch_safely_deletable(&r.path, "feature").unwrap();
+        let expected = safety.branch_oid.clone();
+        let replacement = r.rev("main");
+
+        let transaction = PreparedBranchDelete::prepare(
+            &r.path,
+            "refs/heads/feature",
+            &expected,
+            &safety.verifications,
+        )
+        .unwrap();
+        let attempted_move = Command::new("git")
+            .current_dir(&r.path)
+            .args([
+                "update-ref",
+                "refs/heads/feature",
+                &replacement,
+                &expected,
+            ])
+            .output()
+            .unwrap();
+
+        assert!(!attempted_move.status.success(), "prepared ref must stay locked");
+        let attempted_baseline_rewind = Command::new("git")
+            .current_dir(&r.path)
+            .args(["update-ref", "refs/heads/main", &expected, &replacement])
+            .output()
+            .unwrap();
+        assert!(
+            !attempted_baseline_rewind.status.success(),
+            "prepared merge baseline must stay locked"
+        );
+        let attempted_upstream_creation = Command::new("git")
+            .current_dir(&r.path)
+            .args([
+                "update-ref",
+                "refs/remotes/origin/feature",
+                &replacement,
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            !attempted_upstream_creation.status.success(),
+            "prepared missing-upstream verification must keep the ref absent"
+        );
+        assert_eq!(r.rev("refs/heads/feature"), expected);
+        assert_eq!(r.rev("refs/heads/main"), replacement);
+        assert!(!r.has_ref("refs/remotes/origin/feature"));
+        drop(transaction);
+        assert_eq!(r.rev("refs/heads/feature"), expected);
+        assert!(!r.path.join(".git/refs/heads/feature.lock").exists());
+        assert!(!r.path.join(".git/refs/remotes/origin/feature.lock").exists());
+    }
+
+    #[test]
+    fn safe_delete_preserves_unmerged_linked_worktree_and_ignored_files() {
+        let r = TempRepo::new();
+        r.commit(".gitignore", "ignored.log\n");
+        let wt = r.path.join("unmerged-linked");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        fs::write(wt.join("feature.txt"), "unmerged commit").unwrap();
+        r.git(&["-C", wt.to_str().unwrap(), "add", "feature.txt"]);
+        r.git(&[
+            "-C",
+            wt.to_str().unwrap(),
+            "commit",
+            "-q",
+            "-m",
+            "feature commit",
+        ]);
+        fs::write(wt.join("ignored.log"), "must survive failed deletion").unwrap();
+
+        let err = delete_branch(
+            &r.path,
+            "feature",
+            false,
+            false,
+            None,
+            None,
+            Some(wt.to_str().unwrap()),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("not fully merged"), "unexpected error: {err}");
+        assert!(wt.join("ignored.log").exists());
+        assert!(r.has_ref("refs/heads/feature"));
+        let admin_dir = git_path_output(
+            &wt,
+            &["rev-parse", "--absolute-git-dir"],
+            "test worktree administrative directory",
+        )
+        .unwrap();
+        assert!(!admin_dir.join("HEAD.lock").exists());
+    }
+
+    #[test]
+    fn delete_branch_refuses_a_worktree_with_an_active_git_head_lock() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("busy-linked");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        let admin_dir = git_path_output(
+            &wt,
+            &["rev-parse", "--absolute-git-dir"],
+            "test worktree administrative directory",
+        )
+        .unwrap();
+        fs::write(admin_dir.join("HEAD.lock"), "another git process").unwrap();
+
+        let err = delete_branch(
+            &r.path,
+            "feature",
+            true,
+            false,
+            None,
+            None,
+            Some(wt.to_str().unwrap()),
+        )
+        .unwrap_err();
+
+        assert!(
+            err.contains("Another Git operation"),
+            "unexpected error: {err}"
+        );
+        assert!(wt.exists());
+        assert!(r.has_ref("refs/heads/feature"));
+    }
+
+    #[test]
+    fn delete_branch_refuses_dirty_linked_worktree_without_mutation() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("linked");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        fs::write(wt.join("untracked.txt"), "keep me").unwrap();
+
+        let err = delete_branch(
+            &r.path,
+            "feature",
+            true,
+            false,
+            None,
+            None,
+            Some(wt.to_str().unwrap()),
+        )
+        .unwrap_err();
+
+        assert!(
+            err.contains("uncommitted changes"),
+            "unexpected error: {err}"
+        );
+        assert!(wt.join("untracked.txt").exists());
+        assert!(r.has_ref("refs/heads/feature"));
+    }
+
+    #[test]
+    fn delete_branch_refuses_linked_worktree_with_active_bisect() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("bisect-linked");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        r.git(&["-C", wt.to_str().unwrap(), "bisect", "start"]);
+        let admin_dir = git_path_output(
+            &wt,
+            &["rev-parse", "--absolute-git-dir"],
+            "test worktree administrative directory",
+        )
+        .unwrap();
+        assert!(admin_dir.join("BISECT_START").exists());
+
+        let err = delete_branch(
+            &r.path,
+            "feature",
+            true,
+            false,
+            None,
+            None,
+            Some(wt.to_str().unwrap()),
+        )
+        .unwrap_err();
+
+        assert!(
+            err.contains("operation in progress"),
+            "unexpected error: {err}"
+        );
+        assert!(wt.exists());
+        assert!(r.has_ref("refs/heads/feature"));
+        assert!(admin_dir.join("BISECT_START").exists());
+        assert!(!admin_dir.join("HEAD.lock").exists());
+    }
+
+    #[test]
+    fn delete_branch_refuses_locked_linked_worktree_without_mutation() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("linked");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        r.git(&[
+            "worktree",
+            "lock",
+            "--reason",
+            "owned by another task",
+            wt.to_str().unwrap(),
+        ]);
+
+        let err = delete_branch(
+            &r.path,
+            "feature",
+            true,
+            false,
+            None,
+            None,
+            Some(wt.to_str().unwrap()),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("locked"), "unexpected error: {err}");
+        assert!(
+            err.contains("owned by another task"),
+            "unexpected error: {err}"
+        );
+        assert!(wt.exists());
+        assert!(r.has_ref("refs/heads/feature"));
+    }
+
+    #[test]
+    fn delete_branch_revalidates_worktree_path_and_branch() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("linked");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        let wrong = r.path.join("not-the-linked-worktree");
+
+        let err = delete_branch(
+            &r.path,
+            "feature",
+            true,
+            false,
+            None,
+            None,
+            Some(wrong.to_str().unwrap()),
+        )
+        .unwrap_err();
+
+        assert!(
+            err.contains("no longer associated"),
+            "unexpected error: {err}"
+        );
+        assert!(wt.exists());
+        assert!(r.has_ref("refs/heads/feature"));
+    }
+
+    #[test]
+    fn delete_branch_never_removes_the_current_main_worktree() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+
+        let err = delete_branch(
+            &r.path,
+            "main",
+            true,
+            false,
+            None,
+            None,
+            Some(r.path.to_str().unwrap()),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("current worktree"), "unexpected error: {err}");
+        assert!(r.path.exists());
+        assert!(r.has_ref("refs/heads/main"));
     }
 
     #[test]
@@ -549,7 +1844,7 @@ mod tests {
         work.git(&["checkout", "-q", "main"]);
 
         // Delete local + remote feature.
-        let res = delete_branch(&work.path, "feature", true, true, Some("origin"), Some("feature"));
+        let res = delete_branch(&work.path, "feature", true, true, Some("origin"), Some("feature"), None);
         assert!(res.is_ok(), "{:?}", res);
 
         // Local branch must be gone.

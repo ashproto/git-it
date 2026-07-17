@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { RefEntry } from "../types";
+  import type { RefEntry, WorktreeInfo } from "../types";
   import type { RefTreeNode } from "../refTree";
   import RefIcon from "./RefIcon.svelte";
+  import WorktreeIcon from "./WorktreeIcon.svelte";
 
   let {
     nodes,
@@ -12,6 +13,7 @@
     onCheckout,
     selectedKey,
     onSelect,
+    worktreeFor = () => undefined,
   }: {
     nodes: RefTreeNode[];
     kind: "local" | "remote" | "tag";
@@ -24,6 +26,7 @@
     // all three trees), or null if none selected yet.
     selectedKey: string | null;
     onSelect: (kind: "local" | "remote" | "tag", name: string) => void;
+    worktreeFor?: (branch: string) => WorktreeInfo | undefined;
   } = $props();
 
   // Collapsed folder paths (in-memory; folders default expanded).
@@ -55,6 +58,7 @@
         {@render tree(node.children, depth + 1)}
       {/if}
     {:else}
+      {@const worktree = kind === "local" ? worktreeFor(node.ref.name) : undefined}
       <button
         type="button"
         class="ref"
@@ -77,6 +81,17 @@
           <RefIcon {kind} size={13} />
         </span>
         <span class="rn">{node.name}</span>
+        {#if worktree}
+          <span
+            class="worktree-mark"
+            class:current={worktree.isCurrent}
+            role="img"
+            aria-label={`Checked out in worktree at ${worktree.path}`}
+            title={`Checked out in worktree at ${worktree.path}`}
+          >
+            <WorktreeIcon size={12} />
+          </span>
+        {/if}
         <!-- Per-branch ahead/behind vs upstream (local branches only), like
              Fork/SourceTree: ↑ commits to push, ↓ commits to pull. -->
         {#if kind === "local" && ((node.ref.ahead ?? 0) > 0 || (node.ref.behind ?? 0) > 0)}
@@ -182,5 +197,14 @@
     flex-shrink: 0;
     /* The glyph (currentColor) is tinted to the ref's graph lane colour (or
        manual override); its shape conveys local / remote / tag. */
+  }
+  .worktree-mark {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+  .worktree-mark.current {
+    color: var(--accent);
   }
 </style>
