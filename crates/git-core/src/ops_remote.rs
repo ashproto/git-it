@@ -196,6 +196,12 @@ pub fn stream(
     }
     let _busy = BusyGuard(&state.busy);
 
+    // Pin the C locale so the combined output classified after this run
+    // (looks_like_auth_failure, plus any caller-side stderr matching) is git's stable
+    // English text, not a translation from the user's LANG/LC_*. Every credentialed
+    // push/pull streams through here, so this is the one place that guarantees parseable
+    // messages for all of them.
+    cmd.env("LC_ALL", "C");
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("spawn: {}", e))?;
 
