@@ -6,15 +6,34 @@
 import { api } from "./api";
 import type { PrerequisiteCheck } from "./types";
 
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 function makePrerequisites() {
   let check = $state<PrerequisiteCheck | null>(null);
   let loading: Promise<void> | null = null;
+  // Monotonic probe id. refresh() can start a probe while another is still in flight, so
+  // only the LATEST probe may commit its result — otherwise a stale/out-of-order completion
+  // (e.g. an older failure resolving after a newer success) would clobber the current state
+  // and wrongly re-disable editing.
+  let probeSeq = 0;
 
   async function probe() {
+    // Non-Tauri (browser preview) has no backend to probe — leave the state "unknown"
+    // (not a failure) so canEditHistory stays optimistic there.
+    if (!isTauri()) return;
+    const seq = ++probeSeq;
     try {
-      check = await api.checkPrerequisites();
+      const result = await api.checkPrerequisites();
+      if (seq !== probeSeq) return; // superseded by a newer probe — drop this result
+      check = result;
     } catch {
+      if (seq !== probeSeq) return; // superseded by a newer probe — drop this stale failure
       check = null;
+      // Clear the cached promise so a later load()/refresh() re-probes a transient failure
+      // instead of no-op'ing on this (resolved) promise for the rest of the session.
+      loading = null;
     }
   }
 
@@ -22,11 +41,14 @@ function makePrerequisites() {
     get check() {
       return check;
     },
-    // Commit-time editing needs git + python3 + a working bundled filter-repo. Unknown
-    // (not yet probed / non-Tauri) → treated as available so we never block prematurely;
-    // a genuinely-missing tool still fails loudly at run time.
+    // Commit-time editing needs a SUCCESSFUL probe confirming git + python3 + a working
+    // bundled filter-repo. Until one arrives, the DESKTOP app keeps the destructive "Rewrite
+    // history" action DISABLED — a slow OR failed probe must never leave it invokable on
+    // unverified prerequisites. A non-Tauri preview has nothing to verify (editing is inert
+    // there anyway), so it stays optimistic. A later successful probe enables it.
     get canEditHistory() {
-      return check ? check.git && check.python3 && check.filterRepo : true;
+      if (check) return check.git && check.python3 && check.filterRepo;
+      return !isTauri();
     },
     // Probe once, then share the result — deduped so the banner and ApplyPanel don't
     // double-invoke.

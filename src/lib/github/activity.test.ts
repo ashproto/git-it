@@ -15,14 +15,12 @@ describe("sparklinePoints", () => {
 });
 
 describe("isRetryableActivityError", () => {
-  it("retries cold-stats / transient failures", () => {
-    for (const kind of ["Other", "RateLimited", "Forbidden"]) {
-      expect(isRetryableActivityError({ kind })).toBe(true);
-    }
+  it("retries only transient cold-cache failures", () => {
+    expect(isRetryableActivityError({ kind: "Other", message: "parse activity" })).toBe(true);
     expect(isRetryableActivityError("network blip")).toBe(true); // non-GithubError → retry
   });
-  it("does not retry permanent failures", () => {
-    for (const kind of ["NotFound", "NotAuthed", "NoRemote", "NotInstalled"]) {
+  it("does not retry explicit rate limits or permanent failures", () => {
+    for (const kind of ["RateLimited", "Forbidden", "NotFound", "NotAuthed", "NoRemote", "NotInstalled"]) {
       expect(isRetryableActivityError({ kind })).toBe(false);
     }
   });
@@ -70,15 +68,17 @@ describe("fetchActivityWithRetry", () => {
     expect(fetchOnce).toHaveBeenCalledTimes(3);
   });
 
-  it("aborts immediately on a PERMANENT error without burning retries", async () => {
-    const fetchOnce = vi.fn().mockRejectedValue({ kind: "NotFound" });
-    await expect(fetchActivityWithRetry(fetchOnce, noSleep, 5)).rejects.toEqual({ kind: "NotFound" });
-    expect(fetchOnce).toHaveBeenCalledTimes(1);
+  it("aborts immediately on a non-retryable error (permanent OR explicit rate limit)", async () => {
+    for (const kind of ["NotFound", "RateLimited"]) {
+      const fetchOnce = vi.fn().mockRejectedValue({ kind });
+      await expect(fetchActivityWithRetry(fetchOnce, noSleep, 5)).rejects.toEqual({ kind });
+      expect(fetchOnce).toHaveBeenCalledTimes(1);
+    }
   });
 
-  it("propagates the last error when a transient failure never clears", async () => {
-    const fetchOnce = vi.fn().mockRejectedValue({ kind: "RateLimited" });
-    await expect(fetchActivityWithRetry(fetchOnce, noSleep, 3)).rejects.toEqual({ kind: "RateLimited" });
+  it("propagates the last error when a transient (Other) failure never clears", async () => {
+    const fetchOnce = vi.fn().mockRejectedValue({ kind: "Other", message: "parse activity" });
+    await expect(fetchActivityWithRetry(fetchOnce, noSleep, 3)).rejects.toMatchObject({ kind: "Other" });
     expect(fetchOnce).toHaveBeenCalledTimes(3);
   });
 });
