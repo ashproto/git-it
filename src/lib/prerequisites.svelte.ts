@@ -15,6 +15,11 @@ function makePrerequisites() {
       check = await api.checkPrerequisites();
     } catch {
       check = null;
+      // Clear the cached promise so a later load()/refresh() actually re-probes. Without
+      // this, a transient failure leaves `loading` holding this (resolved) promise, so
+      // load() no-ops forever and canEditHistory stays true — history editing wrongly
+      // enabled, and the banner hidden, for the rest of the session.
+      loading = null;
     }
   }
 
