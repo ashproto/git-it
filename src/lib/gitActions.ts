@@ -302,9 +302,13 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
     appState.status = `${label} — done.`;
     return true;
   } catch (e) {
-    // The op may have PARTIALLY applied (e.g. the local branch was deleted but the
-    // remote delete failed), so repaint — a stale view looks like "nothing happened".
-    try { await reloadGraph(); } catch (err) { console.warn("[gte] graph refresh after failed op", err); }
+    // A partial success (e.g. the local branch was deleted but its remote delete failed)
+    // should still update the sidebar — but use the NON-destructive refreshRefs(), not
+    // reloadGraph(). reloadGraph() resets graphCommits via setGraphCommits(), which clears
+    // the user's queued commit-time edits (newDates), selection, and currentSha; an
+    // unrelated failed op (rejected checkout, branch-already-exists, fetch error) must not
+    // silently discard those. refreshRefs() only re-reads the ref/remote lists.
+    try { await refreshRefs(); } catch (err) { console.warn("[gte] refs refresh after failed op", err); }
     appState.status = `${label} failed: ${firstLine(e)}`;
     // The status bar alone is too easy to miss for a discrete action the user just took
     // (user-reported "no feedback for if something went wrong") — surface it as a dialog.
