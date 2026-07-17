@@ -5,6 +5,7 @@
   let inputEl = $state<HTMLInputElement | undefined>();
   let credUsernameEl = $state<HTMLInputElement | undefined>();
   let prTitleEl = $state<HTMLInputElement | undefined>();
+  let okAlertEl = $state<HTMLButtonElement | undefined>();
 
   // When a prompt opens, seed + focus the field.
   // When a credentials dialog opens, focus the username input.
@@ -20,6 +21,8 @@
     } else if (s.kind === "createPr") {
       prTitleEl?.focus();
       prTitleEl?.select();
+    } else if (s.kind === "alert") {
+      okAlertEl?.focus();
     }
   });
 
@@ -93,6 +96,14 @@
     } else if (e.key === "Escape") {
       e.preventDefault();
       cancelCredentials();
+    }
+  }
+
+  // Alert: Enter or Escape (like the OK button / backdrop click) just dismisses.
+  function handleAlertKey(e: KeyboardEvent) {
+    if (e.key === "Enter" || e.key === "Escape") {
+      e.preventDefault();
+      dialogs.resolveAlert();
     }
   }
 </script>
@@ -381,6 +392,23 @@
       </div>
     </div>
   </div>
+{:else if dialogs.state.kind === "alert"}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="overlay"
+    onpointerdown={(e) => {
+      if (e.target === e.currentTarget) dialogs.resolveAlert();
+    }}
+    onkeydown={handleAlertKey}
+  >
+    <div class="dialog" role="alertdialog" aria-modal="true" aria-label={dialogs.state.title}>
+      <h3>{dialogs.state.title}</h3>
+      <p class="msg pre">{dialogs.state.message}</p>
+      <div class="actions">
+        <button type="button" class="primary" bind:this={okAlertEl} onclick={() => dialogs.resolveAlert()}>OK</button>
+      </div>
+    </div>
+  </div>
 {/if}
 
 <style>
@@ -429,6 +457,14 @@
     color: var(--text-muted);
     font-size: 12px;
     margin: 0 0 8px;
+  }
+  /* Raw git/tool error text: preserve line breaks, wrap long paths, and cap height so a
+     verbose stderr scrolls instead of growing the dialog off-screen. */
+  .msg.pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 240px;
+    overflow-y: auto;
   }
   input {
     width: 100%;

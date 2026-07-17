@@ -302,7 +302,17 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
     appState.status = `${label} — done.`;
     return true;
   } catch (e) {
+    // A partial success (e.g. the local branch was deleted but its remote delete failed)
+    // should still update the sidebar — but use the NON-destructive refreshRefs(), not
+    // reloadGraph(). reloadGraph() resets graphCommits via setGraphCommits(), which clears
+    // the user's queued commit-time edits (newDates), selection, and currentSha; an
+    // unrelated failed op (rejected checkout, branch-already-exists, fetch error) must not
+    // silently discard those. refreshRefs() only re-reads the ref/remote lists.
+    try { await refreshRefs(); } catch (err) { console.warn("[gte] refs refresh after failed op", err); }
     appState.status = `${label} failed: ${firstLine(e)}`;
+    // The status bar alone is too easy to miss for a discrete action the user just took
+    // (user-reported "no feedback for if something went wrong") — surface it as a dialog.
+    void dialogs.alert({ title: `${label} failed`, message: errorText(e) });
     return false;
   } finally {
     appState.setNavBusy(false);
@@ -310,15 +320,19 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
   }
 }
 
-// Git error/output text is often multiline; toasts get only the first line (contract d).
-// GitHub commands reject with a serialized GithubError OBJECT ({kind, message?}) — String()
-// on that yields "[object Object]", so unwrap it first (mirrors errText in githubActions).
-function firstLine(e: unknown): string {
+// Full error text. GitHub commands reject with a serialized GithubError OBJECT
+// ({kind, message?}) — String() on that yields "[object Object]", so unwrap it first
+// (mirrors errText in githubActions). Used verbatim in the error dialog.
+function errorText(e: unknown): string {
   if (e && typeof e === "object" && "kind" in e) {
     const g = e as { kind: string; message?: string };
-    return String(g.kind === "Other" ? (g.message ?? g.kind) : g.kind).split("\n")[0];
+    return String(g.kind === "Other" ? (g.message ?? g.kind) : g.kind);
   }
-  return String(e).split("\n")[0];
+  return String(e);
+}
+// First line only — git output is often multiline; the compact status bar gets one line.
+function firstLine(e: unknown): string {
+  return errorText(e).split("\n")[0];
 }
 
 // Run an OpOutcome-returning op. Always refreshes graph+status (even on error) so

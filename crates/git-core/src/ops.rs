@@ -59,19 +59,55 @@ pub fn delete_branch(
     Ok(())
 }
 
-/// Delete a branch on a remote via `git push <remote> --delete <branch>`. This also
-/// removes the local `refs/remotes/<remote>/<branch>` tracking ref, so callers don't
-/// need a separate prune. GIT_TERMINAL_PROMPT=0 so a missing credential fails instead
-/// of hanging.
+/// Delete a branch on a remote via `git push <remote> --delete <branch>`. On success git
+/// also removes the local `refs/remotes/<remote>/<branch>` tracking ref, so callers don't
+/// need a separate prune. GIT_TERMINAL_PROMPT=0 so a missing credential fails instead of
+/// hanging.
+///
+/// Self-heal: if the remote branch is ALREADY gone (deleted elsewhere — e.g. a merged PR
+/// whose branch was auto-deleted), `git push --delete` fails with "remote ref does not
+/// exist" and leaves the stale local tracking ref behind, so the branch keeps showing in
+/// the UI and every delete retry re-fails. Treat that specific case as success and prune
+/// the stale tracking ref locally — the user's intent (make this branch go away) is met.
 pub fn delete_remote_branch(repo: &Path, remote: &str, branch: &str) -> Result<(), String> {
     let mut p = Command::new("git");
     p.current_dir(repo)
         .env("GIT_TERMINAL_PROMPT", "0")
+        // Pin the C locale so the "already gone" diagnostic we match below is git's stable
+        // English text, not a translation from the user's LANG/LC_* — the app shells out to
+        // whatever git is on their PATH, which may ship localized messages.
+        .env("LC_ALL", "C")
         // Options first, then --end-of-options, so BOTH the remote name and the branch
         // operand are guarded against leading-dash flag injection.
         .args(["push", "--delete", "--end-of-options", remote, branch]);
-    git_ops::run(&mut p)?;
-    Ok(())
+    match git_ops::run(&mut p) {
+        Ok(_) => Ok(()),
+        // Only the "already gone" case is safe to swallow; every other failure (auth,
+        // network, protected branch) must still surface — the remote ref may live on.
+        // The message is reliably English thanks to the LC_ALL=C pin above.
+        Err(e) if e.contains("remote ref does not exist") => {
+            prune_remote_tracking_ref(repo, remote, branch)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Remove a stale `refs/remotes/<remote>/<branch>` tracking ref (what `fetch --prune`
+/// would do). No-op if the ref is already absent. The refname is built with a fixed
+/// `refs/remotes/` prefix so it can never be flag-like, and `show-ref --verify` confirms
+/// it resolves to exactly that ref before we delete it.
+fn prune_remote_tracking_ref(repo: &Path, remote: &str, branch: &str) -> Result<(), String> {
+    let refname = format!("refs/remotes/{}/{}", remote, branch);
+    let mut check = Command::new("git");
+    check
+        .current_dir(repo)
+        .args(["show-ref", "--verify", "--quiet", &refname]);
+    if git_ops::run(&mut check).is_err() {
+        return Ok(()); // already absent → nothing to prune
+    }
+    let mut del = Command::new("git");
+    del.current_dir(repo).args(["update-ref", "-d", &refname]);
+    git_ops::run(&mut del).map(|_| ())
 }
 
 /// Create a tag at `target`. With a message it's an annotated tag; otherwise lightweight.
@@ -584,6 +620,57 @@ mod tests {
                 .unwrap()
                 .success(),
             "origin/feature tracking ref should be gone after delete"
+        );
+
+        let _ = fs::remove_dir_all(&bare);
+        let _ = fs::remove_dir_all(&clone_path);
+    }
+
+    #[test]
+    fn delete_remote_branch_self_heals_when_remote_already_gone() {
+        // A merged PR whose branch was auto-deleted on the remote leaves a STALE local
+        // remote-tracking ref (only `fetch --prune` clears it). "Delete remote branch"
+        // then runs `git push --delete`, which fails with "remote ref does not exist" —
+        // so the phantom never went away and every retry re-failed (user-reported).
+        // delete_remote_branch must treat that as success and prune the stale ref locally.
+        let bare = unique_dir("selfheal-bare");
+        fs::create_dir_all(&bare).unwrap();
+        Command::new("git")
+            .current_dir(&bare)
+            .args(["init", "-q", "--bare"])
+            .output()
+            .unwrap();
+
+        let upstream = TempRepo::new();
+        upstream.commit("a.txt", "c1");
+        upstream.git(&["branch", "feature"]);
+        upstream.git(&["remote", "add", "origin", bare.to_str().unwrap()]);
+        upstream.git(&["push", "-q", "origin", "main", "feature"]);
+
+        let clone_path = unique_dir("selfheal-clone");
+        Command::new("git")
+            .args(["clone", "-q", bare.to_str().unwrap(), clone_path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        let clone = TempRepo { path: clone_path.clone() };
+
+        // Simulate the remote-side delete WITHOUT pruning the clone: drop feature on the
+        // bare remote directly. The clone still shows refs/remotes/origin/feature (stale).
+        Command::new("git")
+            .args(["--git-dir", bare.to_str().unwrap(), "update-ref", "-d", "refs/heads/feature"])
+            .output()
+            .unwrap();
+        assert!(
+            clone.has_ref("refs/remotes/origin/feature"),
+            "precondition: clone still has the stale tracking ref"
+        );
+
+        // The natural user action (delete the phantom) must now SUCCEED, not error.
+        let res = delete_remote_branch(&clone.path, "origin", "feature");
+        assert!(res.is_ok(), "self-heal expected Ok, got {:?}", res);
+        assert!(
+            !clone.has_ref("refs/remotes/origin/feature"),
+            "stale tracking ref must be pruned after self-heal"
         );
 
         let _ = fs::remove_dir_all(&bare);

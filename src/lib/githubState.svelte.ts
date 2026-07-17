@@ -1,6 +1,7 @@
 import { appState } from "./store.svelte";
 import { api } from "./api";
 import { parseGithubRemote } from "./github/remote";
+import { fetchActivityWithRetry } from "./github/activity";
 import type {
   GhAvailability,
   GhRepoStats,
@@ -125,16 +126,17 @@ function makeGithubState() {
     return contributors.load(`${repo}|${reloadNonce}`, () => api.githubContributors(repo, 12));
   }
   function loadActivity(repo: string) {
-    return activity.load(`${repo}|${reloadNonce}`, async () => {
-      // /stats/commit_activity returns 202 + empty body while GitHub computes;
-      // retry a few times before giving up and showing the "computing" state.
-      let a = await api.githubActivity(repo);
-      for (let tries = 0; a.computing && tries < 3; tries++) {
-        await new Promise((r) => setTimeout(r, 1800));
-        a = await api.githubActivity(repo);
-      }
-      return a;
-    });
+    // /stats/commit_activity is computed lazily by GitHub (HTTP 202 on a cold cache), so
+    // the first request can come back "computing", unparseable, or as a transient error.
+    // fetchActivityWithRetry retries through ALL of those; previously only the `computing`
+    // flag was retried, so a thrown cold-cache error hard-errored the panel until the user
+    // switched tabs and back (which forced a re-fetch — the reported symptom).
+    return activity.load(`${repo}|${reloadNonce}`, () =>
+      fetchActivityWithRetry(
+        () => api.githubActivity(repo),
+        (ms) => new Promise((r) => setTimeout(r, ms)),
+      ),
+    );
   }
   function loadMilestones(repo: string) {
     return milestones.load(`${repo}|${reloadNonce}`, () => api.githubMilestones(repo));
