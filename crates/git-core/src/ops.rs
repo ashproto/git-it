@@ -117,6 +117,9 @@ pub fn fast_forward_branch(
     let mut c = Command::new("git");
     c.current_dir(repo)
         .env("GIT_TERMINAL_PROMPT", "0")
+        // Pin the C locale so the "non-fast-forward" / "[rejected]" diagnostic matched
+        // below is git's stable English text, not a translation from the user's LANG/LC_*.
+        .env("LC_ALL", "C")
         .args(["fetch", "--end-of-options", remote, &refspec]);
     match git_ops::run(&mut c) {
         Ok((o, e)) => Ok(format!("{}{}", o, e).trim().to_string()),
