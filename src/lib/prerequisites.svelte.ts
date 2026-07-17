@@ -12,9 +12,6 @@ function isTauri(): boolean {
 
 function makePrerequisites() {
   let check = $state<PrerequisiteCheck | null>(null);
-  // True once a probe has REJECTED without producing a result — distinct from "not probed
-  // yet" (check null, probeFailed false). Keeps history editing disabled while set.
-  let probeFailed = $state(false);
   let loading: Promise<void> | null = null;
   // Monotonic probe id. refresh() can start a probe while another is still in flight, so
   // only the LATEST probe may commit its result — otherwise a stale/out-of-order completion
@@ -31,11 +28,9 @@ function makePrerequisites() {
       const result = await api.checkPrerequisites();
       if (seq !== probeSeq) return; // superseded by a newer probe — drop this result
       check = result;
-      probeFailed = false;
     } catch {
       if (seq !== probeSeq) return; // superseded by a newer probe — drop this stale failure
       check = null;
-      probeFailed = true;
       // Clear the cached promise so a later load()/refresh() re-probes a transient failure
       // instead of no-op'ing on this (resolved) promise for the rest of the session.
       loading = null;
@@ -46,14 +41,14 @@ function makePrerequisites() {
     get check() {
       return check;
     },
-    // True only when a SUCCESSFUL probe confirms git + python3 + a working bundled
-    // filter-repo. Before the first probe resolves — and in non-Tauri — we stay optimistic
-    // (check null, probeFailed false) so the control doesn't flash disabled. But once a
-    // probe has FAILED we keep editing DISABLED: a destructive history rewrite must never
-    // run on unverified prerequisites. A later successful probe re-enables it.
+    // Commit-time editing needs a SUCCESSFUL probe confirming git + python3 + a working
+    // bundled filter-repo. Until one arrives, the DESKTOP app keeps the destructive "Rewrite
+    // history" action DISABLED — a slow OR failed probe must never leave it invokable on
+    // unverified prerequisites. A non-Tauri preview has nothing to verify (editing is inert
+    // there anyway), so it stays optimistic. A later successful probe enables it.
     get canEditHistory() {
       if (check) return check.git && check.python3 && check.filterRepo;
-      return !probeFailed;
+      return !isTauri();
     },
     // Probe once, then share the result — deduped so the banner and ApplyPanel don't
     // double-invoke.
