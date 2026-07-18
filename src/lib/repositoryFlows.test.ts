@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   newRepository: vi.fn(),
   confirm: vi.fn(),
   alert: vi.fn(),
+  refreshRefs: vi.fn(),
   openRepo: vi.fn(),
   setBusyOp: vi.fn(),
   appState: { status: "Ready", repo: "" },
@@ -31,6 +32,7 @@ vi.mock("./dialogs.svelte", () => ({
     alert: mocks.alert,
   },
 }));
+vi.mock("./gitActions", () => ({ refreshRefs: mocks.refreshRefs }));
 vi.mock("./store.svelte", () => ({
   appState: {
     get status() { return mocks.appState.status; },
@@ -68,7 +70,10 @@ beforeEach(() => {
   });
   mocks.confirm.mockReset().mockResolvedValue(true);
   mocks.alert.mockReset().mockResolvedValue(undefined);
-  mocks.openRepo.mockReset();
+  mocks.refreshRefs.mockReset().mockResolvedValue(undefined);
+  mocks.openRepo.mockReset().mockImplementation((path: string) => {
+    mocks.appState.repo = path;
+  });
   mocks.setBusyOp.mockReset();
 });
 
@@ -141,6 +146,7 @@ describe("repository creation flow", () => {
       false,
       "A test repository",
     );
+    expect(mocks.refreshRefs).toHaveBeenCalledOnce();
   });
 
   it("keeps and opens the local repository when GitHub setup fails", async () => {
@@ -161,5 +167,6 @@ describe("repository creation flow", () => {
       title: "Local repository created",
       message: expect.stringContaining("name already exists"),
     }));
+    expect(mocks.refreshRefs).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,6 @@
 import { api, pickRepoFolder } from "./api";
 import { dialogs } from "./dialogs.svelte";
+import { refreshRefs } from "./gitActions";
 import { appState } from "./store.svelte";
 
 function isTauri(): boolean {
@@ -111,6 +112,10 @@ export async function createRepositoryFlow(initial?: string): Promise<void> {
         requested.isPrivate,
         requested.description,
       );
+      // openRepo starts its initial metadata load before the network request
+      // creates origin. Refresh after success so remote-dependent controls do
+      // not remain disabled with the pre-creation empty snapshot.
+      if (appState.repo === initialized.path) await refreshRefs();
       appState.status = "Created the local repository and connected its GitHub remote.";
     } catch (error) {
       const message = githubErrorMessage(error);
