@@ -262,6 +262,9 @@ fn detect_operation(repo: &Path) -> Option<String> {
     if exists("REVERT_HEAD") {
         return Some("revert".to_string());
     }
+    if exists("BISECT_START") {
+        return Some("bisect".to_string());
+    }
     None
 }
 
@@ -525,6 +528,15 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(repo_status(&r.path).unwrap().operation.as_deref(), Some("merge"));
+    }
+
+    #[test]
+    fn repo_status_detects_in_progress_bisect() {
+        let r = TempRepo::new();
+        r.write_commit("base.txt", "base");
+        r.git(&["bisect", "start"]);
+
+        assert_eq!(repo_status(&r.path).unwrap().operation.as_deref(), Some("bisect"));
     }
 
     #[test]

@@ -1,0 +1,69 @@
+// Shared singleton for the prerequisite probe (git / python3 / bundled git-filter-repo).
+// Lifted out of PrereqBanner so the editing controls (ApplyPanel) gate on the SAME result
+// instead of the banner merely *claiming* commit-time editing is disabled while the
+// destructive "Rewrite history" action stays reachable. One probe, shared across callers;
+// load() dedupes concurrent callers (banner + apply panel) and retries after a failure.
+import { api } from "./api";
+import type { PrerequisiteCheck } from "./types";
+
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function makePrerequisites() {
+  let check = $state<PrerequisiteCheck | null>(null);
+  let loading: Promise<void> | null = null;
+  // Monotonic probe id. refresh() can start a probe while another is still in flight, so
+  // only the LATEST probe may commit its result — otherwise a stale/out-of-order completion
+  // (e.g. an older failure resolving after a newer success) would clobber the current state
+  // and wrongly re-disable editing.
+  let probeSeq = 0;
+
+  async function probe() {
+    // Non-Tauri (browser preview) has no backend to probe — leave the state "unknown"
+    // (not a failure) so canEditHistory stays optimistic there.
+    if (!isTauri()) return;
+    const seq = ++probeSeq;
+    try {
+      const result = await api.checkPrerequisites();
+      if (seq !== probeSeq) return; // superseded by a newer probe — drop this result
+      check = result;
+    } catch {
+      if (seq !== probeSeq) return; // superseded by a newer probe — drop this stale failure
+      check = null;
+      // Clear the cached promise so a later load()/refresh() re-probes a transient failure
+      // instead of no-op'ing on this (resolved) promise for the rest of the session.
+      loading = null;
+    }
+  }
+
+  return {
+    get check() {
+      return check;
+    },
+    // Commit-time editing needs a SUCCESSFUL probe confirming git + python3 + a working
+    // bundled filter-repo. Until one arrives, the DESKTOP app keeps the destructive "Rewrite
+    // history" action DISABLED — a slow OR failed probe must never leave it invokable on
+    // unverified prerequisites. A non-Tauri preview has nothing to verify (editing is inert
+    // there anyway), so it stays optimistic. A later successful probe enables it.
+    get canEditHistory() {
+      if (check) return check.git && check.python3 && check.filterRepo;
+      return !isTauri();
+    },
+    // Probe once, then share the result — deduped so the banner and ApplyPanel don't
+    // double-invoke.
+    load() {
+      if (!loading) loading = probe();
+      return loading;
+    },
+    // Force a fresh probe. Used when the user returns to the app after fixing a
+    // prerequisite (e.g. finishing the async Command Line Tools installer), so the
+    // banner clears and the editing controls re-enable without a restart.
+    refresh() {
+      loading = probe();
+      return loading;
+    },
+  };
+}
+
+export const prerequisites = makePrerequisites();

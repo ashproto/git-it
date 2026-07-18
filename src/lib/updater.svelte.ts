@@ -1,13 +1,10 @@
 // In-app auto-updater flow. Desktop-only; a no-op in the browser/dev build.
-// Mirrors Resume-Designer's state machine, re-surfaced through Git It's own
-// surfaces: progress lands on the StatusBar (busyOp + status) and the
-// download/restart prompts use dialogs.confirm. No toast library, and no
-// pre-relaunch durability gate (Git It only persists settings/view-state
-// fire-and-forget — there is no unsaved user document to protect).
+// Progress lands on the StatusBar (busyOp + status), while download/restart
+// decisions use the app's modal dialog system.
 import { appState } from "./store.svelte";
 import { dialogs } from "./dialogs.svelte";
 import { api } from "./api";
-import type { DownloadEvent } from "./types";
+import type { DownloadEvent, UpdateInfo } from "./types";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -15,29 +12,55 @@ function isTauri(): boolean {
 const isDev = import.meta.env.DEV;
 
 let checking = false;
-let lastBackgroundVersion: string | null = null;
+let presenting = false;
+let lastPromptedVersion: string | null = null;
+let pendingAutomaticUpdate: UpdateInfo | null = null;
+let pendingPromptTimer: ReturnType<typeof setTimeout> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let lastAutomaticCheckAt = 0;
+let preparationPromise: Promise<void> | null = null;
+
+const AUTOMATIC_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
 /** Manual "Check for Updates" (Settings button / macOS menu). */
 export async function manualCheckForUpdates(): Promise<void> {
+  if (!isTauri() || isDev) return;
+  await prepareUpdater();
   await checkForUpdates("manual");
 }
 
 /** Auto-check on launch — desktop + non-dev, gated on the autoUpdateCheck setting. */
 export async function startupUpdateCheck(): Promise<void> {
   if (!isTauri() || isDev) return;
-  // Seed the channel from the build type BEFORE the auto-check gate, so a fresh
-  // beta install lands on the beta channel even if auto-check is later turned off.
-  await seedChannelFromBuild();
+  // Register polling before the first await. A slow settings-store read must not
+  // prevent this launch from ever installing its background timer.
   startBackgroundPolling();
+  await prepareUpdater();
   if (!appState.autoUpdateCheck) return;
-  await checkForUpdates("startup");
+  await runAutomaticCheck("startup", true);
+}
+
+/** Catch up after sleep/minimization, where WebKit may throttle interval timers. */
+export async function updateCheckOnActivate(): Promise<void> {
+  if (!isTauri() || isDev) return;
+  await runPreparedAutomaticCheck("activation");
+}
+
+function prepareUpdater(): Promise<void> {
+  if (!preparationPromise) {
+    preparationPromise = (async () => {
+      await appState.waitForUpdateSettingsHydration();
+      // Seed only after persisted preferences are known. Every automatic entry
+      // point awaits this same promise, so focus/timer checks cannot race startup.
+      await seedChannelFromBuild();
+    })();
+  }
+  return preparationPromise;
 }
 
 // A beta (pre-release) build tracks the beta channel by default on first run so
 // it receives the rolling `next` pre-releases. Only acts when the user hasn't
-// chosen a channel yet (no persisted value); never overrides a stored choice,
-// and only ever flips stable → beta.
+// chosen a channel yet (no persisted value); never overrides a stored choice.
 async function seedChannelFromBuild(): Promise<void> {
   try {
     if ((await appState.getPersistedUpdateChannel()) !== null) return;
@@ -51,53 +74,115 @@ async function seedChannelFromBuild(): Promise<void> {
   }
 }
 
-// Poll for updates every 30 minutes while the app is open. Notify-only, respects
-// the auto-check setting live, and never runs in dev.
 function startBackgroundPolling(): void {
   if (pollTimer || isDev) return;
-  const THIRTY_MIN = 30 * 60 * 1000;
   pollTimer = setInterval(() => {
-    if (!appState.autoUpdateCheck) return;
-    void checkForUpdates("background");
-  }, THIRTY_MIN);
+    void runPreparedAutomaticCheck("background");
+  }, AUTOMATIC_CHECK_INTERVAL_MS);
 }
 
-async function checkForUpdates(source: "manual" | "startup" | "background"): Promise<void> {
+async function runPreparedAutomaticCheck(
+  source: "background" | "activation",
+): Promise<void> {
+  await prepareUpdater();
+  if (!appState.autoUpdateCheck) return;
+  await tryPresentPendingAutomaticUpdate();
+  await runAutomaticCheck(source);
+}
+
+async function runAutomaticCheck(
+  source: "startup" | "background" | "activation",
+  force = false,
+): Promise<void> {
+  if (!appState.autoUpdateCheck) return;
+  const now = Date.now();
+  if (!force && now - lastAutomaticCheckAt < AUTOMATIC_CHECK_INTERVAL_MS) return;
+  lastAutomaticCheckAt = now;
+  await checkForUpdates(source);
+}
+
+async function checkForUpdates(
+  source: "manual" | "startup" | "background" | "activation",
+): Promise<void> {
   if (!isTauri() || isDev) return;
-  if (checking) {
-    // A manual click while a check/download is already in flight: acknowledge it
-    // (the background/other flow owns the shared busyOp) instead of doing nothing.
+  if (checking || presenting) {
     if (source === "manual") appState.status = "Already checking for updates…";
     return;
   }
+
   checking = true;
   const manual = source === "manual";
+  let available: UpdateInfo | null = null;
   if (manual) {
     appState.setBusyOp("Checking for updates");
     appState.status = "Checking for updates…";
   }
   try {
-    const update = await api.checkUpdateOnChannel(appState.updateChannel);
-    if (!update) {
-      if (manual) appState.status = "You are on the latest version.";
-      return;
-    }
-    // Background poll is notify-only: surface a non-modal status message and
-    // stop, so we never pop a blocking download dialog over the user's work. One
-    // message per new version (deduped). They install via Settings → Updates →
-    // Check for Updates (the manual flow).
-    if (source === "background") {
-      if (update.version === lastBackgroundVersion) return;
-      lastBackgroundVersion = update.version;
-      appState.status = `Update ${update.version} available — Settings → Updates to install.`;
-      return;
-    }
+    available = await api.checkUpdateOnChannel(appState.updateChannel);
+    if (!available && manual) appState.status = "You are on the latest version.";
+  } catch (err) {
+    reportUpdaterError(err);
+  } finally {
+    checking = false;
+    if (manual) appState.setBusyOp(null);
+  }
+
+  if (!available) return;
+  if (manual) {
+    if (pendingAutomaticUpdate?.version === available.version) pendingAutomaticUpdate = null;
+    await presentUpdate(available);
+  } else {
+    queueAutomaticUpdate(available);
+  }
+}
+
+function queueAutomaticUpdate(update: UpdateInfo): void {
+  if (update.version === lastPromptedVersion || update.version === pendingAutomaticUpdate?.version) {
+    return;
+  }
+  pendingAutomaticUpdate = update;
+  void tryPresentPendingAutomaticUpdate();
+}
+
+async function tryPresentPendingAutomaticUpdate(): Promise<void> {
+  if (!appState.autoUpdateCheck) {
+    pendingAutomaticUpdate = null;
+    return;
+  }
+  if (
+    !pendingAutomaticUpdate ||
+    checking ||
+    presenting ||
+    dialogs.state.kind !== "none"
+  ) {
+    schedulePendingPromptRetry();
+    return;
+  }
+  const update = pendingAutomaticUpdate;
+  pendingAutomaticUpdate = null;
+  await presentUpdate(update);
+}
+
+function schedulePendingPromptRetry(): void {
+  if (!pendingAutomaticUpdate || pendingPromptTimer) return;
+  pendingPromptTimer = setTimeout(() => {
+    pendingPromptTimer = null;
+    void tryPresentPendingAutomaticUpdate();
+  }, 1000);
+}
+
+async function presentUpdate(update: UpdateInfo): Promise<void> {
+  if (presenting) return;
+  presenting = true;
+  lastPromptedVersion = update.version;
+  try {
     const notes = (update.notes ?? "").trim();
     const proceed = await dialogs.confirm({
       title: `Update available — ${update.version}`,
       message: notes
         ? `Git It ${update.version} is available.\n\n${notes}`
         : `Git It ${update.version} is available. Download it now?`,
+      messageFormat: notes ? "markdown" : "text",
       confirmLabel: "Download",
     });
     if (!proceed) {
@@ -144,13 +229,18 @@ async function checkForUpdates(source: "manual" | "startup" | "background"): Pro
       clearTimeout(guard);
     }
   } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err);
-    const sig = /signature|verify|verification|invalid/i.test(raw);
-    appState.status = sig
-      ? "Updater rejected the update (signature verification failed). The artifact may be unsigned or corrupted."
-      : `Updater error: ${raw}`;
+    reportUpdaterError(err);
   } finally {
-    checking = false;
+    presenting = false;
     appState.setBusyOp(null);
+    schedulePendingPromptRetry();
   }
+}
+
+function reportUpdaterError(err: unknown): void {
+  const raw = err instanceof Error ? err.message : String(err);
+  const sig = /signature|verify|verification|invalid/i.test(raw);
+  appState.status = sig
+    ? "Updater rejected the update (signature verification failed). The artifact may be unsigned or corrupted."
+    : `Updater error: ${raw}`;
 }

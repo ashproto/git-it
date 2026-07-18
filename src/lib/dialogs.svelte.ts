@@ -1,8 +1,34 @@
 // Promise-based modal dialogs so callers can `await dialogs.prompt(...)` /
 // `await dialogs.confirm(...)` inline. A single <Modal/> mounted once renders
 // whichever dialog is active.
+import type { WorktreeInfo } from "./types";
+import { worktreeRemovalBlocker } from "./worktrees";
+
+type BranchDeleteResult = {
+  confirmed: boolean;
+  force: boolean;
+  deleteRemote: boolean;
+  removeWorktree: boolean;
+};
+
+export type NewRepositoryResult = {
+  name: string;
+  initialBranch: string;
+  createRemote: boolean;
+  isPrivate: boolean;
+  description: string;
+};
+
 type DialogState =
   | { kind: "none" }
+  | {
+      // A message-only error dialog: single "OK" button, nothing to confirm. Surfaces a
+      // failed op unmissably instead of only in the easy-to-miss status bar.
+      kind: "alert";
+      title: string;
+      message: string;
+      resolve: () => void;
+    }
   | {
       kind: "prompt";
       title: string;
@@ -16,6 +42,7 @@ type DialogState =
       kind: "confirm";
       title: string;
       message: string;
+      messageFormat: "text" | "markdown";
       confirmLabel: string;
       danger: boolean;
       resolve: (v: boolean) => void;
@@ -44,7 +71,20 @@ type DialogState =
       remoteGone: boolean; // tracking config exists but the remote branch was already deleted
       force: boolean;
       deleteRemote: boolean;
-      resolve: (v: { confirmed: boolean; force: boolean; deleteRemote: boolean }) => void;
+      worktree: WorktreeInfo | null;
+      removeWorktree: boolean;
+      resolve: (v: BranchDeleteResult) => void;
+    }
+  | {
+      kind: "newRepository";
+      title: string;
+      parent: string;
+      name: string;
+      initialBranch: string;
+      createRemote: boolean;
+      isPrivate: boolean;
+      description: string;
+      resolve: (v: NewRepositoryResult | null) => void;
     }
   | {
       kind: "createRepo";
@@ -75,9 +115,11 @@ function makeDialogs() {
     else if (state.kind === "confirm") state.resolve(false);
     else if (state.kind === "destructive") state.resolve({ confirmed: false, backup: false });
     else if (state.kind === "credentials") state.resolve(null);
-    else if (state.kind === "branchDelete") state.resolve({ confirmed: false, force: false, deleteRemote: false });
+    else if (state.kind === "branchDelete") state.resolve({ confirmed: false, force: false, deleteRemote: false, removeWorktree: false });
+    else if (state.kind === "newRepository") state.resolve(null);
     else if (state.kind === "createRepo") state.resolve({ confirmed: false, name: "", isPrivate: true, description: "" });
     else if (state.kind === "createPr") state.resolve(null);
+    else if (state.kind === "alert") state.resolve();
   }
 
   return {
@@ -107,6 +149,7 @@ function makeDialogs() {
     confirm(opts: {
       title: string;
       message: string;
+      messageFormat?: "text" | "markdown";
       confirmLabel?: string;
       danger?: boolean;
     }): Promise<boolean> {
@@ -116,6 +159,7 @@ function makeDialogs() {
           kind: "confirm",
           title: opts.title,
           message: opts.message,
+          messageFormat: opts.messageFormat ?? "text",
           confirmLabel: opts.confirmLabel ?? "Confirm",
           danger: !!opts.danger,
           resolve,
@@ -164,6 +208,21 @@ function makeDialogs() {
         state = { kind: "none" };
       }
     },
+    // ── Alert dialog ──────────────────────────────────────────────────────────
+    // Message-only "something failed" modal. The returned promise resolves when the
+    // dialog is dismissed; callers can fire-and-forget (nothing waits on it).
+    alert(opts: { title: string; message: string }): Promise<void> {
+      settlePending();
+      return new Promise((resolve) => {
+        state = { kind: "alert", title: opts.title, message: opts.message, resolve };
+      });
+    },
+    resolveAlert() {
+      if (state.kind === "alert") {
+        state.resolve();
+        state = { kind: "none" };
+      }
+    },
     // ── Credentials dialog (Phase 6) ──────────────────────────────────────────
     // Opens a username + password prompt for a network op that returned authFailed.
     // The resolved value is used ONCE for the retry; it is NEVER stored in app state.
@@ -194,18 +253,51 @@ function makeDialogs() {
       }
     },
     // ── Branch delete dialog ──────────────────────────────────────────────────
-    confirmBranchDelete(opts: { branch: string; upstream: string | null; remoteGone?: boolean }): Promise<{ confirmed: boolean; force: boolean; deleteRemote: boolean }> {
+    confirmBranchDelete(opts: { branch: string; upstream: string | null; remoteGone?: boolean; worktree?: WorktreeInfo | null }): Promise<BranchDeleteResult> {
       settlePending();
       return new Promise((resolve) => {
-        state = { kind: "branchDelete", title: "Delete branch", branch: opts.branch, upstream: opts.upstream, remoteGone: opts.remoteGone ?? false, force: false, deleteRemote: false, resolve };
+        state = { kind: "branchDelete", title: "Delete branch", branch: opts.branch, upstream: opts.upstream, remoteGone: opts.remoteGone ?? false, force: false, deleteRemote: false, worktree: opts.worktree ?? null, removeWorktree: false, resolve };
       });
     },
     setBranchDeleteForce(v: boolean) { if (state.kind === "branchDelete") state = { ...state, force: v }; },
     setBranchDeleteRemote(v: boolean) { if (state.kind === "branchDelete") state = { ...state, deleteRemote: v }; },
+    setBranchDeleteWorktree(v: boolean) { if (state.kind === "branchDelete") state = { ...state, removeWorktree: v }; },
     resolveBranchDelete(confirmed: boolean) {
       if (state.kind === "branchDelete") {
-        const { force, deleteRemote } = state;
-        state.resolve({ confirmed, force, deleteRemote });
+        const { force, deleteRemote, worktree, removeWorktree } = state;
+        // Defense in depth: keyboard handlers or a future caller cannot bypass
+        // the explicit opt-in or the clean/linked-worktree safety gate.
+        if (confirmed && worktree && (!removeWorktree || worktreeRemovalBlocker(worktree))) return;
+        state.resolve({ confirmed, force, deleteRemote, removeWorktree });
+        state = { kind: "none" };
+      }
+    },
+    // ── New local repository dialog ──────────────────────────────────────────
+    newRepository(opts: { parent: string }): Promise<NewRepositoryResult | null> {
+      settlePending();
+      return new Promise((resolve) => {
+        state = {
+          kind: "newRepository",
+          title: "Create new repository",
+          parent: opts.parent,
+          name: "",
+          initialBranch: "main",
+          createRemote: false,
+          isPrivate: true,
+          description: "",
+          resolve,
+        };
+      });
+    },
+    setNewRepositoryName(v: string) { if (state.kind === "newRepository") state = { ...state, name: v }; },
+    setNewRepositoryBranch(v: string) { if (state.kind === "newRepository") state = { ...state, initialBranch: v }; },
+    setNewRepositoryRemote(v: boolean) { if (state.kind === "newRepository") state = { ...state, createRemote: v }; },
+    setNewRepositoryPrivate(v: boolean) { if (state.kind === "newRepository") state = { ...state, isPrivate: v }; },
+    setNewRepositoryDescription(v: string) { if (state.kind === "newRepository") state = { ...state, description: v }; },
+    resolveNewRepository(accepted: boolean) {
+      if (state.kind === "newRepository") {
+        const { name, initialBranch, createRemote, isPrivate, description } = state;
+        state.resolve(accepted ? { name, initialBranch, createRemote, isPrivate, description } : null);
         state = { kind: "none" };
       }
     },

@@ -601,7 +601,14 @@
       {/if}
 
       {#if commits.length === 0}
-        <div class="empty">No commits loaded. Pick a repository and click Reload.</div>
+        <div class="empty">
+          {#if appState.repo}
+            <span>No commits yet. Add files and create the first commit.</span>
+            <button type="button" onclick={() => appState.setActiveView("changes")}>View Local Changes</button>
+          {:else}
+            <span>Open or create a repository to get started.</span>
+          {/if}
+        </div>
       {/if}
     </div>
   </div>
@@ -840,6 +847,10 @@
     font-size: 12px;
   }
   .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
     text-align: center;
     color: var(--text-muted);
     padding: 24px;

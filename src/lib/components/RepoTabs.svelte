@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
-  import { pickRepoFolder, api } from "../api";
+  import { api } from "../api";
+  import { createRepositoryFlow, openRepositoryFlow } from "../repositoryFlows";
   import { reorder, insertionIndex } from "../reorder";
   import { flip } from "svelte/animate";
   import { quintOut } from "svelte/easing";
@@ -195,17 +196,7 @@
 
   // ── Shared open flow ─────────────────────────────────────────────────────────
   async function openRepoFlow() {
-    if (!isTauri()) {
-      appState.status = "Opening a repo needs the desktop app.";
-      return;
-    }
-    const p = await pickRepoFolder(appState.repo || undefined);
-    if (!p) return;
-    if (!(await api.isGitRepo(p))) {
-      appState.status = `${p} is not a git repo.`;
-      return;
-    }
-    appState.openRepo(p);
+    await openRepositoryFlow(appState.repo || undefined);
   }
 
   async function openRecent(path: string) {
@@ -273,6 +264,11 @@
         aria-label="Open or recent repositories"
         style={`top:${menuPos.top}px; left:${menuPos.left}px`}
       >
+        <button
+          class="drop-item open-item"
+          role="menuitem"
+          onclick={() => { closeDropdown(); createRepositoryFlow(); }}
+        >Create repository…</button>
         <button
           class="drop-item open-item"
           role="menuitem"

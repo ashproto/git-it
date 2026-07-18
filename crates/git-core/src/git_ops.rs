@@ -1,4 +1,6 @@
-use crate::types::{BundleInfo, Commit, PrerequisiteCheck, SafetyRef};
+use crate::types::{
+    BundleInfo, Commit, InitializeRepositoryResult, PrerequisiteCheck, SafetyRef,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,6 +24,121 @@ pub(crate) fn run(cmd: &mut Command) -> Result<(String, String), String> {
 
 pub fn is_git_repo(repo: &Path) -> bool {
     repo.join(".git").exists()
+}
+
+fn is_inside_worktree(path: &Path) -> bool {
+    Command::new("git")
+        .current_dir(path)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "true")
+        .unwrap_or(false)
+}
+
+/// Initialize a repository in one direct child of an existing parent folder.
+/// A non-empty destination is reported without mutation until the caller
+/// explicitly retries with `allow_non_empty`.
+pub fn initialize_repository(
+    parent: &Path,
+    folder_name: &str,
+    initial_branch: &str,
+    allow_non_empty: bool,
+) -> Result<InitializeRepositoryResult, String> {
+    let parent = fs::canonicalize(parent)
+        .map_err(|error| format!("Could not open the parent folder: {error}"))?;
+    if !parent.is_dir() {
+        return Err("The selected parent path is not a folder.".to_string());
+    }
+
+    let name = folder_name.trim();
+    if name.is_empty()
+        || name != folder_name
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+    {
+        return Err(
+            "Repository name must be a single folder name without path separators."
+                .to_string(),
+        );
+    }
+    let branch = initial_branch.trim();
+    if branch.is_empty() || branch != initial_branch || branch.starts_with('-') {
+        return Err("Initial branch name is invalid.".to_string());
+    }
+    let branch_check = Command::new("git")
+        .current_dir(&parent)
+        .args(["check-ref-format", "--branch", branch])
+        .output()
+        .map_err(|error| format!("Could not validate the initial branch: {error}"))?;
+    if !branch_check.status.success() {
+        return Err("Initial branch name is invalid.".to_string());
+    }
+
+    let destination = parent.join(name);
+    if fs::symlink_metadata(&destination)
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return Err(
+            "The requested repository path is a symbolic link. Choose the real folder instead."
+                .to_string(),
+        );
+    }
+    if destination.exists() && !destination.is_dir() {
+        return Err("A file already exists at the requested repository path.".to_string());
+    }
+    if destination.join(".git").exists() {
+        return Err("That folder is already a Git repository. Open it instead.".to_string());
+    }
+    let nesting_probe = if destination.is_dir() {
+        &destination
+    } else {
+        &parent
+    };
+    if is_inside_worktree(nesting_probe) {
+        return Err(
+            "Cannot create a nested repository inside another Git worktree. Choose a different parent folder."
+                .to_string(),
+        );
+    }
+
+    let existing_entries = if destination.is_dir() {
+        fs::read_dir(&destination)
+            .map_err(|error| format!("Could not inspect the destination folder: {error}"))?
+            .try_fold(0usize, |count, entry| entry.map(|_| count + 1))
+            .map_err(|error| format!("Could not inspect the destination folder: {error}"))?
+    } else {
+        0
+    };
+    let planned_path = destination.to_string_lossy().into_owned();
+    if existing_entries > 0 && !allow_non_empty {
+        return Ok(InitializeRepositoryResult {
+            path: planned_path,
+            initialized: false,
+            existing_entries,
+        });
+    }
+
+    if !destination.exists() {
+        fs::create_dir(&destination)
+            .map_err(|error| format!("Could not create the repository folder: {error}"))?;
+    }
+    let mut init = Command::new("git");
+    init.current_dir(&destination)
+        .arg("init")
+        .arg(format!("--initial-branch={branch}"));
+    run(&mut init)?;
+    let canonical = fs::canonicalize(&destination)
+        .map_err(|error| format!("Could not resolve the new repository path: {error}"))?;
+    Ok(InitializeRepositoryResult {
+        path: canonical.to_string_lossy().into_owned(),
+        initialized: true,
+        existing_entries,
+    })
 }
 
 pub fn load_commits(repo: &Path, count: u32, range: Option<&str>) -> Result<Vec<Commit>, String> {
@@ -216,5 +333,95 @@ pub fn check_prerequisites(filter_repo_argv: &[String]) -> PrerequisiteCheck {
         python3_version,
         filter_repo: filter_repo_version.is_some(),
         filter_repo_version,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TempFolder(PathBuf);
+
+    impl TempFolder {
+        fn new() -> Self {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "git-it-init-test-{}-{stamp}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TempFolder {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn initialize_repository_creates_requested_folder_and_branch() {
+        let parent = TempFolder::new();
+
+        let result = initialize_repository(&parent.0, "project", "main", false).unwrap();
+
+        assert!(result.initialized);
+        assert_eq!(result.existing_entries, 0);
+        assert!(Path::new(&result.path).join(".git").is_dir());
+        let branch = Command::new("git")
+            .current_dir(&result.path)
+            .args(["symbolic-ref", "--short", "HEAD"])
+            .output()
+            .unwrap();
+        assert!(branch.status.success());
+        assert_eq!(String::from_utf8_lossy(&branch.stdout).trim(), "main");
+    }
+
+    #[test]
+    fn initialize_repository_requires_confirmation_for_existing_files() {
+        let parent = TempFolder::new();
+        let destination = parent.0.join("project");
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("keep.txt"), "preserve me").unwrap();
+
+        let preview = initialize_repository(&parent.0, "project", "main", false).unwrap();
+        assert!(!preview.initialized);
+        assert_eq!(preview.existing_entries, 1);
+        assert!(!destination.join(".git").exists());
+
+        let result = initialize_repository(&parent.0, "project", "main", true).unwrap();
+        assert!(result.initialized);
+        assert_eq!(
+            fs::read_to_string(destination.join("keep.txt")).unwrap(),
+            "preserve me"
+        );
+    }
+
+    #[test]
+    fn initialize_repository_rejects_invalid_branch_before_mutation() {
+        let parent = TempFolder::new();
+
+        let err = initialize_repository(&parent.0, "project", "-danger", false).unwrap_err();
+
+        assert!(err.contains("branch name"));
+        assert!(!parent.0.join("project").exists());
+    }
+
+    #[test]
+    fn initialize_repository_rejects_nested_git_worktree() {
+        let parent = TempFolder::new();
+        let mut init = Command::new("git");
+        init.current_dir(&parent.0).args(["init", "-q"]);
+        run(&mut init).unwrap();
+
+        let err = initialize_repository(&parent.0, "nested", "main", false).unwrap_err();
+
+        assert!(err.contains("nested repository"));
+        assert!(!parent.0.join("nested").exists());
     }
 }

@@ -25,6 +25,7 @@ beforeEach(() => {
   appState.setActiveView("timeline");
   appState.setCurrent(null);
   appState.selected = new Set();
+  appState.setRefsDetailed([]);
 });
 
 describe("Local Changes view-model", () => {
@@ -122,6 +123,62 @@ describe("Local Changes view-model", () => {
     expect(appState.selected.has(s1)).toBe(false); // pruned (no longer present)
     expect(appState.newDates.has(s0)).toBe(true); // queued edit kept
     expect(appState.newDates.has("goneSha000000")).toBe(false); // pruned
+  });
+
+  it("does not resurrect a deleted branch from stale graph decorations", () => {
+    const mainSha = SAMPLE_GRAPH[0].sha;
+    const featureSha = SAMPLE_GRAPH[2].sha;
+    const mainRef = {
+      name: "main",
+      kind: "local" as const,
+      target_sha: mainSha,
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+    };
+    const featureRef = {
+      name: "feature/graph-view",
+      kind: "local" as const,
+      target_sha: featureSha,
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+    };
+    appState.setGraphCommits(SAMPLE_GRAPH);
+    appState.setRefsDetailed([mainRef, featureRef]);
+    appState.setCurrent(featureSha);
+    appState.selected = new Set([featureSha]);
+    appState.setNewDate(featureSha, new Date("2020-01-01T00:00:00Z"));
+    expect(appState.refsByKind.local.some((ref) => ref.name === featureRef.name)).toBe(true);
+
+    // A local delete can succeed before the optional remote delete fails. The
+    // detailed-ref refresh is authoritative even while the graph still carries
+    // its pre-operation decoration.
+    appState.setRefsDetailed([mainRef]);
+
+    expect(appState.refsByKind.local.some((ref) => ref.name === featureRef.name)).toBe(false);
+    expect(appState.currentSha).toBe(featureSha);
+    expect(appState.selected.has(featureSha)).toBe(true);
+    expect(appState.newDates.has(featureSha)).toBe(true);
+  });
+
+  it("treats a successfully loaded empty ref inventory as authoritative", () => {
+    appState.setGraphCommits(SAMPLE_GRAPH);
+    appState.setRefsDetailed([]);
+
+    expect(appState.refsByKind.local).toEqual([]);
+  });
+
+  it("falls back to graph decorations after the current ref inventory is invalidated", () => {
+    appState.setGraphCommits(SAMPLE_GRAPH);
+    appState.setRefsDetailed([]);
+    expect(appState.refsByKind.local).toEqual([]);
+
+    appState.invalidateRefsDetailed("");
+
+    expect(
+      appState.refsByKind.local.some((ref) => ref.name === "feature/graph-view"),
+    ).toBe(true);
   });
 
   it("applyGraphRefresh clears the focus only when the open commit is gone", () => {

@@ -112,6 +112,34 @@ pub struct RepoStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InitializeRepositoryResult {
+    pub path: String,
+    pub initialized: bool,
+    pub existing_entries: usize,
+}
+
+/// One entry from `git worktree list --porcelain`, enriched with status for
+/// worktrees that still exist on disk. Paths remain the authoritative strings
+/// emitted by Git so a later destructive request can be revalidated exactly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeInfo {
+    pub path: String,
+    pub head: Option<String>,
+    pub branch: Option<String>,
+    pub is_main: bool,
+    pub is_current: bool,
+    pub detached: bool,
+    pub bare: bool,
+    pub locked: bool,
+    pub locked_reason: Option<String>,
+    pub prunable: bool,
+    pub prunable_reason: Option<String>,
+    pub status: Option<RepoStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpOutcome {
     /// True when the operation stopped on conflicts (not an error — needs resolution).
     pub conflicted: bool,

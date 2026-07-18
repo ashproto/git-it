@@ -7,13 +7,15 @@
     const local = appState.refsByKind.local.find((r) => r.isHead);
     if (local) return local.name;
     if (appState.refsByKind.head.length > 0) return "detached HEAD";
+    if (appState.repoStatus?.head.detached) return "detached HEAD";
+    if (appState.repoStatus?.head.branch) return appState.repoStatus.head.branch;
     return "no branch";
   });
 
   const isDetached = $derived(
     !!appState.repo &&
     appState.refsByKind.local.find((r) => r.isHead) == null &&
-    appState.refsByKind.head.length > 0,
+    (appState.refsByKind.head.length > 0 || !!appState.repoStatus?.head.detached),
   );
 
   // ── Ahead / behind ───────────────────────────────────────────────────────────

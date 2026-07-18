@@ -59,7 +59,7 @@ pub fn run() {
             // Settings panel instead.
             #[cfg(target_os = "macos")]
             {
-                use tauri::menu::{Menu, MenuItem};
+                use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
                 use tauri::Emitter;
                 let menu = Menu::default(app.handle())?;
                 let settings = MenuItem::with_id(
@@ -76,11 +76,35 @@ pub fn run() {
                     true,
                     None::<&str>,
                 )?;
+                let new_repository = MenuItem::with_id(
+                    app.handle(),
+                    "new-repository",
+                    "New Repository…",
+                    true,
+                    Some("CmdOrCtrl+N"),
+                )?;
+                let open_repository = MenuItem::with_id(
+                    app.handle(),
+                    "open-repository",
+                    "Open Repository…",
+                    true,
+                    Some("CmdOrCtrl+O"),
+                )?;
+                let file_separator = PredefinedMenuItem::separator(app.handle())?;
                 let items = menu.items()?;
                 if let Some(app_menu) = items.first().and_then(|item| item.as_submenu()) {
                     // Insert just under "About" (index 0): Settings…, then Check for Updates…
                     app_menu.insert(&settings, 1)?;
                     app_menu.insert(&check_updates, 2)?;
+                }
+                if let Some(file_menu) = items
+                    .iter()
+                    .filter_map(|item| item.as_submenu())
+                    .find(|submenu| submenu.text().ok().as_deref() == Some("File"))
+                {
+                    file_menu.insert(&new_repository, 0)?;
+                    file_menu.insert(&open_repository, 1)?;
+                    file_menu.insert(&file_separator, 2)?;
                 }
                 app.set_menu(menu)?;
                 app.on_menu_event(|app_handle, event| match event.id().as_ref() {
@@ -89,6 +113,12 @@ pub fn run() {
                     }
                     "check-updates" => {
                         let _ = app_handle.emit("menu:check-updates", ());
+                    }
+                    "new-repository" => {
+                        let _ = app_handle.emit("menu:new-repository", ());
+                    }
+                    "open-repository" => {
+                        let _ = app_handle.emit("menu:open-repository", ());
                     }
                     _ => {}
                 });
@@ -112,9 +142,12 @@ pub fn run() {
             commands::check_prerequisites,
             commands::install_command_line_tools,
             commands::is_git_repo,
+            commands::initialize_repository,
             commands::load_commits,
             commands::load_graph,
             commands::list_refs,
+            commands::list_worktrees,
+            commands::remove_worktree,
             commands::repo_status,
             commands::checkout,
             commands::create_branch,
