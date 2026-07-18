@@ -41,14 +41,18 @@ import type {
   UpdateInfo,
   DownloadEvent,
   WorktreeInfo,
+  InitializeRepositoryResult,
 } from "./types";
 
-export async function pickRepoFolder(initial?: string): Promise<string | null> {
+export async function pickRepoFolder(
+  initial?: string,
+  title = "Select git repository root",
+): Promise<string | null> {
   const result = await open({
     directory: true,
     multiple: false,
     defaultPath: initial,
-    title: "Select git repository root",
+    title,
   });
   return typeof result === "string" ? result : null;
 }
@@ -57,6 +61,17 @@ export const api = {
   checkPrerequisites: () => invoke<PrerequisiteCheck>("check_prerequisites"),
   installCommandLineTools: () => invoke<string>("install_command_line_tools"),
   isGitRepo: (repo: string) => invoke<boolean>("is_git_repo", { repo }),
+  initializeRepository: (
+    parent: string,
+    folderName: string,
+    initialBranch: string,
+    allowNonEmpty = false,
+  ) => invoke<InitializeRepositoryResult>("initialize_repository", {
+    parent,
+    folderName,
+    initialBranch,
+    allowNonEmpty,
+  }),
   // ── auto-updater (desktop only) ──────────────────────────────────────────
   checkUpdateOnChannel: (channel: "stable" | "beta") =>
     invoke<UpdateInfo | null>("check_update_on_channel", { channel }),
@@ -71,6 +86,8 @@ export const api = {
     invoke<GraphCommit[]>("load_graph", { repo, count, skip }),
   listRefs: (repo: string) => invoke<Ref[]>("list_refs", { repo }),
   listWorktrees: (repo: string) => invoke<WorktreeInfo[]>("list_worktrees", { repo }),
+  removeWorktree: (repo: string, path: string) =>
+    invoke<string>("remove_worktree", { repo, path }),
   repoStatus: (repo: string) => invoke<RepoStatus>("repo_status", { repo }),
   checkout: (repo: string, target: string) => invoke<string>("checkout", { repo, target }),
   createBranch: (repo: string, name: string, startPoint: string) =>

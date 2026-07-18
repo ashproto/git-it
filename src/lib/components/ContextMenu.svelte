@@ -46,6 +46,8 @@
     {#each contextMenu.items as item, i (i)}
       {#if item.separator}
         <div class="sep" role="separator"></div>
+      {:else if item.detail}
+        <div class="detail" role="none">{item.label}</div>
       {:else if item.submenu}
         <div class="sub-wrap" class:flip={flipSub}>
           <button class="item has-sub" class:danger={item.danger} role="menuitem" disabled={item.disabled}>
@@ -123,6 +125,14 @@
     height: 1px;
     background: var(--border);
     margin: 4px 2px;
+  }
+  .detail {
+    max-width: 300px;
+    padding: 5px 10px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
   }
   .sub-wrap {
     position: relative;

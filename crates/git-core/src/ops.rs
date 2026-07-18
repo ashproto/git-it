@@ -686,6 +686,127 @@ fn remove_linked_worktree_for_branch(
     Ok(worktree.path)
 }
 
+fn validate_standalone_worktree_removal(worktree: &WorktreeInfo) -> Result<(), String> {
+    if worktree.is_current {
+        return Err(
+            "Cannot remove the current worktree. Open this repository from another worktree first."
+                .to_string(),
+        );
+    }
+    if worktree.is_main {
+        return Err("Cannot remove the repository's primary checkout.".to_string());
+    }
+    if worktree.bare || worktree.detached || worktree.branch.is_none() {
+        return Err(
+            "Cannot safely remove a detached or unborn worktree because its commits may not be referenced by a branch."
+                .to_string(),
+        );
+    }
+    if worktree.locked {
+        let detail = worktree
+            .locked_reason
+            .as_deref()
+            .map(|reason| format!(": {reason}"))
+            .unwrap_or_default();
+        return Err(format!(
+            "The worktree is locked{detail}. Unlock it before removing it."
+        ));
+    }
+    if worktree.prunable {
+        return Err(
+            "The worktree is stale or missing. Prune its Git metadata before removing it."
+                .to_string(),
+        );
+    }
+    let status = worktree.status.as_ref().ok_or_else(|| {
+        "Could not verify that the worktree is clean, so it was not removed.".to_string()
+    })?;
+    if status.staged > 0
+        || status.unstaged > 0
+        || status.untracked > 0
+        || status.conflicted > 0
+        || status.operation.is_some()
+    {
+        return Err(
+            "The worktree has uncommitted changes or an operation in progress. Commit, stash, or discard them before removing it."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Remove one clean linked worktree while preserving its branch and branch
+/// configuration. The path returned by Git's authoritative worktree listing is
+/// always used for deletion; the caller-provided path is only an identity key.
+pub fn remove_worktree(repo: &Path, requested_path: &str) -> Result<String, String> {
+    let initial_matches: Vec<WorktreeInfo> = list_worktrees(repo)?
+        .into_iter()
+        .filter(|worktree| {
+            same_existing_path(Path::new(&worktree.path), Path::new(requested_path))
+        })
+        .collect();
+    if initial_matches.len() != 1 {
+        return Err(
+            "The requested worktree is no longer registered. Refresh and try again."
+                .to_string(),
+        );
+    }
+    let initial = &initial_matches[0];
+    validate_standalone_worktree_removal(initial)?;
+
+    // Freeze HEAD before the authoritative second listing. This prevents a
+    // concurrent checkout, commit, reset, or merge from repurposing the target
+    // between validation and `git worktree remove`.
+    let _target_head_lock = acquire_worktree_head_lock(repo, Path::new(&initial.path))?;
+    let matches: Vec<WorktreeInfo> = list_worktrees(repo)?
+        .into_iter()
+        .filter(|worktree| {
+            same_existing_path(Path::new(&worktree.path), Path::new(requested_path))
+        })
+        .collect();
+    if matches.len() != 1 {
+        return Err(
+            "The requested worktree changed while removal was being prepared. Refresh and try again."
+                .to_string(),
+        );
+    }
+    let worktree = &matches[0];
+    validate_standalone_worktree_removal(worktree)?;
+
+    let authoritative = PathBuf::from(&worktree.path);
+    if !authoritative.is_absolute() {
+        return Err(
+            "Git returned a non-absolute worktree path; refusing to remove it.".to_string(),
+        );
+    }
+    // HEAD.lock does not cover marker-only operations such as `git bisect
+    // start`, so take one final status snapshot immediately before deletion.
+    let final_status = graph::repo_status(&authoritative).map_err(|_| {
+        "Could not reverify that the worktree is clean, so it was not removed.".to_string()
+    })?;
+    if final_status.staged > 0
+        || final_status.unstaged > 0
+        || final_status.untracked > 0
+        || final_status.conflicted > 0
+        || final_status.operation.is_some()
+    {
+        return Err(
+            "The worktree has uncommitted changes or an operation in progress. Commit, stash, or discard them before removing it."
+                .to_string(),
+        );
+    }
+
+    let mut remove = Command::new("git");
+    // Never pass --force: Git remains the final authority if the filesystem
+    // changes after our last snapshot.
+    remove
+        .current_dir(repo)
+        .args(["worktree", "remove", "--"])
+        .arg(&authoritative);
+    git_ops::run(&mut remove)?;
+    Ok(worktree.path.clone())
+}
+
 /// Switch to a branch, or check out a commit (detached HEAD). Git refuses if the
 /// working tree has conflicting local changes; that refusal surfaces as Err.
 pub fn checkout(repo: &Path, target: &str) -> Result<String, String> {
@@ -1121,6 +1242,71 @@ mod tests {
             .output()
             .unwrap();
         assert!(!config.status.success(), "deleted branch config must be removed");
+    }
+
+    #[test]
+    fn remove_worktree_preserves_its_branch_and_config() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("linked");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        r.git(&["config", "branch.feature.description", "keep me"]);
+        let canonical_wt = fs::canonicalize(&wt).unwrap();
+
+        let removed = remove_worktree(&r.path, wt.to_str().unwrap()).unwrap();
+
+        assert_eq!(Path::new(&removed), canonical_wt);
+        assert!(!wt.exists());
+        assert!(r.has_ref("refs/heads/feature"));
+        let description = Command::new("git")
+            .current_dir(&r.path)
+            .args(["config", "--get", "branch.feature.description"])
+            .output()
+            .unwrap();
+        assert!(description.status.success());
+        assert_eq!(String::from_utf8_lossy(&description.stdout).trim(), "keep me");
+    }
+
+    #[test]
+    fn remove_worktree_refuses_dirty_linked_checkout() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+        let wt = r.path.join("linked");
+        r.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+            "main",
+        ]);
+        fs::write(wt.join("untracked.txt"), "do not delete").unwrap();
+
+        let err = remove_worktree(&r.path, wt.to_str().unwrap()).unwrap_err();
+
+        assert!(err.contains("uncommitted changes"), "unexpected error: {err}");
+        assert!(wt.join("untracked.txt").exists());
+        assert!(r.has_ref("refs/heads/feature"));
+    }
+
+    #[test]
+    fn remove_worktree_never_removes_the_primary_checkout() {
+        let r = TempRepo::new();
+        r.commit("a.txt", "A");
+
+        let err = remove_worktree(&r.path, r.path.to_str().unwrap()).unwrap_err();
+
+        assert!(err.contains("current worktree") || err.contains("primary checkout"));
+        assert!(r.path.join("a.txt").exists());
     }
 
     #[test]

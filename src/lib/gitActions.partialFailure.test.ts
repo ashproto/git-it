@@ -76,6 +76,79 @@ afterEach(() => {
 });
 
 describe("partial branch-delete refresh", () => {
+  it("forgets a removed worktree path after a successful branch deletion", async () => {
+    mockRefreshApis(graphWithoutFeatureDecoration());
+    vi.mocked(api.listWorktrees).mockRejectedValue(new Error("worktree refresh failed"));
+    vi.spyOn(api, "deleteBranch").mockResolvedValue(undefined);
+    const forgetRepo = vi.spyOn(appState, "forgetRepo");
+
+    const ok = await gitActions.deleteBranch(
+      "feature/graph-view",
+      false,
+      false,
+      undefined,
+      undefined,
+      "/tmp/linked-feature",
+    );
+
+    expect(ok).toBe(true);
+    expect(forgetRepo).toHaveBeenCalledWith("/tmp/linked-feature");
+  });
+
+  it("forgets a removed worktree path when a later remote deletion fails", async () => {
+    mockRefreshApis(graphWithoutFeatureDecoration());
+    vi.spyOn(api, "deleteBranch").mockRejectedValue(
+      new Error("Deleted local branch, but remote delete failed"),
+    );
+    const forgetRepo = vi.spyOn(appState, "forgetRepo");
+
+    const ok = await gitActions.deleteBranch(
+      "feature/graph-view",
+      false,
+      true,
+      "origin",
+      "feature/graph-view",
+      "/tmp/linked-feature",
+    );
+
+    expect(ok).toBe(false);
+    expect(forgetRepo).toHaveBeenCalledWith("/tmp/linked-feature");
+  });
+
+  it("keeps a worktree path when branch deletion fails before removal", async () => {
+    mockRefreshApis(graphWithoutFeatureDecoration());
+    vi.mocked(api.listWorktrees).mockResolvedValue([
+      {
+        path: "/tmp/linked-feature",
+        head: SAMPLE_GRAPH[2].sha,
+        branch: "feature/graph-view",
+        detached: false,
+        bare: false,
+        locked: false,
+        lockedReason: null,
+        prunable: false,
+        prunableReason: null,
+        isCurrent: false,
+        isMain: false,
+        status: repoStatus,
+      },
+    ]);
+    vi.spyOn(api, "deleteBranch").mockRejectedValue(new Error("worktree is dirty"));
+    const forgetRepo = vi.spyOn(appState, "forgetRepo");
+
+    const ok = await gitActions.deleteBranch(
+      "feature/graph-view",
+      false,
+      false,
+      undefined,
+      undefined,
+      "/tmp/linked-feature",
+    );
+
+    expect(ok).toBe(false);
+    expect(forgetRepo).not.toHaveBeenCalled();
+  });
+
   it("removes stale graph decorations without discarding queued edits", async () => {
     const refreshedGraph = graphWithoutFeatureDecoration();
     mockRefreshApis(refreshedGraph);

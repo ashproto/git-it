@@ -9,7 +9,11 @@
   import PrereqBanner from "$lib/components/PrereqBanner.svelte";
   import SettingsPanel from "$lib/components/SettingsPanel.svelte";
   import { settingsPanel } from "$lib/settingsPanel.svelte";
-  import { startupUpdateCheck, manualCheckForUpdates } from "$lib/updater.svelte";
+  import {
+    startupUpdateCheck,
+    manualCheckForUpdates,
+    updateCheckOnActivate,
+  } from "$lib/updater.svelte";
   import ManageRepoModal from "$lib/components/ManageRepoModal.svelte";
   import { manageRepo } from "$lib/manageRepo.svelte";
   import BranchColorDialog from "$lib/components/BranchColorDialog.svelte";
@@ -37,7 +41,8 @@
   import { graphView } from "$lib/graphView.svelte";
   import { dialogs } from "$lib/dialogs.svelte";
   import { anyOverlayOpen } from "$lib/overlays";
-  import { pickRepoFolder, api } from "$lib/api";
+  import { api } from "$lib/api";
+  import { createRepositoryFlow, openRepositoryFlow } from "$lib/repositoryFlows";
   import { onWindowDragMouseDown } from "$lib/tauriDrag";
   import { onMount, untrack, tick } from "svelte";
   import { slide } from "svelte/transition";
@@ -48,7 +53,9 @@
   import { SAMPLE_GRAPH } from "$lib/graph/sample";
 
   const currentBranch = $derived(
-    appState.refsByKind.local.find((r) => r.isHead)?.name ?? null,
+    appState.refsByKind.local.find((r) => r.isHead)?.name ??
+      appState.repoStatus?.head.branch ??
+      null,
   );
   // The Fetch button swaps to a spinner + "Fetching…" while its run() op is in
   // flight (run() labels the op "Fetch"). Feedback lands where the user clicked.
@@ -142,18 +149,7 @@
 
   // ── Empty-state open flow ─────────────────────────────────────────────────────
   async function openRepoFlow() {
-    const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-    if (!inTauri) {
-      appState.status = "Opening a repo needs the desktop app.";
-      return;
-    }
-    const p = await pickRepoFolder(appState.repo || undefined);
-    if (!p) return;
-    if (!(await api.isGitRepo(p))) {
-      appState.status = `${p} is not a git repo.`;
-      return;
-    }
-    appState.openRepo(p);
+    await openRepositoryFlow(appState.repo || undefined);
   }
 
   // Collapse state of the two timeline panels, lifted here so the layout can give the
@@ -282,6 +278,8 @@
       import("@tauri-apps/api/event").then(async ({ listen }) => {
         unlistenMenu.push(await listen("menu:check-updates", () => manualCheckForUpdates()));
         unlistenMenu.push(await listen("menu:open-settings", () => settingsPanel.openPanel()));
+        unlistenMenu.push(await listen("menu:new-repository", () => createRepositoryFlow()));
+        unlistenMenu.push(await listen("menu:open-repository", () => openRepoFlow()));
       });
     }
     // Reload the graph + working copy + status when the window regains focus /
@@ -289,13 +287,19 @@
     // Complements the filesystem watcher (which handles changes while the window
     // is already active). refreshActiveRepo no-ops outside Tauri / with no repo.
     const onActivate = () => {
-      if (document.visibilityState === "visible") refreshActiveRepo();
+      if (document.visibilityState === "visible") {
+        refreshActiveRepo();
+        updateCheckOnActivate();
+      }
     };
+    const suppressNativeContextMenu = (event: MouseEvent) => event.preventDefault();
     window.addEventListener("focus", onActivate);
     document.addEventListener("visibilitychange", onActivate);
+    window.addEventListener("contextmenu", suppressNativeContextMenu);
     return () => {
       window.removeEventListener("focus", onActivate);
       document.removeEventListener("visibilitychange", onActivate);
+      window.removeEventListener("contextmenu", suppressNativeContextMenu);
       unlistenMenu.forEach((u) => u());
     };
   });
@@ -544,8 +548,11 @@
         {#if isEmpty}
           <!-- Empty state: no repos open yet -->
           <div class="empty-state main-col">
-            <p class="empty-prompt">Open a repository to get started</p>
-            <button class="open-btn" onclick={openRepoFlow}>Open Repository…</button>
+            <p class="empty-prompt">Open or create a repository to get started</p>
+            <div class="empty-actions">
+              <button class="open-btn" onclick={() => createRepositoryFlow()}>Create Repository…</button>
+              <button class="open-btn" onclick={openRepoFlow}>Open Repository…</button>
+            </div>
           </div>
         {:else}
           <div class="main-col">
@@ -1095,6 +1102,10 @@
     margin: 0;
     font-size: 15px;
     color: var(--text-muted);
+  }
+  .empty-actions {
+    display: flex;
+    gap: 9px;
   }
   .open-btn {
     padding: 8px 20px;

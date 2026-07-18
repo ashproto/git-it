@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
-  import { pickRepoFolder, api } from "../api";
+  import { api } from "../api";
+  import { createRepositoryFlow, openRepositoryFlow } from "../repositoryFlows";
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -19,17 +20,7 @@
 
   // ── Shared open flow ─────────────────────────────────────────────────────────
   async function openRepoFlow() {
-    if (!isTauri()) {
-      appState.status = "Opening a repo needs the desktop app.";
-      return;
-    }
-    const p = await pickRepoFolder(appState.repo || undefined);
-    if (!p) return;
-    if (!(await api.isGitRepo(p))) {
-      appState.status = `${p} is not a git repo.`;
-      return;
-    }
-    appState.openRepo(p);
+    await openRepositoryFlow(appState.repo || undefined);
   }
 
   async function openRecentRepo(path: string) {
@@ -76,6 +67,11 @@
       </div>
     {/each}
   {/if}
+
+  <button class="action-row" onclick={() => createRepositoryFlow()} title="Create a new repository">
+    <span class="action-icon" aria-hidden="true">+</span>
+    <span>New Repository…</span>
+  </button>
 
   <!-- Open… row -->
   <button class="action-row" onclick={openRepoFlow} title="Open a repository folder">

@@ -12,7 +12,11 @@
   import WorktreePanel from "./WorktreePanel.svelte";
   import { githubState } from "../githubState.svelte";
   import { prForBranch } from "../github/branchPr";
-  import { worktreeForBranch } from "../worktrees";
+  import {
+    linkedWorktreeForBranch,
+    linkedWorktrees,
+    worktreeForBranch,
+  } from "../worktrees";
 
   const refs = $derived(appState.refsByKind);
   // Folderize slashed ref names (feature/x → feature ▸ x), Fork/SourceTree-style.
@@ -23,6 +27,12 @@
   function worktreeFor(branch: string) {
     return worktreeForBranch(appState.worktrees, branch);
   }
+
+  function linkedWorktreeFor(branch: string) {
+    return linkedWorktreeForBranch(appState.worktrees, branch);
+  }
+
+  const linkedWorktreeEntries = $derived(linkedWorktrees(appState.worktrees));
 
   // Uncommitted-change count for the pinned "Working Copy" entry — mirrors the
   // count used by the synthetic graph row.
@@ -301,14 +311,14 @@
         <span class="rn">HEAD detached @ {refs.head[0].sha.slice(0, 7)}</span>
       </button>
     {/if}
-    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} selectedKey={selectedRefKey} onSelect={selectRef} {worktreeFor} />
+    <RefTree nodes={localTree} kind="local" onJump={jumpTo} onContext={onRefContext} colorOf={(ref) => appState.colorForRef(ref.name, ref.sha)} onCheckout={onRefCheckout} selectedKey={selectedRefKey} onSelect={selectRef} worktreeFor={linkedWorktreeFor} />
     {#if refs.local.length === 0}<p class="none">No local branches</p>{/if}
   </CollapsiblePanel>
 
-  <CollapsiblePanel title="Worktrees">
-    {#snippet headerActions()}<span class="ref-count">{appState.worktrees.length}</span>{/snippet}
-    <WorktreePanel worktrees={appState.worktrees} />
-    {#if appState.worktrees.length === 0}<p class="none">No worktrees</p>{/if}
+  <CollapsiblePanel title="Linked Worktrees">
+    {#snippet headerActions()}<span class="ref-count">{linkedWorktreeEntries.length}</span>{/snippet}
+    <WorktreePanel worktrees={linkedWorktreeEntries} refs={appState.refsDetailed} onDeleteBranch={confirmDeleteBranch} />
+    {#if linkedWorktreeEntries.length === 0}<p class="none">No linked worktrees</p>{/if}
   </CollapsiblePanel>
 
   <CollapsiblePanel title="Remotes">

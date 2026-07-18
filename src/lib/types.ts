@@ -113,6 +113,12 @@ export type WorktreeInfo = {
   status: RepoStatus | null;
 };
 
+export type InitializeRepositoryResult = {
+  path: string;
+  initialized: boolean;
+  existingEntries: number;
+};
+
 export type OpOutcome = {
   conflicted: boolean;
   files: string[];
