@@ -111,6 +111,14 @@ pub struct RepoStatus {
     pub operation: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InitializeRepositoryResult {
+    pub path: String,
+    pub initialized: bool,
+    pub existing_entries: usize,
+}
+
 /// One entry from `git worktree list --porcelain`, enriched with status for
 /// worktrees that still exist on disk. Paths remain the authoritative strings
 /// emitted by Git so a later destructive request can be revalidated exactly.

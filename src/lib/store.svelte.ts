@@ -1409,28 +1409,33 @@ function makeState() {
   let autoUpdateCheckTouched = false;
 
   const ucHydrate = getStore();
-  if (ucHydrate) {
-    ucHydrate
+  const updateChannelHydration: Promise<void> = ucHydrate
+    ? ucHydrate
       .then((store) => store.get<string>(UPDATE_CHANNEL_STORE_KEY))
       .then((saved) => {
         if ((saved === "stable" || saved === "beta") && !updateChannelTouched) {
           updateChannel = saved;
         }
       })
-      .catch((e) => console.warn("[gte] could not load updateChannel setting", e));
-  }
+      .catch((e) => console.warn("[gte] could not load updateChannel setting", e))
+    : Promise.resolve();
 
   const aucHydrate = getStore();
-  if (aucHydrate) {
-    aucHydrate
+  const autoUpdateCheckHydration: Promise<void> = aucHydrate
+    ? aucHydrate
       .then((store) => store.get<boolean>(AUTOUPDATE_CHECK_STORE_KEY))
       .then((saved) => {
         if (saved !== null && saved !== undefined && !autoUpdateCheckTouched) {
           autoUpdateCheck = !!saved;
         }
       })
-      .catch((e) => console.warn("[gte] could not load autoUpdateCheck setting", e));
-  }
+      .catch((e) => console.warn("[gte] could not load autoUpdateCheck setting", e))
+    : Promise.resolve();
+
+  const updateSettingsHydration = Promise.all([
+    updateChannelHydration,
+    autoUpdateCheckHydration,
+  ]).then(() => undefined);
 
   function persistUpdateChannel() {
     const snapshot = updateChannel;
@@ -2199,6 +2204,12 @@ function makeState() {
       autoUpdateCheck = v;
       persistAutoUpdateCheck();
     },
+    /** Startup checks must wait for both persisted updater preferences. Without
+     * this barrier, a beta install can briefly check the stable feed before the
+     * async Tauri store replaces the in-memory defaults. */
+    waitForUpdateSettingsHydration(): Promise<void> {
+      return updateSettingsHydration;
+    },
     // Reads the *persisted* channel (not the in-memory default), so the updater's
     // first-run seed can tell "user has never chosen" from "user chose stable".
     // Returns null when no choice has been stored yet.
@@ -2358,6 +2369,25 @@ function makeState() {
       openReposTouched = true;
       persistStringList(OPENREPOS_STORE_KEY, OPENREPOS_KEY, openRepos);
       if (repo === path) this.repo = openRepos[idx] ?? openRepos[idx - 1] ?? openRepos[0] ?? "";
+    },
+
+    // Remove a path that no longer exists (for example, a deleted linked
+    // worktree) from both open tabs and recents so it cannot reopen as stale.
+    forgetRepo(path: string) {
+      if (!path) return;
+      const wasOpen = openRepos.includes(path);
+      const wasRecent = recentRepos.includes(path);
+      if (wasOpen) {
+        openRepos = openRepos.filter((entry) => entry !== path);
+        openReposTouched = true;
+        persistStringList(OPENREPOS_STORE_KEY, OPENREPOS_KEY, openRepos);
+      }
+      if (wasRecent) {
+        recentRepos = recentRepos.filter((entry) => entry !== path);
+        recentReposTouched = true;
+        persistStringList(RECENTREPOS_STORE_KEY, RECENTREPOS_KEY, recentRepos);
+      }
+      if (repo === path) this.repo = openRepos[0] ?? "";
     },
   };
 }

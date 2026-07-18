@@ -714,6 +714,14 @@ export const gitActions = {
     run(`Delete branch ${name}`, () =>
       api.deleteBranch(appState.repo, name, force, deleteRemote, remote, remoteBranch, worktreePath),
     ),
+  removeWorktree: async (path: string) => {
+    let removedPath: string | null = null;
+    const ok = await run("Remove worktree", async () => {
+      removedPath = await api.removeWorktree(appState.repo, path);
+    });
+    if (ok && removedPath) appState.forgetRepo(removedPath);
+    return ok;
+  },
   deleteRemoteBranch: (remote: string, branch: string) =>
     run(`Delete remote branch ${remote}/${branch}`, () =>
       api.deleteRemoteBranch(appState.repo, remote, branch),

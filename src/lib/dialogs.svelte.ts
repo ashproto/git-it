@@ -11,6 +11,14 @@ type BranchDeleteResult = {
   removeWorktree: boolean;
 };
 
+export type NewRepositoryResult = {
+  name: string;
+  initialBranch: string;
+  createRemote: boolean;
+  isPrivate: boolean;
+  description: string;
+};
+
 type DialogState =
   | { kind: "none" }
   | {
@@ -34,6 +42,7 @@ type DialogState =
       kind: "confirm";
       title: string;
       message: string;
+      messageFormat: "text" | "markdown";
       confirmLabel: string;
       danger: boolean;
       resolve: (v: boolean) => void;
@@ -67,6 +76,17 @@ type DialogState =
       resolve: (v: BranchDeleteResult) => void;
     }
   | {
+      kind: "newRepository";
+      title: string;
+      parent: string;
+      name: string;
+      initialBranch: string;
+      createRemote: boolean;
+      isPrivate: boolean;
+      description: string;
+      resolve: (v: NewRepositoryResult | null) => void;
+    }
+  | {
       kind: "createRepo";
       title: string;
       name: string;
@@ -96,6 +116,7 @@ function makeDialogs() {
     else if (state.kind === "destructive") state.resolve({ confirmed: false, backup: false });
     else if (state.kind === "credentials") state.resolve(null);
     else if (state.kind === "branchDelete") state.resolve({ confirmed: false, force: false, deleteRemote: false, removeWorktree: false });
+    else if (state.kind === "newRepository") state.resolve(null);
     else if (state.kind === "createRepo") state.resolve({ confirmed: false, name: "", isPrivate: true, description: "" });
     else if (state.kind === "createPr") state.resolve(null);
     else if (state.kind === "alert") state.resolve();
@@ -128,6 +149,7 @@ function makeDialogs() {
     confirm(opts: {
       title: string;
       message: string;
+      messageFormat?: "text" | "markdown";
       confirmLabel?: string;
       danger?: boolean;
     }): Promise<boolean> {
@@ -137,6 +159,7 @@ function makeDialogs() {
           kind: "confirm",
           title: opts.title,
           message: opts.message,
+          messageFormat: opts.messageFormat ?? "text",
           confirmLabel: opts.confirmLabel ?? "Confirm",
           danger: !!opts.danger,
           resolve,
@@ -246,6 +269,35 @@ function makeDialogs() {
         // the explicit opt-in or the clean/linked-worktree safety gate.
         if (confirmed && worktree && (!removeWorktree || worktreeRemovalBlocker(worktree))) return;
         state.resolve({ confirmed, force, deleteRemote, removeWorktree });
+        state = { kind: "none" };
+      }
+    },
+    // ── New local repository dialog ──────────────────────────────────────────
+    newRepository(opts: { parent: string }): Promise<NewRepositoryResult | null> {
+      settlePending();
+      return new Promise((resolve) => {
+        state = {
+          kind: "newRepository",
+          title: "Create new repository",
+          parent: opts.parent,
+          name: "",
+          initialBranch: "main",
+          createRemote: false,
+          isPrivate: true,
+          description: "",
+          resolve,
+        };
+      });
+    },
+    setNewRepositoryName(v: string) { if (state.kind === "newRepository") state = { ...state, name: v }; },
+    setNewRepositoryBranch(v: string) { if (state.kind === "newRepository") state = { ...state, initialBranch: v }; },
+    setNewRepositoryRemote(v: boolean) { if (state.kind === "newRepository") state = { ...state, createRemote: v }; },
+    setNewRepositoryPrivate(v: boolean) { if (state.kind === "newRepository") state = { ...state, isPrivate: v }; },
+    setNewRepositoryDescription(v: string) { if (state.kind === "newRepository") state = { ...state, description: v }; },
+    resolveNewRepository(accepted: boolean) {
+      if (state.kind === "newRepository") {
+        const { name, initialBranch, createRemote, isPrivate, description } = state;
+        state.resolve(accepted ? { name, initialBranch, createRemote, isPrivate, description } : null);
         state = { kind: "none" };
       }
     },

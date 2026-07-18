@@ -1,14 +1,31 @@
 <script lang="ts">
-  import type { WorktreeInfo } from "../types";
-  import { worktreeStatusLabel } from "../worktrees";
+  import { openPath } from "@tauri-apps/plugin-opener";
+  import type { Ref, WorktreeInfo } from "../types";
+  import {
+    worktreeRemovalBlocker,
+    worktreeStatusDetail,
+    worktreeStatusLabel,
+    worktreeTrackingDetail,
+  } from "../worktrees";
+  import { appState } from "../store.svelte";
+  import { contextMenu, type MenuItem } from "../contextMenu.svelte";
+  import { dialogs } from "../dialogs.svelte";
+  import { gitActions } from "../gitActions";
   import WorktreeIcon from "./WorktreeIcon.svelte";
 
-  let { worktrees }: { worktrees: WorktreeInfo[] } = $props();
+  let {
+    worktrees,
+    refs = [],
+    onDeleteBranch,
+  }: {
+    worktrees: WorktreeInfo[];
+    refs?: Ref[];
+    onDeleteBranch?: (branch: string) => void;
+  } = $props();
 
   const ordered = $derived(
-    [...worktrees].sort((a, b) =>
+    worktrees.filter((worktree) => !worktree.isMain).sort((a, b) =>
       Number(b.isCurrent) - Number(a.isCurrent) ||
-      Number(b.isMain) - Number(a.isMain) ||
       (a.branch ?? a.path).localeCompare(b.branch ?? b.path),
     ),
   );
@@ -19,6 +36,67 @@
     if (worktree.bare) return "Bare repository";
     return "Unborn worktree";
   }
+
+  function rowState(worktree: WorktreeInfo): string | null {
+    const status = worktreeStatusLabel(worktree);
+    const tracking = worktreeTrackingDetail(worktree, refs);
+    const compactTracking = tracking?.match(/^([↑↓]\d+(?: to (?:push|pull))?)(?: · ([↑↓]\d+).*)?$/);
+    const pushPull = compactTracking
+      ? [compactTracking[1]?.split(" ")[0], compactTracking[2]].filter(Boolean).join(" ")
+      : null;
+    return [status, pushPull].filter(Boolean).join(" · ") || null;
+  }
+
+  function openInGitIt(worktree: WorktreeInfo, changes = false) {
+    appState.openRepo(worktree.path);
+    if (changes) appState.setActiveView("changes");
+  }
+
+  async function confirmRemove(worktree: WorktreeInfo) {
+    const branch = worktree.branch ? ` The branch “${worktree.branch}” will be kept.` : "";
+    const confirmed = await dialogs.confirm({
+      title: `Remove worktree ${label(worktree)}?`,
+      message: `Remove the linked worktree at ${worktree.path}? Its folder, including ignored files, will be deleted.${branch}`,
+      confirmLabel: "Remove Worktree",
+      danger: true,
+    });
+    if (confirmed) await gitActions.removeWorktree(worktree.path);
+  }
+
+  function openContextMenu(event: MouseEvent, worktree: WorktreeInfo) {
+    event.preventDefault();
+    event.stopPropagation();
+    const blocker = worktreeRemovalBlocker(worktree);
+    const tracking = worktreeTrackingDetail(worktree, refs);
+    const items: MenuItem[] = [
+      { label: label(worktree), detail: true },
+      { label: worktreeStatusDetail(worktree), detail: true },
+    ];
+    if (tracking) items.push({ label: tracking, detail: true });
+    items.push(
+      { separator: true },
+      { label: "Open Worktree in Git It", action: () => openInGitIt(worktree) },
+      { label: "View Local Changes", action: () => openInGitIt(worktree, true) },
+      { label: "Open Worktree Folder", action: () => void openPath(worktree.path) },
+      { separator: true },
+    );
+    if (blocker) items.push({ label: blocker, detail: true });
+    items.push({
+      label: "Remove Worktree…",
+      danger: true,
+      disabled: !!blocker,
+      action: () => void confirmRemove(worktree),
+    });
+    if (worktree.branch && onDeleteBranch) {
+      items.push({
+        label: "Remove Worktree & Delete Branch…",
+        danger: true,
+        disabled: !!blocker,
+        action: () => onDeleteBranch(worktree.branch!),
+      });
+    }
+    contextMenu.openAt(event.clientX, event.clientY, items);
+  }
 </script>
 
 <div class="worktrees" role="list" aria-label="Repository worktrees">
@@ -27,15 +105,16 @@
       class="worktree"
       class:current={worktree.isCurrent}
       role="listitem"
-      title={`${label(worktree)} — ${worktree.path}`}
+      title={`${label(worktree)} — ${worktree.path}\n${worktreeStatusDetail(worktree)}${worktreeTrackingDetail(worktree, refs) ? `\n${worktreeTrackingDetail(worktree, refs)}` : ""}`}
+      oncontextmenu={(event) => openContextMenu(event, worktree)}
     >
       <span class="icon" aria-hidden="true"><WorktreeIcon size={14} /></span>
       <span class="identity">
         <span class="branch">{label(worktree)}</span>
         <span class="path">{worktree.path}</span>
       </span>
-      {#if worktreeStatusLabel(worktree)}
-        <span class="state">{worktreeStatusLabel(worktree)}</span>
+      {#if rowState(worktree)}
+        <span class="state">{rowState(worktree)}</span>
       {/if}
     </div>
   {/each}

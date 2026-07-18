@@ -1,12 +1,14 @@
 <script lang="ts">
   import { dialogs } from "../dialogs.svelte";
   import { worktreeRemovalBlocker } from "../worktrees";
+  import Markdown from "./github/Markdown.svelte";
   import WorktreeIcon from "./WorktreeIcon.svelte";
 
   let inputValue = $state("");
   let inputEl = $state<HTMLInputElement | undefined>();
   let credUsernameEl = $state<HTMLInputElement | undefined>();
   let prTitleEl = $state<HTMLInputElement | undefined>();
+  let newRepositoryNameEl = $state<HTMLInputElement | undefined>();
   let okAlertEl = $state<HTMLButtonElement | undefined>();
   let branchDeleteCancelEl = $state<HTMLButtonElement | undefined>();
   let lastFocusedDialogResolve: unknown;
@@ -34,6 +36,8 @@
     } else if (s.kind === "createPr") {
       prTitleEl?.focus();
       prTitleEl?.select();
+    } else if (s.kind === "newRepository") {
+      newRepositoryNameEl?.focus();
     } else if (s.kind === "alert") {
       okAlertEl?.focus();
     } else if (s.kind === "branchDelete") {
@@ -75,6 +79,22 @@
     } else if (e.key === "Escape") {
       e.preventDefault();
       dialogs.resolveCreateRepo(false);
+    }
+  }
+
+  function handleNewRepositoryKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (
+        dialogs.state.kind === "newRepository" &&
+        dialogs.state.name.trim() &&
+        dialogs.state.initialBranch.trim()
+      ) {
+        dialogs.resolveNewRepository(true);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      dialogs.resolveNewRepository(false);
     }
   }
 
@@ -157,7 +177,13 @@
   >
     <div class="dialog" role="dialog" aria-modal="true" aria-label={dialogs.state.title}>
       <h3>{dialogs.state.title}</h3>
-      <p class="msg">{dialogs.state.message}</p>
+      {#if dialogs.state.messageFormat === "markdown"}
+        <div class="release-notes" data-testid="release-notes">
+          <Markdown src={dialogs.state.message} />
+        </div>
+      {:else}
+        <p class="msg">{dialogs.state.message}</p>
+      {/if}
       <div class="actions">
         <button type="button" onclick={() => dialogs.resolveConfirm(false)}>Cancel</button>
         <button
@@ -271,6 +297,83 @@
           onclick={() => dialogs.resolveBranchDelete(true)}
         >
           {dialogs.state.worktree ? "Remove worktree & delete branch" : "Delete"}
+        </button>
+      </div>
+    </div>
+  </div>
+{:else if dialogs.state.kind === "newRepository"}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="overlay"
+    onpointerdown={(e) => {
+      if (e.target === e.currentTarget) dialogs.resolveNewRepository(false);
+    }}
+    onkeydown={handleNewRepositoryKey}
+  >
+    <div class="dialog" role="dialog" aria-modal="true" aria-label={dialogs.state.title}>
+      <h3>{dialogs.state.title}</h3>
+      <p class="msg muted">Location</p>
+      <p class="location" title={dialogs.state.parent}>{dialogs.state.parent}</p>
+      <label class="lbl" for="new-repository-name">Repository name</label>
+      <input
+        id="new-repository-name"
+        bind:this={newRepositoryNameEl}
+        value={dialogs.state.name}
+        placeholder="my-project"
+        oninput={(e) => dialogs.setNewRepositoryName((e.currentTarget as HTMLInputElement).value)}
+      />
+      <label class="lbl" for="new-repository-branch">Initial branch</label>
+      <input
+        id="new-repository-branch"
+        value={dialogs.state.initialBranch}
+        oninput={(e) => dialogs.setNewRepositoryBranch((e.currentTarget as HTMLInputElement).value)}
+      />
+      <label class="check-row remote-choice">
+        <input
+          type="checkbox"
+          checked={dialogs.state.createRemote}
+          onchange={(e) => dialogs.setNewRepositoryRemote((e.currentTarget as HTMLInputElement).checked)}
+        />
+        Also create and connect a GitHub repository
+      </label>
+      {#if dialogs.state.createRemote}
+        <div class="visibility-row" role="radiogroup" aria-label="GitHub visibility">
+          <label class="radio-opt">
+            <input
+              type="radio"
+              name="new-repository-visibility"
+              checked={dialogs.state.isPrivate}
+              onchange={() => dialogs.setNewRepositoryPrivate(true)}
+            />
+            Private
+          </label>
+          <label class="radio-opt">
+            <input
+              type="radio"
+              name="new-repository-visibility"
+              checked={!dialogs.state.isPrivate}
+              onchange={() => dialogs.setNewRepositoryPrivate(false)}
+            />
+            Public
+          </label>
+        </div>
+        <label class="lbl" for="new-repository-description">GitHub description</label>
+        <input
+          id="new-repository-description"
+          value={dialogs.state.description}
+          placeholder="Description (optional)"
+          oninput={(e) => dialogs.setNewRepositoryDescription((e.currentTarget as HTMLInputElement).value)}
+        />
+      {/if}
+      <div class="actions">
+        <button type="button" onclick={() => dialogs.resolveNewRepository(false)}>Cancel</button>
+        <button
+          type="button"
+          class="primary"
+          disabled={!dialogs.state.name.trim() || !dialogs.state.initialBranch.trim()}
+          onclick={() => dialogs.resolveNewRepository(true)}
+        >
+          Create Repository
         </button>
       </div>
     </div>
@@ -497,6 +600,41 @@
     color: var(--text-muted);
     font-size: 12px;
     margin: 0 0 8px;
+  }
+  .release-notes {
+    max-height: min(58vh, 440px);
+    margin: 0 0 14px;
+    padding-right: 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .location {
+    max-width: 430px;
+    margin: -4px 0 14px;
+    padding: 7px 9px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--btn-bg);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .remote-choice {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0 0 14px;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .remote-choice input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    padding: 0;
   }
   /* Raw git/tool error text: preserve line breaks, wrap long paths, and cap height so a
      verbose stderr scrolls instead of growing the dialog off-screen. */

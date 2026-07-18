@@ -7,7 +7,12 @@ use git_core::ops_remote;
 use git_core::ops_rewrite;
 use git_core::ops_worktree;
 use git_core::rewrite;
-use git_core::types::{BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RemoteInfo, RemoteOutcome, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile, WorktreeInfo};
+use git_core::types::{
+    BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, InitializeRepositoryResult,
+    OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RemoteInfo,
+    RemoteOutcome, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile,
+    WorktreeInfo,
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::ipc::Channel;
@@ -56,6 +61,21 @@ pub fn install_command_line_tools() -> Result<String, String> {
 #[tauri::command]
 pub fn is_git_repo(repo: String) -> bool {
     git_ops::is_git_repo(&PathBuf::from(repo))
+}
+
+#[tauri::command(async)]
+pub fn initialize_repository(
+    parent: String,
+    folder_name: String,
+    initial_branch: String,
+    allow_non_empty: bool,
+) -> Result<InitializeRepositoryResult, String> {
+    git_ops::initialize_repository(
+        &PathBuf::from(parent),
+        &folder_name,
+        &initial_branch,
+        allow_non_empty,
+    )
 }
 
 #[tauri::command]
@@ -162,6 +182,11 @@ pub fn list_refs(repo: String) -> Result<Vec<Ref>, String> {
 #[tauri::command(async)]
 pub fn list_worktrees(repo: String) -> Result<Vec<WorktreeInfo>, String> {
     ops::list_worktrees(&PathBuf::from(repo))
+}
+
+#[tauri::command(async)]
+pub fn remove_worktree(repo: String, path: String) -> Result<String, String> {
+    ops::remove_worktree(&PathBuf::from(repo), &path)
 }
 
 #[tauri::command]

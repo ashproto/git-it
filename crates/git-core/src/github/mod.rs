@@ -955,6 +955,15 @@ pub fn issue_create(repo: &Path, title: &str, body: &str) -> Result<String, Gith
     Ok(out.trim().to_string())
 }
 
+fn has_committed_head(repo: &Path) -> Result<bool, GithubError> {
+    let head = Command::new("git")
+        .current_dir(repo)
+        .args(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+        .output()
+        .map_err(|e| GithubError::Other(format!("could not inspect HEAD: {e}")))?;
+    Ok(head.status.success())
+}
+
 /// Create a GitHub repo from this local repo, wire it as `origin`, and push the
 /// current branch (setting upstream). TWO steps, deliberately not gh's `--push`:
 /// (1) `gh repo create <name> --source=<repo> --private|--public
@@ -996,6 +1005,18 @@ pub fn create_repo(
     }
     // Step 1 — create the repo + add `origin` (gh API token; reliable).
     let created = run_gh(&args, None)?;
+
+    // A freshly initialized repository has an unborn HEAD. The remote and
+    // origin are already fully created in that state, but there is no ref Git
+    // can push yet (`src refspec HEAD does not match any`). Treat that as a
+    // successful empty-repository setup and let the first normal push establish
+    // the upstream after the user creates a commit.
+    if !has_committed_head(repo)? {
+        return Ok(format!(
+            "{}\nRemote added. Create the first commit to push this repository.",
+            created.trim()
+        ));
+    }
 
     // Step 2 — push the current branch + set upstream. The empty `credential.helper=`
     // resets any inherited (possibly broken) global helpers; the second entry forces
@@ -1667,6 +1688,8 @@ pub fn runs(repo: &Path, limit: u32) -> Result<Vec<GhRun>, GithubError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn merge_flag_maps_known_methods() {
@@ -1674,6 +1697,36 @@ mod tests {
         assert_eq!(merge_flag("squash"), Some("--squash"));
         assert_eq!(merge_flag("rebase"), Some("--rebase"));
         assert_eq!(merge_flag("bogus"), None);
+    }
+
+    #[test]
+    fn committed_head_detection_distinguishes_an_empty_repository() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "git-it-github-head-test-{}-{stamp}",
+            std::process::id()
+        ));
+        fs::create_dir(&path).unwrap();
+        let run_git = |args: &[&str]| {
+            let output = Command::new("git")
+                .current_dir(&path)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        };
+        run_git(&["init", "-q", "--initial-branch=main"]);
+        assert!(!has_committed_head(&path).unwrap());
+        run_git(&["config", "user.name", "Test"]);
+        run_git(&["config", "user.email", "test@example.com"]);
+        fs::write(path.join("a.txt"), "a").unwrap();
+        run_git(&["add", "a.txt"]);
+        run_git(&["commit", "-q", "-m", "initial"]);
+        assert!(has_committed_head(&path).unwrap());
+        let _ = fs::remove_dir_all(path);
     }
 
     #[test]

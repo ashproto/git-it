@@ -4,6 +4,7 @@ export type MenuItem = {
   action?: () => void;
   danger?: boolean;
   disabled?: boolean;
+  detail?: boolean;
   separator?: boolean;
   submenu?: MenuItem[];
 };
