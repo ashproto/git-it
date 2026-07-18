@@ -703,17 +703,38 @@ export const gitActions = {
     run(`Create branch ${name}`, () => api.createBranch(appState.repo, name, startPoint)),
   renameBranch: (oldName: string, newName: string) =>
     run(`Rename ${oldName} → ${newName}`, () => api.renameBranch(appState.repo, oldName, newName)),
-  deleteBranch: (
+  deleteBranch: async (
     name: string,
     force: boolean,
     deleteRemote = false,
     remote?: string,
     remoteBranch?: string,
     worktreePath?: string,
-  ) =>
-    run(`Delete branch ${name}`, () =>
-      api.deleteBranch(appState.repo, name, force, deleteRemote, remote, remoteBranch, worktreePath),
-    ),
+  ) => {
+    const repo = appState.repo;
+    const ok = await run(`Delete branch ${name}`, () =>
+      api.deleteBranch(repo, name, force, deleteRemote, remote, remoteBranch, worktreePath),
+    );
+    if (worktreePath && repo && isTauri()) {
+      if (ok) {
+        // Backend success proves the requested linked worktree was removed.
+        appState.forgetRepo(worktreePath);
+      } else {
+        try {
+          // The backend removes the linked worktree before a requested remote
+          // delete. Reconcile after an error so that partial success clears a
+          // stale tab, without forgetting a worktree whose removal was refused.
+          const worktrees = await api.listWorktrees(repo);
+          if (!worktrees.some((worktree) => worktree.path === worktreePath)) {
+            appState.forgetRepo(worktreePath);
+          }
+        } catch (error) {
+          console.warn("[gte] could not verify worktree removal after branch deletion", error);
+        }
+      }
+    }
+    return ok;
+  },
   removeWorktree: async (path: string) => {
     let removedPath: string | null = null;
     const ok = await run("Remove worktree", async () => {
