@@ -1,7 +1,7 @@
 <script lang="ts">
   import { parseDiff } from "../diff/parse";
   import { getHighlighter, LANGS } from "../diff/highlight";
-  import { blocksOf, blockAt } from "../diff/blocks";
+  import { blocksOf, blockAt, ordsInRange } from "../diff/blocks";
   import { appState } from "../store.svelte";
   import type { DiffFile, DiffHunk, DiffLine } from "../diff/types";
   import type { Highlighter, ThemedToken } from "shiki";
@@ -38,22 +38,26 @@
   let hov = $state<{ fi: number; hi: number; block: number | null } | null>(null);
 
   function hoverRow(fi: number, hi: number, ri: number) {
-    if (!hasActions) return;
+    if (!hasActions || sel) return; // locked: hover is dead
     const h = parsed.files[fi]?.hunks[hi];
     if (!h) return;
     hov = { fi, hi, block: blockAt(h, ri) };
   }
 
   function clearHover() {
+    if (sel) return;
     hov = null;
   }
 
   /**
-   * The row range the inner ring should cover for this hunk, or null for none.
-   * Only a hovered BLOCK gets the inner ring; a hovered context row gets the
-   * outer `<tbody>` outline instead (see the `hunk-hover` class).
+   * The row range the ring should cover for this hunk, or null for none. A locked
+   * selection owns the ring outright; otherwise only a hovered BLOCK gets it and a
+   * hovered context row gets the outer `<tbody>` outline instead (`hunk-hover`).
    */
   function ringRange(fi: number, hi: number): { from: number; to: number } | null {
+    if (sel) {
+      return sel.fi === fi && sel.hi === hi ? { from: sel.from, to: sel.to } : null;
+    }
     if (!hov || hov.fi !== fi || hov.hi !== hi || hov.block === null) return null;
     const h = parsed.files[fi]?.hunks[hi];
     if (!h) return null;
@@ -71,9 +75,18 @@
     anchorRow: number;
   }
 
-  /** What the visible toolbar acts on right now. Task 6 adds the selection branch. */
+  /** What the visible toolbar acts on right now. A locked selection outranks hover. */
   function activeTarget(): ActionTarget | null {
-    if (!hasActions || !hov) return null;
+    if (!hasActions) return null;
+    if (sel) {
+      const h = parsed.files[sel.fi]?.hunks[sel.hi];
+      if (!h) return null;
+      const ords = ordsInRange(h, sel.from, sel.to);
+      return ords.length
+        ? { fi: sel.fi, hi: sel.hi, scope: "sel", ords, anchorRow: sel.from }
+        : null;
+    }
+    if (!hov) return null;
     const h = parsed.files[hov.fi]?.hunks[hov.hi];
     if (!h) return null;
     if (hov.block !== null) {
@@ -98,6 +111,7 @@
       else onDiscardLines?.(t.hi, ords);
     }
     hov = null;
+    sel = null;
   }
 
   // The toolbar lives OUTSIDE the horizontally-scrolling table wrap so `right` pins
@@ -134,6 +148,7 @@
   // Runs after the DOM settles, so the anchor row is guaranteed to exist.
   $effect(() => {
     hov;
+    sel;
     measureTool();
   });
 
@@ -317,45 +332,52 @@
     });
   }
 
-  // ─── Line-level selection ─────────────────────────────────────────────────────
+  // ─── Line selection ───────────────────────────────────────────────────────────
+  // A contiguous row range inside ONE hunk. `anchor` is the row the range grew
+  // from, so extending down and then back up pivots correctly. Ranges may span
+  // context rows; `ordsInRange` keeps only the change lines.
+  let sel = $state<{ fi: number; hi: number; anchor: number; from: number; to: number } | null>(null);
 
-  // Map keyed by "${fi}:${hi}" → Set of change-line ordinals (0-based among +/- lines).
-  let selected = $state<Map<string, Set<number>>>(new Map());
-
-  // Clear selection whenever the patch changes (file/diff switch).
+  // A new patch re-indexes every hunk, so any range we were holding is meaningless.
   $effect(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     patch;
-    selected = new Map();
+    sel = null;
   });
 
-  /** Map each +/- line of a hunk to its 0-based change ordinal (context lines excluded). */
-  function hunkOrdinals(hunk: DiffHunk): Map<DiffLine, number> {
-    const m = new Map<DiffLine, number>();
-    let ord = 0;
-    for (const line of hunk.lines) if (line.kind !== "context") m.set(line, ord++);
-    return m;
+  function lockSelection(fi: number, hi: number, ri: number) {
+    if (!hasActions) return;
+    const h = parsed.files[fi]?.hunks[hi];
+    if (!h || h.lines[ri]?.kind === "context") return;
+    sel = { fi, hi, anchor: ri, from: ri, to: ri };
+    hov = null;
+    // A double-click is also the browser's select-word gesture, and `.diff-cell`
+    // deliberately opts back into user-select so diff code stays copyable.
+    window.getSelection()?.removeAllRanges();
   }
 
-  function keyOf(fi: number, hi: number) { return `${fi}:${hi}`; }
-  function isSelected(fi: number, hi: number, ord: number) { return selected.get(keyOf(fi, hi))?.has(ord) ?? false; }
-
-  function toggleLine(fi: number, hi: number, ord: number) {
-    const k = keyOf(fi, hi);
-    const next = new Map(selected);
-    const s = new Set(next.get(k) ?? []);
-    if (s.has(ord)) s.delete(ord); else s.add(ord);
-    if (s.size) next.set(k, s); else next.delete(k);
-    selected = next;
+  function extendSelection(fi: number, hi: number, ri: number) {
+    if (!sel || sel.fi !== fi || sel.hi !== hi) return;
+    const h = parsed.files[fi]?.hunks[hi];
+    if (!h) return;
+    const from = Math.min(sel.anchor, ri);
+    const to = Math.max(sel.anchor, ri);
+    if (!ordsInRange(h, from, to).length) return;
+    sel = { fi, hi, anchor: sel.anchor, from, to };
+    window.getSelection()?.removeAllRanges();
   }
 
-  function selCount(fi: number, hi: number) { return selected.get(keyOf(fi, hi))?.size ?? 0; }
+  function clearSelection() {
+    sel = null;
+  }
 
-  function applyLines(fi: number, hi: number) {
-    const ords = [...(selected.get(keyOf(fi, hi)) ?? [])].sort((a, b) => a - b);
-    if (!ords.length) return;
-    if (staged) onUnstageLines?.(hi, ords); else onStageLines?.(hi, ords);
-    const next = new Map(selected); next.delete(keyOf(fi, hi)); selected = next;
+  function onRowClick(e: MouseEvent, fi: number, hi: number, ri: number) {
+    if (!hasActions) return;
+    if (e.shiftKey) {
+      extendSelection(fi, hi, ri);
+      return;
+    }
+    clearSelection();
   }
 
   // ─── Split view helpers ───────────────────────────────────────────────────────
@@ -461,6 +483,12 @@
   >{marked ? "💬" : "＋"}</button>
 {/snippet}
 
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key === "Escape" && sel) clearSelection();
+  }}
+/>
+
 <div class="diff-view">
   <!-- Header: split/unified toggle + totals + context controls -->
   <div class="diff-toolbar">
@@ -555,73 +583,38 @@
               {@const ring = ringRange(fi, hi)}
               <tbody
                 class="hunk"
-                class:hunk-hover={hasActions && hov?.fi === fi && hov?.hi === hi}
+                class:hunk-hover={hasActions && !sel && hov?.fi === fi && hov?.hi === hi}
               >
                 <!-- Hunk header row -->
                 <tr class="hunk-header-row">
                   {#if appState.diffSplit}
                     <td class="hunk-header-cell" colspan="4">
                       <span class="hunk-range">{hunk.header}</span>
-                      {#if onStageHunk || onUnstageHunk}
-                        {#if onStageHunk && !staged}
-                          <button class="hunk-btn" onclick={() => onStageHunk!(hi)}>Stage hunk</button>
-                        {/if}
-                        {#if onUnstageHunk && staged}
-                          <button class="hunk-btn" onclick={() => onUnstageHunk!(hi)}>Unstage hunk</button>
-                        {/if}
-                      {/if}
-                      {#if selCount(fi, hi) > 0}
-                        {#if !staged && onStageLines}
-                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Stage {selCount(fi, hi)} line(s)</button>
-                        {/if}
-                        {#if staged && onUnstageLines}
-                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Unstage {selCount(fi, hi)} line(s)</button>
-                        {/if}
-                      {/if}
                     </td>
                   {:else}
                     <td class="gutter" colspan="2"></td>
                     <td class="hunk-header-cell">
                       <span class="hunk-range">{hunk.header}</span>
-                      {#if onStageHunk || onUnstageHunk}
-                        {#if onStageHunk && !staged}
-                          <button class="hunk-btn" onclick={() => onStageHunk!(hi)}>Stage hunk</button>
-                        {/if}
-                        {#if onUnstageHunk && staged}
-                          <button class="hunk-btn" onclick={() => onUnstageHunk!(hi)}>Unstage hunk</button>
-                        {/if}
-                      {/if}
-                      {#if selCount(fi, hi) > 0}
-                        {#if !staged && onStageLines}
-                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Stage {selCount(fi, hi)} line(s)</button>
-                        {/if}
-                        {#if staged && onUnstageLines}
-                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Unstage {selCount(fi, hi)} line(s)</button>
-                        {/if}
-                      {/if}
                     </td>
                   {/if}
                 </tr>
 
                 {#if !appState.diffSplit}
                   <!-- ── UNIFIED view ── -->
-                  {@const ords = hunkOrdinals(hunk)}
                   {#each indexHunkLines(hunk) as { line, beforeIdx, afterIdx }, ri (ri)}
                     {@const toks = lineTokens(fi, hi, line, beforeIdx, afterIdx)}
-                    {@const ord = line.kind !== "context" ? ords.get(line) : undefined}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <tr
                       data-h={hi}
                       data-i={ri}
                       class="diff-row {line.kind}"
-                      class:selected={ord !== undefined && isSelected(fi, hi, ord)}
                       class:ring={ring !== null && ri >= ring.from && ri <= ring.to}
                       class:ring-first={ring !== null && ri === ring.from}
                       class:ring-last={ring !== null && ri === ring.to}
                       onmouseenter={() => hoverRow(fi, hi, ri)}
-                      style={line.kind !== "context" ? "cursor: pointer" : ""}
-                      onclick={() => { if (ord !== undefined) toggleLine(fi, hi, ord); }}
-                      onkeydown={(e) => { if (ord !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, ord); } }}
+                      style={hasActions && line.kind !== "context" ? "cursor: pointer" : ""}
+                      onclick={(e) => onRowClick(e, fi, hi, ri)}
+                      ondblclick={() => lockSelection(fi, hi, ri)}
                     >
                       <td class="gutter old-gutter" class:commentable={!!onLineComment}>
                         {line.oldNo ?? ""}
@@ -648,10 +641,7 @@
                   {/each}
                 {:else}
                   <!-- ── SPLIT view ── -->
-                  {@const ords = hunkOrdinals(hunk)}
                   {#each toSplitRows(hunk) as row, ri (ri)}
-                    {@const oldOrd = row.oldLine?.kind === "del" ? ords.get(row.oldLine) : undefined}
-                    {@const newOrd = row.newLine?.kind === "add" ? ords.get(row.newLine) : undefined}
                     <tr class="diff-row split-row">
                       <!-- Old side -->
                       <td class="gutter old-gutter" class:commentable={!!onLineComment}>
@@ -660,15 +650,10 @@
                           {@render commentBtn(row.oldLine.oldNo, "LEFT")}
                         {/if}
                       </td>
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <td
                         class="diff-cell split-cell"
                         class:del={row.oldLine?.kind === "del"}
                         class:context={row.oldLine?.kind === "context"}
-                        class:selected={oldOrd !== undefined && isSelected(fi, hi, oldOrd)}
-                        style={row.oldLine?.kind === "del" ? "cursor: pointer" : ""}
-                        onclick={() => { if (oldOrd !== undefined) toggleLine(fi, hi, oldOrd); }}
-                        onkeydown={(e) => { if (oldOrd !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, oldOrd); } }}
                       >
                         {#if row.oldLine}
                           {@const toks = row.oldLine.kind === "del"
@@ -691,15 +676,10 @@
                           {@render commentBtn(row.newLine.newNo, "RIGHT")}
                         {/if}
                       </td>
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <td
                         class="diff-cell split-cell"
                         class:add={row.newLine?.kind === "add"}
                         class:context={row.newLine?.kind === "context"}
-                        class:selected={newOrd !== undefined && isSelected(fi, hi, newOrd)}
-                        style={row.newLine?.kind === "add" ? "cursor: pointer" : ""}
-                        onclick={() => { if (newOrd !== undefined) toggleLine(fi, hi, newOrd); }}
-                        onkeydown={(e) => { if (newOrd !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, newOrd); } }}
                       >
                         {#if row.newLine}
                           {@const toks = row.newLine.kind === "add"
@@ -1076,40 +1056,6 @@
     font-size: 11px;
     color: var(--accent);
     margin-right: auto;
-  }
-
-  /* ── Stage/unstage hunk buttons ─────────────────────────────────────────────── */
-  .hunk-btn {
-    padding: 1px 8px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-    background: var(--btn-bg);
-    color: var(--text);
-    font-size: 11px;
-    cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .hunk-btn:hover {
-    background: var(--btn-hover);
-  }
-  .hunk-btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
-  }
-  .hunk-btn.primary:hover {
-    opacity: 0.88;
-  }
-
-  /* ── Line-level selection highlight ─────────────────────────────────────────── */
-  .diff-row.selected {
-    box-shadow: inset 2px 0 0 var(--accent);
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-  }
-  .split-cell.selected {
-    box-shadow: inset 2px 0 0 var(--accent);
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   /* ── Line-comment affordance (only present when onLineComment is passed) ────── */
