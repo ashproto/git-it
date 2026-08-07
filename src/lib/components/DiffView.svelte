@@ -61,6 +61,82 @@
     return b ? { from: b.rows[0], to: b.rows[b.rows.length - 1] } : null;
   }
 
+  interface ActionTarget {
+    fi: number;
+    hi: number;
+    scope: "sel" | "blk" | "hunk";
+    /** null for a whole-hunk target — the hunk ops take no ordinals. */
+    ords: number[] | null;
+    /** Row the toolbar anchors to. */
+    anchorRow: number;
+  }
+
+  /** What the visible toolbar acts on right now. Task 6 adds the selection branch. */
+  function activeTarget(): ActionTarget | null {
+    if (!hasActions || !hov) return null;
+    const h = parsed.files[hov.fi]?.hunks[hov.hi];
+    if (!h) return null;
+    if (hov.block !== null) {
+      const b = blocksOf(h)[hov.block];
+      if (b) return { fi: hov.fi, hi: hov.hi, scope: "blk", ords: b.ords, anchorRow: b.rows[0] };
+    }
+    return { fi: hov.fi, hi: hov.hi, scope: "hunk", ords: null, anchorRow: 0 };
+  }
+
+  function runAction(kind: "stage" | "unstage" | "discard") {
+    const t = activeTarget();
+    if (!t) return;
+    if (t.scope === "hunk") {
+      if (kind === "stage") onStageHunk?.(t.hi);
+      else if (kind === "unstage") onUnstageHunk?.(t.hi);
+      else onDiscardHunk?.(t.hi);
+    } else {
+      const ords = t.ords ?? [];
+      if (!ords.length) return;
+      if (kind === "stage") onStageLines?.(t.hi, ords);
+      else if (kind === "unstage") onUnstageLines?.(t.hi, ords);
+      else onDiscardLines?.(t.hi, ords);
+    }
+    hov = null;
+  }
+
+  // The toolbar lives OUTSIDE the horizontally-scrolling table wrap so `right` pins
+  // it to the visible edge. Only its vertical offset needs measuring, and using
+  // getBoundingClientRect differences means scrollTop needs no separate arithmetic.
+  let wrapEls = $state<Record<number, HTMLDivElement | undefined>>({});
+  let toolTop = $state(0);
+  let toolVisible = $state(false);
+
+  function measureTool() {
+    const t = activeTarget();
+    const wrap = t ? wrapEls[t.fi] : undefined;
+    if (!t || !wrap) {
+      toolVisible = false;
+      return;
+    }
+    const row = wrap.querySelector<HTMLElement>(
+      `tr[data-h="${t.hi}"][data-i="${t.anchorRow}"]`,
+    );
+    if (!row) {
+      toolVisible = false;
+      return;
+    }
+    const top = row.getBoundingClientRect().top - wrap.getBoundingClientRect().top;
+    // Hide rather than float a toolbar pointing at a row scrolled out of view.
+    if (top < 0 || top > wrap.clientHeight - 8) {
+      toolVisible = false;
+      return;
+    }
+    toolTop = top;
+    toolVisible = true;
+  }
+
+  // Runs after the DOM settles, so the anchor row is guaranteed to exist.
+  $effect(() => {
+    hov;
+    measureTool();
+  });
+
   // ─── Theme detection ──────────────────────────────────────────────────────────
 
   function prefersDark(): boolean {
@@ -455,7 +531,12 @@
       {:else if file.hunks.length === 0}
         <div class="empty-hunk">No textual changes.</div>
       {:else}
-        <div class="diff-table-wrap">
+        <div class="diff-table-outer">
+        <div
+          class="diff-table-wrap"
+          bind:this={wrapEls[fi]}
+          onscroll={measureTool}
+        >
           <table class="diff-table mono" class:split={appState.diffSplit}>
             {#if appState.diffSplit}
               <!-- Fixed column widths. Without this, the colspan hunk-header row is the
@@ -530,6 +611,8 @@
                     {@const ord = line.kind !== "context" ? ords.get(line) : undefined}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <tr
+                      data-h={hi}
+                      data-i={ri}
                       class="diff-row {line.kind}"
                       class:selected={ord !== undefined && isSelected(fi, hi, ord)}
                       class:ring={ring !== null && ri >= ring.from && ri <= ring.to}
@@ -637,6 +720,24 @@
               </tbody>
             {/each}
           </table>
+        </div>
+        {#if hasActions && toolVisible}
+          {@const t = activeTarget()}
+          {#if t && t.fi === fi}
+            {@const label = t.scope === "hunk" ? "hunk" : String((t.ords ?? []).length)}
+            <div class="diff-tools" style="top: {toolTop}px">
+              {#if !staged && onStageHunk}
+                <button onclick={() => runAction("stage")}>Stage {label}</button>
+              {/if}
+              {#if !staged && onDiscardHunk}
+                <button class="danger" onclick={() => runAction("discard")}>Discard {label}</button>
+              {/if}
+              {#if staged && onUnstageHunk}
+                <button onclick={() => runAction("unstage")}>Unstage {label}</button>
+              {/if}
+            </div>
+          {/if}
+        {/if}
         </div>
       {/if}
     {/each}
@@ -764,9 +865,58 @@
   }
 
   /* ── Diff table ─────────────────────────────────────────────────────────────── */
+
+  /* Positioning context for the floating toolbar. It must NOT be the scroll
+     container: an absolutely-positioned child of a scroller is laid out against
+     the content, so `right` would drift as the diff scrolls sideways. */
+  .diff-table-outer {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
   .diff-table-wrap {
     overflow: auto;
     flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .diff-tools {
+    position: absolute;
+    right: 14px;
+    z-index: 6;
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    background: var(--header-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  .diff-tools button {
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--accent);
+    background: var(--btn-bg);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .diff-tools button:hover {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .diff-tools button.danger {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .diff-tools button.danger:hover {
+    background: var(--danger);
+    color: var(--on-accent);
   }
 
   .diff-table {
