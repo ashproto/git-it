@@ -45,6 +45,13 @@ describe("isChangeRow", () => {
     const rows = toSplitRows(hunk(" -+ "));
     expect(rows.map(isChangeRow)).toEqual([false, true, false]);
   });
+
+  it("is true for an unpaired addition row (no deletion on that row)", () => {
+    // " ++ " has no deletions to pair against, so both add rows carry oldLine: null —
+    // isChangeRow must fall through to the newLine clause to catch these.
+    const rows = toSplitRows(hunk(" ++ "));
+    expect(rows.map(isChangeRow)).toEqual([false, true, true, false]);
+  });
 });
 
 describe("splitBlocksOf", () => {
@@ -71,6 +78,14 @@ describe("splitBlocksOf", () => {
   it("returns no blocks for a hunk of pure context", () => {
     const h = hunk("   ");
     expect(splitBlocksOf(h, toSplitRows(h))).toEqual([]);
+  });
+
+  it("collects a deletion-free (pure-addition) run into a block", () => {
+    // Unpaired addition rows have oldLine: null, so this exercises grouping and
+    // ordinal-collection for rows that only satisfy isChangeRow's newLine clause.
+    const h = hunk(" ++ ");
+    const b = splitBlocksOf(h, toSplitRows(h));
+    expect(b).toEqual([{ rows: [1, 2], ords: [0, 1] }]);
   });
 });
 

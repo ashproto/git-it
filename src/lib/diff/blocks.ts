@@ -2,7 +2,13 @@ import type { DiffHunk } from "./types";
 
 /** A contiguous run of changed (+/-) lines within one hunk. */
 export interface Block {
-  /** Indices into `hunk.lines`, ascending and contiguous. */
+  /**
+   * Row indices in the PRODUCING VIEW's space, ascending and contiguous:
+   * indices into `hunk.lines` from `blocksOf` (unified), indices into the paired
+   * visual rows from `splitBlocksOf` (split). Never index `hunk.lines` with these
+   * without knowing which producer you got them from — `ords` is the only field
+   * that means the same thing in both.
+   */
   rows: number[];
   /** The change-line ordinals for those rows — what the staging backend takes. */
   ords: number[];
