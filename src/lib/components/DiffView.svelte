@@ -1,6 +1,7 @@
 <script lang="ts">
   import { parseDiff } from "../diff/parse";
   import { getHighlighter, LANGS } from "../diff/highlight";
+  import { blocksOf, blockAt } from "../diff/blocks";
   import { appState } from "../store.svelte";
   import type { DiffFile, DiffHunk, DiffLine } from "../diff/types";
   import type { Highlighter, ThemedToken } from "shiki";
@@ -15,6 +16,8 @@
     onUnstageHunk?: (i: number) => void;
     onStageLines?: (hunkIndex: number, selected: number[]) => void;
     onUnstageLines?: (hunkIndex: number, selected: number[]) => void;
+    onDiscardHunk?: (i: number) => void;
+    onDiscardLines?: (hunkIndex: number, selected: number[]) => void;
     // PR-review comment affordance (GitHub line/side semantics: RIGHT = new-file
     // line number for context + added rows, LEFT = old-file line number for
     // deleted rows). Purely additive — when absent, nothing changes.
@@ -22,7 +25,41 @@
     hasComment?: (line: number, side: "LEFT" | "RIGHT") => boolean;
   }
 
-  let { patch, language, staged = false, onStageHunk, onUnstageHunk, onStageLines, onUnstageLines, onLineComment, hasComment }: Props = $props();
+  let { patch, language, staged = false, onStageHunk, onUnstageHunk, onStageLines, onUnstageLines, onDiscardHunk, onDiscardLines, onLineComment, hasComment }: Props = $props();
+
+  // The whole hover/selection affordance only exists where actions do. Commit diffs
+  // (CommitFilesDiff) and PR review diffs (PrFilesTab) pass no callbacks and stay inert.
+  const hasActions = $derived(
+    !!(onStageHunk || onUnstageHunk || onStageLines || onUnstageLines || onDiscardHunk || onDiscardLines),
+  );
+
+  // Hovered unit. `block` is the index into blocksOf(hunk), or null on a context row
+  // (which targets the whole hunk instead).
+  let hov = $state<{ fi: number; hi: number; block: number | null } | null>(null);
+
+  function hoverRow(fi: number, hi: number, ri: number) {
+    if (!hasActions) return;
+    const h = parsed.files[fi]?.hunks[hi];
+    if (!h) return;
+    hov = { fi, hi, block: blockAt(h, ri) };
+  }
+
+  function clearHover() {
+    hov = null;
+  }
+
+  /**
+   * The row range the inner ring should cover for this hunk, or null for none.
+   * Only a hovered BLOCK gets the inner ring; a hovered context row gets the
+   * outer `<tbody>` outline instead (see the `hunk-hover` class).
+   */
+  function ringRange(fi: number, hi: number): { from: number; to: number } | null {
+    if (!hov || hov.fi !== fi || hov.hi !== hi || hov.block === null) return null;
+    const h = parsed.files[fi]?.hunks[hi];
+    if (!h) return null;
+    const b = blocksOf(h)[hov.block];
+    return b ? { from: b.rows[0], to: b.rows[b.rows.length - 1] } : null;
+  }
 
   // ─── Theme detection ──────────────────────────────────────────────────────────
 
@@ -432,8 +469,13 @@
                 <col class="dt-side" />
               </colgroup>
             {/if}
-            <tbody>
-              {#each file.hunks as hunk, hi (hi)}
+            {#each file.hunks as hunk, hi (hi)}
+              {@const ring = ringRange(fi, hi)}
+              <tbody
+                class="hunk"
+                class:hunk-hover={hasActions && hov?.fi === fi && hov?.hi === hi}
+                onmouseleave={clearHover}
+              >
                 <!-- Hunk header row -->
                 <tr class="hunk-header-row">
                   {#if appState.diffSplit}
@@ -483,13 +525,17 @@
                 {#if !appState.diffSplit}
                   <!-- ── UNIFIED view ── -->
                   {@const ords = hunkOrdinals(hunk)}
-                  {#each indexHunkLines(hunk) as { line, beforeIdx, afterIdx } (line.oldNo ?? `a${line.newNo}`)}
+                  {#each indexHunkLines(hunk) as { line, beforeIdx, afterIdx }, ri (ri)}
                     {@const toks = lineTokens(fi, hi, line, beforeIdx, afterIdx)}
                     {@const ord = line.kind !== "context" ? ords.get(line) : undefined}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <tr
                       class="diff-row {line.kind}"
                       class:selected={ord !== undefined && isSelected(fi, hi, ord)}
+                      class:ring={ring !== null && ri >= ring.from && ri <= ring.to}
+                      class:ring-first={ring !== null && ri === ring.from}
+                      class:ring-last={ring !== null && ri === ring.to}
+                      onmouseenter={() => hoverRow(fi, hi, ri)}
                       style={line.kind !== "context" ? "cursor: pointer" : ""}
                       onclick={() => { if (ord !== undefined) toggleLine(fi, hi, ord); }}
                       onkeydown={(e) => { if (ord !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, ord); } }}
@@ -588,8 +634,8 @@
                     </tr>
                   {/each}
                 {/if}
-              {/each}
-            </tbody>
+              </tbody>
+            {/each}
           </table>
         </div>
       {/if}
@@ -754,6 +800,27 @@
     vertical-align: top;
     border-right: 1px solid var(--border-subtle);
     background: var(--header-bg);
+  }
+
+  /* ── Hover / selection ring ──────────────────────────────────────────────────
+     A hunk is a <tbody> and takes a plain outline. A BLOCK is only a run of <tr>s
+     with no wrapping element, so its ring is built from four box-shadow insets
+     spread across the run's cells. They must be four SEPARATE custom properties
+     feeding one box-shadow: written as four rules on `box-shadow` directly, the
+     last would simply win. As custom properties they compose. */
+  .diff-table td {
+    box-shadow: var(--rt, 0 0 transparent), var(--rb, 0 0 transparent),
+                var(--rl, 0 0 transparent), var(--rr, 0 0 transparent);
+  }
+  tr.ring-first td { --rt: inset 0 1.5px 0 var(--diff-ring); }
+  tr.ring-last td { --rb: inset 0 -1.5px 0 var(--diff-ring); }
+  tr.ring td:first-child { --rl: inset 1.5px 0 0 var(--diff-ring); }
+  tr.ring td:last-child { --rr: inset -1.5px 0 0 var(--diff-ring); }
+
+  /* Outer ring — subtler than the block ring, and drawn on the hunk's own element. */
+  tbody.hunk.hunk-hover {
+    outline: 1px solid color-mix(in srgb, var(--diff-ring) 34%, transparent);
+    outline-offset: -1px;
   }
 
   /* ── Diff rows ─────────────────────────────────────────────────────────────── */
