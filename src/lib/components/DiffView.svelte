@@ -531,7 +531,8 @@
       {:else if file.hunks.length === 0}
         <div class="empty-hunk">No textual changes.</div>
       {:else}
-        <div class="diff-table-outer">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="diff-table-outer" onmouseleave={clearHover}>
         <div
           class="diff-table-wrap"
           bind:this={wrapEls[fi]}
@@ -555,7 +556,6 @@
               <tbody
                 class="hunk"
                 class:hunk-hover={hasActions && hov?.fi === fi && hov?.hi === hi}
-                onmouseleave={clearHover}
               >
                 <!-- Hunk header row -->
                 <tr class="hunk-header-row">
