@@ -2,6 +2,7 @@
 // Components import this module and read/write fields directly.
 import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile, WorktreeInfo } from "./types";
 import type { DateFormatPrefs } from "./dates";
+import type { WorkingSection } from "./workingSection";
 import type { Store } from "@tauri-apps/plugin-store";
 import {
   computeLanes,
@@ -1102,13 +1103,16 @@ function makeState() {
   // workingChanges: the live file list from `git status`.
   // workingChangesRev: monotonic counter bumped on every refresh so diff effects
   //   re-run after hunk ops (which don't change the file COUNT but do re-index hunks).
-  // selectedFile: which file is being diffed in the working-copy panel.
+  // selected: which file is being diffed in the working-copy panel, AND which list it
+  //   was clicked in. The section is not decoration: a partially-staged file appears in
+  //   both Staged and Unstaged, and the two halves need different diffs and different
+  //   actions, so a path alone cannot identify what the user opened.
   // activeView: which main screen is showing — "timeline" (graph + commit detail) or
   // "changes" (the Local Changes / working-copy screen). Replaces the old
   // workingCopySelected boolean (kept as a derived getter for existing call sites).
   let workingChanges = $state<WorkingFile[]>([]);
   let workingChangesRev = $state(0);
-  let selectedFile = $state<string | null>(null);
+  let workingSelection = $state<{ path: string; section: WorkingSection } | null>(null);
   let activeView = $state<"timeline" | "changes" | "github">("timeline");
   // Transient (non-persisted) suggested commit message, set by squash-merge to
   // prefill the CommitComposer before the user edits/commits.
@@ -1656,7 +1660,7 @@ function makeState() {
         repoLoading = v !== "";
         // Transient / selection state belongs to the previous repo — always reset.
         lastUndo = null;
-        selectedFile = null;
+        workingSelection = null;
         activeView = "timeline";
         suggestedCommitMessage = "";
         remoteOpActive = false;
@@ -1952,10 +1956,14 @@ function makeState() {
       return workingChangesRev;
     },
     get selectedFile() {
-      return selectedFile;
+      return workingSelection?.path ?? null;
     },
-    setSelectedFile(v: string | null) {
-      selectedFile = v;
+    /** The list the selection was made in. Null when nothing is selected. */
+    get selectedSection(): WorkingSection | null {
+      return workingSelection?.section ?? null;
+    },
+    setSelectedFile(v: { path: string; section: WorkingSection } | null) {
+      workingSelection = v;
     },
     get workingCopySelected() {
       // Back-compat shim: working-copy "row focus" now maps onto activeView.

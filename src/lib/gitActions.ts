@@ -518,6 +518,17 @@ async function runResolve(label: string, fn: () => Promise<unknown>): Promise<bo
   }
 }
 
+// Confirm copy for a partial discard. Discarding UNSTAGED lines reverse-applies against
+// the index, so when the same file also has staged content the lines fall back to the
+// staged version rather than vanishing — saying "permanently" there would overstate it.
+// With nothing staged, the index matches HEAD and the change really is gone for good.
+function discardMessage(n: number, unit: string, path: string, revertsToIndex: boolean): string {
+  const what = `${n} ${unit}${n === 1 ? "" : "s"} in ${path}`;
+  return revertsToIndex
+    ? `Discard ${what}? They revert to your staged version of this file. This cannot be undone.`
+    : `Permanently discard ${what}. This cannot be undone. (Stash instead to keep them.)`;
+}
+
 // Run a working-copy op (non-destructive): guard → run → refresh working changes + graph.
 async function runWorktree(label: string, fn: () => Promise<unknown>): Promise<boolean> {
   if (!isTauri()) {
@@ -874,7 +885,12 @@ export const gitActions = {
   // file-level `discard` below: uncommitted work is not in the reflog, so there is
   // no backup bundle to take. Guard BEFORE confirming so the browser preview never
   // shows a dialog it cannot honour.
-  discardHunk: async (path: string, hunkIndex: number, changedLines: number): Promise<boolean> => {
+  discardHunk: async (
+    path: string,
+    hunkIndex: number,
+    changedLines: number,
+    revertsToIndex = false,
+  ): Promise<boolean> => {
     if (!isTauri()) {
       appState.status = "That action needs the desktop app (not the browser preview).";
       return false;
@@ -889,7 +905,7 @@ export const gitActions = {
     const n = changedLines;
     const confirmed = await dialogs.confirm({
       title: "Discard hunk",
-      message: `Permanently discard ${n} changed line${n === 1 ? "" : "s"} in ${path}. This cannot be undone. (Stash instead to keep them.)`,
+      message: discardMessage(n, "changed line", path, revertsToIndex),
       confirmLabel: "Discard",
       danger: true,
     });
@@ -898,7 +914,12 @@ export const gitActions = {
       api.discardHunk(appState.repo, path, hunkIndex, appState.effectiveDiffContext),
     );
   },
-  discardLines: async (path: string, hunkIndex: number, selected: number[]): Promise<boolean> => {
+  discardLines: async (
+    path: string,
+    hunkIndex: number,
+    selected: number[],
+    revertsToIndex = false,
+  ): Promise<boolean> => {
     if (!isTauri()) {
       appState.status = "That action needs the desktop app (not the browser preview).";
       return false;
@@ -910,7 +931,7 @@ export const gitActions = {
     const n = selected.length;
     const confirmed = await dialogs.confirm({
       title: "Discard lines",
-      message: `Permanently discard ${n} line${n === 1 ? "" : "s"} in ${path}. This cannot be undone. (Stash instead to keep them.)`,
+      message: discardMessage(n, "line", path, revertsToIndex),
       confirmLabel: "Discard",
       danger: true,
     });
