@@ -4,6 +4,7 @@ import {
   isChangeRow,
   splitBlocksOf,
   splitBlockAt,
+  splitBlockRanges,
   ordsInSplitRange,
   splitRangeSnappedToBlocks,
 } from "./splitRows";
@@ -145,6 +146,42 @@ describe("ordsInSplitRange", () => {
     const h = hunk("-+ -+");
     const rows = toSplitRows(h);
     expect(ordsInSplitRange(h, rows, 1, 1)).toEqual([]);
+  });
+});
+
+describe("splitBlockRanges", () => {
+  it("lists two blocks separated by context, in document order", () => {
+    const rows = toSplitRows(hunk(" -+ -+ "));
+    expect(splitBlockRanges(rows)).toEqual([
+      { from: 1, to: 1 },
+      { from: 3, to: 3 },
+    ]);
+  });
+
+  it("catches a block that starts on the FIRST row", () => {
+    // "--++ " pairs into rows 0,1 (change) then row 2 (context).
+    expect(splitBlockRanges(toSplitRows(hunk("--++ ")))).toEqual([{ from: 0, to: 1 }]);
+  });
+
+  it("closes a block that runs to the LAST row", () => {
+    // No trailing context, so the block is only flushed by the end-of-rows pass.
+    expect(splitBlockRanges(toSplitRows(hunk(" --++")))).toEqual([{ from: 1, to: 2 }]);
+  });
+
+  it("returns an empty array for a hunk of pure context", () => {
+    expect(splitBlockRanges(toSplitRows(hunk("   ")))).toEqual([]);
+  });
+
+  it("agrees with splitBlocksOf on where every block starts and ends", () => {
+    for (const spec of [" ---+++ ", " ---+ ", " -+++ ", " ++ ", " -- ", "-+ -+", "-+++ --"]) {
+      const h = hunk(spec);
+      const rows = toSplitRows(h);
+      const fromBlocks = splitBlocksOf(h, rows).map((b) => ({
+        from: b.rows[0],
+        to: b.rows[b.rows.length - 1],
+      }));
+      expect(splitBlockRanges(rows), `spec "${spec}"`).toEqual(fromBlocks);
+    }
   });
 });
 

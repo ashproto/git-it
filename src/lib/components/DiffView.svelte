@@ -1,12 +1,13 @@
 <script lang="ts">
   import { parseDiff } from "../diff/parse";
   import { getHighlighter, LANGS } from "../diff/highlight";
-  import { blocksOf, blockAt, ordsInRange, type Block } from "../diff/blocks";
+  import { blocksOf, blockAt, ordinalsOf, ordsInRange, type Block } from "../diff/blocks";
   import {
     toSplitRows,
     isChangeRow,
     splitBlocksOf,
     splitBlockAt,
+    splitBlockRanges,
     ordsInSplitRange,
     splitRangeSnappedToBlocks,
   } from "../diff/splitRows";
@@ -24,7 +25,9 @@
     onUnstageHunk?: (i: number) => void;
     onStageLines?: (hunkIndex: number, selected: number[]) => void;
     onUnstageLines?: (hunkIndex: number, selected: number[]) => void;
-    onDiscardHunk?: (i: number) => void;
+    /** `changedLines` is how many +/- lines the hunk holds — the confirm dialog states it,
+        because in Whole-file mode one hunk covers the entire file. */
+    onDiscardHunk?: (i: number, changedLines: number) => void;
     onDiscardLines?: (hunkIndex: number, selected: number[]) => void;
     // PR-review comment affordance (GitHub line/side semantics: RIGHT = new-file
     // line number for context + added rows, LEFT = old-file line number for
@@ -42,8 +45,9 @@
   );
 
   // Hovered unit. `block` is the index into blocksForView(hunk), or null on a context
-  // row (which targets the whole hunk instead).
-  let hov = $state<{ fi: number; hi: number; block: number | null } | null>(null);
+  // row (which targets the whole hunk instead). `ri` is the row itself, kept so the
+  // hunk-scope toolbar can anchor to a row the user can actually see.
+  let hov = $state<{ fi: number; hi: number; ri: number; block: number | null } | null>(null);
 
   /**
    * Row indices mean different things per view: in unified they index `hunk.lines`,
@@ -66,7 +70,7 @@
     const h = parsed.files[fi]?.hunks[hi];
     if (!h) return;
     const block = appState.diffSplit ? splitBlockAt(toSplitRows(h), ri) : blockAt(h, ri);
-    hov = { fi, hi, block };
+    hov = { fi, hi, ri, block };
   }
 
   function clearHover() {
@@ -118,7 +122,9 @@
       const b = blocksForView(h)[hov.block];
       if (b) return { fi: hov.fi, hi: hov.hi, scope: "blk", ords: b.ords, anchorRow: b.rows[0] };
     }
-    return { fi: hov.fi, hi: hov.hi, scope: "hunk", ords: null, anchorRow: 0 };
+    // Anchor to the hovered row, not row 0: a hunk taller than the pane would otherwise
+    // put its anchor off-screen and `measureTool` would hide the toolbar entirely.
+    return { fi: hov.fi, hi: hov.hi, scope: "hunk", ords: null, anchorRow: hov.ri };
   }
 
   function runAction(kind: "stage" | "unstage" | "discard") {
@@ -127,7 +133,11 @@
     if (t.scope === "hunk") {
       if (kind === "stage") onStageHunk?.(t.hi);
       else if (kind === "unstage") onUnstageHunk?.(t.hi);
-      else onDiscardHunk?.(t.hi);
+      else {
+        const h = parsed.files[t.fi]?.hunks[t.hi];
+        const changed = h ? ordinalsOf(h).filter((o) => o !== null).length : 0;
+        onDiscardHunk?.(t.hi, changed);
+      }
     } else {
       const ords = t.ords ?? [];
       if (!ords.length) return;
@@ -367,8 +377,20 @@
   // change lines.
   let sel = $state<{ fi: number; hi: number; anchor: number; from: number; to: number } | null>(null);
 
+  // Roving tabindex: exactly ONE row per file is a tab stop, so the diff contributes a
+  // single stop to the app's tab order and Tab from it reaches `.diff-tools` directly.
+  // Unshifted arrows move between rows; every row stays programmatically focusable at -1.
+  let focusedRow = $state<{ fi: number; hi: number; ri: number } | null>(null);
+
+  function isTabStop(fi: number, hi: number, ri: number): boolean {
+    if (!hasActions) return false;
+    if (focusedRow) return focusedRow.fi === fi && focusedRow.hi === hi && focusedRow.ri === ri;
+    return hi === 0 && ri === 0; // nothing focused yet: the file's first row
+  }
+
   // A new patch re-indexes every hunk, and flipping Unified/Split re-indexes the rows
-  // themselves — a range held across either is meaningless.
+  // themselves — a range held across either is meaningless. `focusedRow` goes too: a
+  // stale one matches no rendered row, which would leave the diff with NO tab stop.
   $effect(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     patch;
@@ -376,6 +398,7 @@
     appState.diffSplit;
     sel = null;
     hov = null;
+    focusedRow = null;
   });
 
   function lockSelection(fi: number, hi: number, ri: number) {
@@ -444,18 +467,39 @@
       lockSelection(fi, hi, ri);
       return;
     }
+    if (!e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const wrap = wrapEls[fi];
+      if (!wrap) return;
+      // Querying the DOM keeps this correct across hunk boundaries without duplicating
+      // the unified/split row-space logic — the rendered order IS the navigation order.
+      const rows = [...wrap.querySelectorAll<HTMLElement>("tr[data-h][data-i]")];
+      const cur = rows.findIndex(
+        (el) => el.dataset.h === String(hi) && el.dataset.i === String(ri),
+      );
+      const next = rows[cur + (e.key === "ArrowDown" ? 1 : -1)];
+      next?.focus();
+      return;
+    }
     if (e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp") && sel) {
       e.preventDefault();
       const delta = e.key === "ArrowDown" ? 1 : -1;
       const edge = sel.to === sel.anchor ? sel.from : sel.to;
       const h = parsed.files[fi]?.hunks[hi];
       if (!h) return;
-      // Rows are counted in the CURRENT view's space: `hunk.lines` in unified,
-      // paired visual rows in split. The two lengths differ, so clamping against
-      // the wrong one walks the selection past the last row of the view.
-      const rowCount = appState.diffSplit ? toSplitRows(h).length : h.lines.length;
-      const next = Math.max(0, Math.min(rowCount - 1, edge + delta));
-      extendSelection(fi, hi, next);
+      if (appState.diffSplit) {
+        // Split selections snap to whole blocks, so stepping one ROW would always land
+        // on the context between blocks and change nothing. Step one BLOCK instead.
+        const ranges = splitBlockRanges(toSplitRows(h));
+        const cur = ranges.findIndex((r) => edge >= r.from && edge <= r.to);
+        const target = ranges[cur + delta];
+        if (!target) return;
+        extendSelection(fi, hi, target.from);
+      } else {
+        const next = Math.max(0, Math.min(h.lines.length - 1, edge + delta));
+        extendSelection(fi, hi, next);
+      }
+      return;
     }
   }
 
@@ -628,8 +672,11 @@
                       class:ring-last={ring !== null && ri === ring.to}
                       onmouseenter={() => hoverRow(fi, hi, ri)}
                       style={hasActions && line.kind !== "context" ? "cursor: pointer" : ""}
-                      tabindex={hasActions ? 0 : undefined}
-                      onfocus={() => hoverRow(fi, hi, ri)}
+                      tabindex={hasActions ? (isTabStop(fi, hi, ri) ? 0 : -1) : undefined}
+                      onfocus={() => {
+                        focusedRow = { fi, hi, ri };
+                        hoverRow(fi, hi, ri);
+                      }}
                       onkeydown={(e) => onRowKeydown(e, fi, hi, ri)}
                       onclick={(e) => onRowClick(e, fi, hi, ri)}
                       ondblclick={() => lockSelection(fi, hi, ri)}
@@ -670,8 +717,11 @@
                       data-i={ri}
                       style={hasActions && isChangeRow(row) ? "cursor: pointer" : ""}
                       onmouseenter={() => hoverRow(fi, hi, ri)}
-                      tabindex={hasActions ? 0 : undefined}
-                      onfocus={() => hoverRow(fi, hi, ri)}
+                      tabindex={hasActions ? (isTabStop(fi, hi, ri) ? 0 : -1) : undefined}
+                      onfocus={() => {
+                        focusedRow = { fi, hi, ri };
+                        hoverRow(fi, hi, ri);
+                      }}
                       onkeydown={(e) => onRowKeydown(e, fi, hi, ri)}
                       onclick={(e) => onRowClick(e, fi, hi, ri)}
                       ondblclick={() => lockSelection(fi, hi, ri)}

@@ -563,7 +563,7 @@
               : undefined}
             onDiscardHunk={selectedIsStaged || selectedIsUntracked
               ? undefined
-              : (i) => gitActions.discardHunk(selectedFile!, i)}
+              : (i, n) => gitActions.discardHunk(selectedFile!, i, n)}
             onDiscardLines={selectedIsStaged || selectedIsUntracked
               ? undefined
               : (hi, sel) => gitActions.discardLines(selectedFile!, hi, sel)}

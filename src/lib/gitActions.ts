@@ -874,7 +874,7 @@ export const gitActions = {
   // file-level `discard` below: uncommitted work is not in the reflog, so there is
   // no backup bundle to take. Guard BEFORE confirming so the browser preview never
   // shows a dialog it cannot honour.
-  discardHunk: async (path: string, hunkIndex: number): Promise<boolean> => {
+  discardHunk: async (path: string, hunkIndex: number, changedLines: number): Promise<boolean> => {
     if (!isTauri()) {
       appState.status = "That action needs the desktop app (not the browser preview).";
       return false;
@@ -883,9 +883,13 @@ export const gitActions = {
       appState.status = "Open a repository first.";
       return false;
     }
+    // State the LINE COUNT, not "this hunk": in Whole-file mode git emits one hunk
+    // spanning the entire file, so a hunk discard can revert every unstaged change in
+    // it — a boundary the user cannot see from the dialog.
+    const n = changedLines;
     const confirmed = await dialogs.confirm({
       title: "Discard hunk",
-      message: `Permanently discard this hunk of ${path}. This cannot be undone. (Stash instead to keep it.)`,
+      message: `Permanently discard ${n} changed line${n === 1 ? "" : "s"} in ${path}. This cannot be undone. (Stash instead to keep them.)`,
       confirmLabel: "Discard",
       danger: true,
     });

@@ -123,6 +123,27 @@ export function splitBlockAt(rows: SplitRow[], ri: number): number | null {
 }
 
 /**
+ * Every change block's split-row range, in document order. The loop runs one past the
+ * last row so a block ending on the final row is still flushed.
+ */
+export function splitBlockRanges(rows: SplitRow[]): Array<{ from: number; to: number }> {
+  const out: Array<{ from: number; to: number }> = [];
+  let open = false;
+  let start = 0;
+  for (let ri = 0; ri <= rows.length; ri++) {
+    const isChange = ri < rows.length && isChangeRow(rows[ri]);
+    if (isChange && !open) {
+      open = true;
+      start = ri;
+    } else if (!isChange && open) {
+      open = false;
+      out.push({ from: start, to: ri - 1 });
+    }
+  }
+  return out;
+}
+
+/**
  * The split-row range covering every block the inclusive range [a, b] touches, or null
  * when it touches none (a context-only range).
  *
@@ -139,25 +160,12 @@ export function splitRangeSnappedToBlocks(
 ): { from: number; to: number } | null {
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
-  let from = Infinity;
-  let to = -Infinity;
-  let open = false;
-  let blockStart = 0;
-  for (let ri = 0; ri <= rows.length; ri++) {
-    const isChange = ri < rows.length && isChangeRow(rows[ri]);
-    if (isChange && !open) {
-      open = true;
-      blockStart = ri;
-    } else if (!isChange && open) {
-      open = false;
-      // The block spans [blockStart, ri - 1]; keep it if it overlaps [lo, hi].
-      if (ri - 1 >= lo && blockStart <= hi) {
-        from = Math.min(from, blockStart);
-        to = Math.max(to, ri - 1);
-      }
-    }
-  }
-  return from === Infinity ? null : { from, to };
+  const hit = splitBlockRanges(rows).filter((r) => r.to >= lo && r.from <= hi);
+  if (!hit.length) return null;
+  return {
+    from: Math.min(...hit.map((r) => r.from)),
+    to: Math.max(...hit.map((r) => r.to)),
+  };
 }
 
 /**
