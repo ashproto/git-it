@@ -339,20 +339,26 @@ pub fn check_prerequisites(filter_repo_argv: &[String]) -> PrerequisiteCheck {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    // These tests run on parallel threads within ONE process, so the pid alone does not
+    // make a path unique. A wall-clock stamp did not either: two threads could read the
+    // same nanosecond, `fs::create_dir` then failed with AlreadyExists, and the `unwrap()`
+    // panicked — a flake that hit a different test on each run. A process-wide counter is
+    // collision-proof by construction, and is the pattern the TempRepo fixtures in ops.rs
+    // and ops_worktree.rs already use.
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
 
     struct TempFolder(PathBuf);
 
     impl TempFolder {
         fn new() -> Self {
-            let stamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "git-it-init-test-{}-{stamp}",
-                std::process::id()
-            ));
+            let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+            let path = std::env::temp_dir()
+                .join(format!("git-it-init-test-{}-{}", std::process::id(), id));
+            // Deliberately `create_dir`, not `create_dir_all`: with pid + counter a
+            // collision is impossible, so if one ever happens it should panic loudly
+            // rather than be silently absorbed.
             fs::create_dir(&path).unwrap();
             Self(path)
         }
