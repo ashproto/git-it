@@ -216,7 +216,7 @@ export function ordsInRange(hunk: DiffHunk, from: number, to: number): number[] 
 npx vitest run src/lib/diff/blocks.test.ts
 ```
 
-Expected: PASS — 14 tests.
+Expected: PASS — 13 tests.
 
 - [ ] **Step 5: Run the type gate**
 
@@ -636,7 +636,6 @@ with:
               <tbody
                 class="hunk"
                 class:hunk-hover={hasActions && hov?.fi === fi && hov?.hi === hi}
-                onmouseleave={clearHover}
               >
 ```
 
@@ -878,7 +877,8 @@ Replace:
 with:
 
 ```svelte
-        <div class="diff-table-outer">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="diff-table-outer" onmouseleave={clearHover}>
         <div
           class="diff-table-wrap"
           bind:this={wrapEls[fi]}
@@ -886,6 +886,13 @@ with:
         >
           <table class="diff-table mono" class:split={appState.diffSplit}>
 ```
+
+**Hover must clear on THIS element, not on the `<tbody>`.** The toolbar lives outside the
+table, so a `mouseleave` on the `<tbody>` fires the moment the pointer travels from a row
+toward the toolbar — clearing `hov`, unmounting the toolbar, and making it unclickable.
+`.diff-table-outer` contains both the table and the toolbar, so the pointer can reach the
+buttons without leaving it. Moving between hunks still retargets correctly, because each
+row's `onmouseenter` updates `hov` on entry.
 
 and replace the matching close:
 
@@ -972,7 +979,7 @@ Add to `DiffView.svelte`'s `<style>`:
   }
 ```
 
-Also add `flex: 1 1 auto; min-height: 0;` to the existing `.diff-table-wrap` rule if not already effective — it now sits inside `.diff-table-outer`:
+Also confirm the existing `.diff-table-wrap` rule reads as below — it now sits inside `.diff-table-outer`, so it needs `min-width: 0` for the row axis (its main-axis minimum is already 0 by virtue of being a scroll container):
 
 ```css
   .diff-table-wrap {

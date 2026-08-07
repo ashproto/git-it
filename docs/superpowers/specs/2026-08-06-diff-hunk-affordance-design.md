@@ -147,10 +147,26 @@ horizontally scrolling diff. From outside it, `right: 14px` stays pinned. Its ve
 needs no separate arithmetic — and is recomputed on hover/selection change and on scroll. When the anchor row
 scrolls out of view the toolbar hides rather than floating.
 
-**Split view:** the ring spans the **full row width**, covering both columns. A paired row's change ordinals are
-the same set as in Unified, so `stage_lines` / `discard_lines` receive identical arguments in both modes and no
-backend branching is needed. Accepted cost: a paired row selects as a unit, so Split loses "stage the addition
-but not its deletion" precision. Unified retains it and is one toolbar click away.
+**Split view:** the ring spans the **full row width**, covering both columns, and **selection snaps to whole
+change blocks**.
+
+The snapping is a correctness requirement, not a stylistic choice — it was discovered during implementation and
+this paragraph replaces an earlier, wrong claim that "a paired row selects as a unit". A paired row is a
+*display artifact*: `toSplitRows` puts the Nth deletion beside the Nth addition because they fit on a line
+together, not because they correspond. Selecting one pair therefore emits **non-contiguous** ordinals — `[2,5]`
+for the third pair of a 3-deletion/3-addition block — and `build_partial_hunk` emits in hunk source order, so the
+restored line lands above the lines the user kept. Verified against real git: discarding that pair produced
+`ccc XXX YYY` instead of `XXX YYY ccc`, and `git apply` accepted the patch silently. Discard has no reflog entry
+and no backup bundle, so that was unrecoverable.
+
+The invariant: **only contiguous ordinal sets are correct.** Unified ranges are always contiguous (context rows
+carry no ordinal, so they open no gap). A whole block is contiguous, and so is any union of whole blocks, because
+ordinals run consecutively across a hunk. Only *partial* coverage of a mixed deletion/addition block breaks it —
+even two of three pairs yields `{0,1,3,4}`.
+
+Accepted cost: Split operates at block granularity. Unified keeps per-line precision and is one toolbar click
+away. `splitRangeSnappedToBlocks` in `src/lib/diff/splitRows.ts` enforces this, and `require_contiguous` in
+git-core refuses a gapped selection outright as a second line of defence.
 
 **Removed:** `.diff-row.selected` / `.split-cell.selected` CSS (`:889-896`), the `toggleLine` single-click
 handler and its `onkeydown` twin, and the hunk-header selection buttons (`:450-457`, `:471-478`). The original
