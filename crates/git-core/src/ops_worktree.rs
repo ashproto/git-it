@@ -259,11 +259,15 @@ pub fn split_hunks(diff: &str) -> (String, Vec<String>) {
     (header, hunks)
 }
 
-/// Pipe a patch (reconstructed from git's own diff output) to `git apply --cached [--reverse]`
-/// via stdin. Never uses a temp file or shell.
-fn git_apply(repo: &Path, patch: &str, reverse: bool) -> Result<(), String> {
+/// Pipe a patch (reconstructed from git's own diff output) to `git apply` via stdin.
+/// `cached` selects the target: true → `--cached` (the index, for stage/unstage),
+/// false → the WORKING TREE only (for discard). Never uses a temp file or shell.
+fn git_apply(repo: &Path, patch: &str, reverse: bool, cached: bool) -> Result<(), String> {
     let mut c = Command::new("git");
-    c.current_dir(repo).arg("apply").arg("--cached");
+    c.current_dir(repo).arg("apply");
+    if cached {
+        c.arg("--cached");
+    }
     if reverse {
         c.arg("--reverse");
     }
@@ -298,7 +302,7 @@ pub fn stage_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) -> R
     let d = diff(repo, Some(path), false, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
-    git_apply(repo, &format!("{}{}", header, h), false)
+    git_apply(repo, &format!("{}{}", header, h), false, true)
 }
 
 /// Unstage one hunk (by index) of `path`'s STAGED diff.
@@ -312,7 +316,7 @@ pub fn unstage_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) ->
     let d = diff(repo, Some(path), true, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
-    git_apply(repo, &format!("{}{}", header, h), true)
+    git_apply(repo, &format!("{}{}", header, h), true, true)
 }
 
 // ---------------------------------------------------------------------------
@@ -459,7 +463,7 @@ pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
     let partial = build_partial_hunk(h, &set, false).ok_or("no lines selected to stage")?;
-    git_apply(repo, &format!("{}{}", header, partial), false)
+    git_apply(repo, &format!("{}{}", header, partial), false, true)
 }
 
 /// Unstage selected lines (change-line ordinals) of one hunk of `path`'s STAGED diff.
@@ -472,7 +476,35 @@ pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usi
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
     let partial = build_partial_hunk(h, &set, true).ok_or("no lines selected to unstage")?;
-    git_apply(repo, &format!("{}{}", header, partial), true)
+    git_apply(repo, &format!("{}{}", header, partial), true, true)
+}
+
+/// Discard one hunk (by index) of `path`'s UNSTAGED diff: reverse-apply it to the
+/// WORKING TREE only (no `--cached`). Because the unstaged diff's old side is the
+/// INDEX, the lines revert to their staged state — staged changes to the same file
+/// are untouched. DESTRUCTIVE / not undoable.
+///
+/// Hunk indices refer to the CURRENT live diff; after a successful op the remaining
+/// diff re-indexes, so callers must re-fetch before issuing another.
+pub fn discard_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) -> Result<(), String> {
+    let d = diff(repo, Some(path), false, context)?;
+    let (header, hunks) = split_hunks(&d);
+    let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
+    git_apply(repo, &format!("{}{}", header, h), true, false)
+}
+
+/// Discard selected change-line ordinals of one hunk of `path`'s UNSTAGED diff.
+/// `build_partial_hunk(.., reverse: true)` emits a patch whose NEW side matches the
+/// working file (unselected `+` become context because they ARE present there;
+/// unselected `-` are dropped because they are not) — exactly what a worktree
+/// reverse-apply needs. DESTRUCTIVE / not undoable.
+pub fn discard_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize], context: u32) -> Result<(), String> {
+    let d = diff(repo, Some(path), false, context)?;
+    let (header, hunks) = split_hunks(&d);
+    let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
+    let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
+    let partial = build_partial_hunk(h, &set, true).ok_or("no lines selected to discard")?;
+    git_apply(repo, &format!("{}{}", header, partial), true, false)
 }
 
 /// Stash current changes (staged + unstaged). Message is optional.
@@ -907,6 +939,72 @@ mod tests {
         let unstaged = diff(&r.path, Some("f.txt"), false, 3).unwrap();
         assert!(unstaged.contains("+line1"), "line1 still unstaged");
         assert!(unstaged.contains("+line3"), "line3 still unstaged");
+    }
+
+    // ── discard (worktree reverse-apply) ─────────────────────────────────────
+
+    #[test]
+    fn discard_hunk_reverts_only_that_hunk() {
+        let r = TempRepo::new();
+        // 20 lines so two separated edits land in two hunks at -U3.
+        let base: String = (1..=20).map(|i| format!("line{}\n", i)).collect();
+        r.commit_file("f.txt", &base, "init");
+
+        let mut edited: Vec<String> = (1..=20).map(|i| format!("line{}\n", i)).collect();
+        edited[1] = "CHANGED2\n".to_string();
+        edited[17] = "CHANGED18\n".to_string();
+        r.write("f.txt", &edited.concat());
+
+        let d = diff(&r.path, Some("f.txt"), false, 3).unwrap();
+        let (_h, hunks) = split_hunks(&d);
+        assert_eq!(hunks.len(), 2, "expected two hunks, diff was:\n{}", d);
+
+        discard_hunk(&r.path, "f.txt", 0, 3).unwrap();
+
+        let now = fs::read_to_string(r.path.join("f.txt")).unwrap();
+        assert!(now.contains("line2\n"), "hunk 0 should be reverted");
+        assert!(!now.contains("CHANGED2"), "hunk 0's change should be gone");
+        assert!(now.contains("CHANGED18"), "hunk 1 must be untouched");
+    }
+
+    #[test]
+    fn discard_lines_reverts_only_selected() {
+        let r = TempRepo::new();
+        r.commit_file("f.txt", "base\n", "init");
+        r.write("f.txt", "base\nline1\nline2\nline3\n");
+        // ordinals 0,1,2 == +line1,+line2,+line3 — discard only line2.
+        discard_lines(&r.path, "f.txt", 0, &[1], 3).unwrap();
+        assert_eq!(
+            fs::read_to_string(r.path.join("f.txt")).unwrap(),
+            "base\nline1\nline3\n",
+            "only the selected line should be reverted"
+        );
+    }
+
+    /// The load-bearing one: discarding UNSTAGED lines reverts them to the INDEX
+    /// state, not to HEAD, so staged work on the same file survives. This is what
+    /// makes Discard safe to sit beside Stage.
+    #[test]
+    fn discard_lines_leaves_staged_changes_intact() {
+        let r = TempRepo::new();
+        r.commit_file("f.txt", "base\n", "init");
+        r.write("f.txt", "base\nkeep\ndrop\n");
+
+        // Stage only `keep` (ordinal 0); `drop` stays unstaged.
+        stage_lines(&r.path, "f.txt", 0, &[0], 3).unwrap();
+        let staged = diff(&r.path, Some("f.txt"), true, 3).unwrap();
+        assert!(staged.contains("+keep"), "precondition: keep must be staged");
+
+        // The unstaged diff now holds exactly one change line (`+drop`) at ordinal 0.
+        discard_lines(&r.path, "f.txt", 0, &[0], 3).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(r.path.join("f.txt")).unwrap(),
+            "base\nkeep\n",
+            "drop reverted to the INDEX state, not HEAD"
+        );
+        let still = diff(&r.path, Some("f.txt"), true, 3).unwrap();
+        assert!(still.contains("+keep"), "staged work must survive the discard");
     }
 
     #[test]
