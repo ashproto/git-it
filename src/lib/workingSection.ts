@@ -13,7 +13,14 @@
  */
 export type WorkingSection = "staged" | "unstaged" | "untracked";
 
-/** Which sections currently contain a given path. */
+/**
+ * Which RENDERED lists currently contain a given path.
+ *
+ * These describe what is on screen, not file states. In particular `unstaged` must be
+ * true for an untracked file when "Merge Untracked into Unstaged" is on, because the
+ * row is rendered in that list and reports `"unstaged"` — otherwise the selection
+ * resolves to a section that has no rows in that mode.
+ */
 export interface SectionPresence {
   staged: boolean;
   unstaged: boolean;
@@ -27,6 +34,10 @@ export interface SectionPresence {
  * section under them — staging all of a partially-staged file removes it from Unstaged,
  * and unstaging removes it from Staged. Rather than stranding the pane on an empty diff
  * with no visible selected row, follow the file to whichever section still holds it.
+ *
+ * The caller's recorded section is deliberately NOT rewritten when a follow happens, so
+ * the original intent survives: if the file later regains content in the section the user
+ * actually clicked, the pane returns there rather than staying where it drifted.
  *
  * Returns null when the path is in no section at all (it was committed, discarded, or
  * the refresh dropped it), which callers render as "no selection".

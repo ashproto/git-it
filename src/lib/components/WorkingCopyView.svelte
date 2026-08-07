@@ -60,11 +60,15 @@
 
   const selectedFile = $derived(appState.selectedFile);
 
-  // Which sections currently hold the selected path. A partially-staged file is in two
-  // of them at once — which is precisely why the clicked section has to be recorded.
+  // Which RENDERED lists currently hold the selected path — sections are lists on screen,
+  // not file states. A partially-staged file is in two of them at once, which is precisely
+  // why the clicked section has to be recorded. Note `unstagedDisplay`, not `unstagedFiles`:
+  // with unifyUnstaged on, untracked rows are rendered in the Unstaged list and report
+  // "unstaged", so presence has to agree or the selection resolves to a section that has
+  // no rows in that mode.
   const presence = $derived({
     staged: selectedFile !== null && stagedFiles.some((f) => f.path === selectedFile),
-    unstaged: selectedFile !== null && unstagedFiles.some((f) => f.path === selectedFile),
+    unstaged: selectedFile !== null && unstagedDisplay.some((f) => f.path === selectedFile),
     untracked: selectedFile !== null && untrackedFiles.some((f) => f.path === selectedFile),
   });
 
@@ -86,9 +90,9 @@
   // is rendered in the Unstaged list but still needs --no-index.
   const selectedIsUntracked = $derived(presence.untracked);
 
-  // Whether the selected file is displayed in the Unstaged section. Untracked rows
-  // report "unstaged" when unifyUnstaged merges them there, so no special case is
-  // needed. Drives the Unstaged header's Fork-style "Stage" vs "Stage all".
+  // Whether the selected file is displayed in the Unstaged section — including an
+  // untracked file that unifyUnstaged has merged into that list, which `presence.unstaged`
+  // accounts for. Drives the Unstaged header's Fork-style "Stage" vs "Stage all".
   const selectedInUnstagedSection = $derived(section === "unstaged");
 
   // The unstaged half of a partially-staged file. Discarding here reverts the lines to

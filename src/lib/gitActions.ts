@@ -525,7 +525,7 @@ async function runResolve(label: string, fn: () => Promise<unknown>): Promise<bo
 function discardMessage(n: number, unit: string, path: string, revertsToIndex: boolean): string {
   const what = `${n} ${unit}${n === 1 ? "" : "s"} in ${path}`;
   return revertsToIndex
-    ? `Discard ${what}? They revert to your staged version of this file. This cannot be undone.`
+    ? `Discard ${what}. They revert to your staged version of this file. This cannot be undone.`
     : `Permanently discard ${what}. This cannot be undone. (Stash instead to keep them.)`;
 }
 

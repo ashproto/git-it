@@ -25,10 +25,18 @@ describe("resolveSection", () => {
     expect(resolveSection("staged", present({ unstaged: true }))).toBe("unstaged");
   });
 
-  it("follows an untracked file into the Unstaged list when it is merged there", () => {
-    // "Merge Untracked into Unstaged" renders untracked rows as unstaged; the row
-    // reports "unstaged" while presence still says untracked.
-    expect(resolveSection("unstaged", present({ untracked: true }))).toBe("untracked");
+  it("keeps a merged untracked row in the Unstaged list it is rendered in", () => {
+    // "Merge Untracked into Unstaged" renders untracked rows in the Unstaged list, so
+    // the row reports "unstaged" AND presence.unstaged is true. Resolving to "untracked"
+    // here would name a section that has no rows in that mode, leaving the selected row
+    // unhighlighted and the header button acting on the whole list.
+    expect(resolveSection("unstaged", present({ unstaged: true, untracked: true }))).toBe(
+      "unstaged",
+    );
+  });
+
+  it("resolves an untracked file to its own section when the lists are separate", () => {
+    expect(resolveSection("untracked", present({ untracked: true }))).toBe("untracked");
   });
 
   it("prefers unstaged over staged when the file somehow left the clicked section and is in both", () => {
