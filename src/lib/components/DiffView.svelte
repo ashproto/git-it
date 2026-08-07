@@ -418,6 +418,33 @@
     clearSelection();
   }
 
+  /**
+   * Keyboard parity for the mouse affordance: Enter/Space is the double-click
+   * (lock), Shift+Arrow is the shift-click (extend). Focus itself is wired to
+   * `hoverRow` on the rows, which is what raises the ring and toolbar.
+   */
+  function onRowKeydown(e: KeyboardEvent, fi: number, hi: number, ri: number) {
+    if (!hasActions) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      lockSelection(fi, hi, ri);
+      return;
+    }
+    if (e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp") && sel) {
+      e.preventDefault();
+      const delta = e.key === "ArrowDown" ? 1 : -1;
+      const edge = sel.to === sel.anchor ? sel.from : sel.to;
+      const h = parsed.files[fi]?.hunks[hi];
+      if (!h) return;
+      // Rows are counted in the CURRENT view's space: `hunk.lines` in unified,
+      // paired visual rows in split. The two lengths differ, so clamping against
+      // the wrong one walks the selection past the last row of the view.
+      const rowCount = appState.diffSplit ? toSplitRows(h).length : h.lines.length;
+      const next = Math.max(0, Math.min(rowCount - 1, edge + delta));
+      extendSelection(fi, hi, next);
+    }
+  }
+
   // ─── Rendering helper: tokens → HTML string (safe; tokens contain raw highlighted text) ──
 
   function renderTokens(tokens: ThemedToken[]): string {
@@ -587,6 +614,9 @@
                       class:ring-last={ring !== null && ri === ring.to}
                       onmouseenter={() => hoverRow(fi, hi, ri)}
                       style={hasActions && line.kind !== "context" ? "cursor: pointer" : ""}
+                      tabindex={hasActions ? 0 : undefined}
+                      onfocus={() => hoverRow(fi, hi, ri)}
+                      onkeydown={(e) => onRowKeydown(e, fi, hi, ri)}
                       onclick={(e) => onRowClick(e, fi, hi, ri)}
                       ondblclick={() => lockSelection(fi, hi, ri)}
                     >
@@ -626,6 +656,9 @@
                       data-i={ri}
                       style={hasActions && isChangeRow(row) ? "cursor: pointer" : ""}
                       onmouseenter={() => hoverRow(fi, hi, ri)}
+                      tabindex={hasActions ? 0 : undefined}
+                      onfocus={() => hoverRow(fi, hi, ri)}
+                      onkeydown={(e) => onRowKeydown(e, fi, hi, ri)}
                       onclick={(e) => onRowClick(e, fi, hi, ri)}
                       ondblclick={() => lockSelection(fi, hi, ri)}
                     >
