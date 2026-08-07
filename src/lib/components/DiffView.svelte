@@ -156,6 +156,9 @@
   let toolTop = $state(0);
   let toolVisible = $state(false);
 
+  // Enough room for the toolbar's own height so clamping never parks it half out of view.
+  const TOOLBAR_CLEARANCE = 30;
+
   function measureTool() {
     const t = activeTarget();
     const wrap = t ? wrapEls[t.fi] : undefined;
@@ -170,13 +173,13 @@
       toolVisible = false;
       return;
     }
-    const top = row.getBoundingClientRect().top - wrap.getBoundingClientRect().top;
-    // Hide rather than float a toolbar pointing at a row scrolled out of view.
-    if (top < 0 || top > wrap.clientHeight - 8) {
-      toolVisible = false;
-      return;
-    }
-    toolTop = top;
+    const raw = row.getBoundingClientRect().top - wrap.getBoundingClientRect().top;
+    // Clamp rather than hide. The ring stays drawn whenever a target is live, so hiding
+    // the toolbar would leave a visible target with no route to act on it — which happens
+    // routinely for a block or selection taller than the pane, and whenever the user
+    // scrolls with a selection locked.
+    const maxTop = Math.max(0, wrap.clientHeight - TOOLBAR_CLEARANCE);
+    toolTop = Math.min(Math.max(raw, 0), maxTop);
     toolVisible = true;
   }
 
