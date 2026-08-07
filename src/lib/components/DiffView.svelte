@@ -146,9 +146,12 @@
   }
 
   // Runs after the DOM settles, so the anchor row is guaranteed to exist.
+  // diffSplit is tracked too: toggling Unified/Split unmounts the anchor row out
+  // from under a toolbar that would otherwise keep floating at a stale offset.
   $effect(() => {
     hov;
     sel;
+    appState.diffSplit;
     measureTool();
   });
 
@@ -389,6 +392,8 @@
     oldAfterIdx: number;
     newBeforeIdx: number;
     newAfterIdx: number;
+    /** Hunk line indices this row represents: 1 for context, 1-2 for a change pair. */
+    rows: number[];
   }
 
   /** Pair up del/add lines into side-by-side rows, with context lines spanning both. */
@@ -404,7 +409,7 @@
       const line = lines[i];
 
       if (line.kind === "context") {
-        rows.push({ oldLine: line, newLine: line, oldBeforeIdx: bi, oldAfterIdx: ai, newBeforeIdx: bi, newAfterIdx: ai });
+        rows.push({ oldLine: line, newLine: line, oldBeforeIdx: bi, oldAfterIdx: ai, newBeforeIdx: bi, newAfterIdx: ai, rows: [i] });
         bi++;
         ai++;
         i++;
@@ -412,15 +417,15 @@
       }
 
       // Collect a contiguous run of del/add lines and pair them up.
-      const dels: Array<{ line: DiffLine; bi: number }> = [];
-      const adds: Array<{ line: DiffLine; ai: number }> = [];
+      const dels: Array<{ line: DiffLine; bi: number; idx: number }> = [];
+      const adds: Array<{ line: DiffLine; ai: number; idx: number }> = [];
 
       while (i < lines.length && (lines[i].kind === "del" || lines[i].kind === "add")) {
         if (lines[i].kind === "del") {
-          dels.push({ line: lines[i], bi });
+          dels.push({ line: lines[i], bi, idx: i });
           bi++;
         } else {
-          adds.push({ line: lines[i], ai });
+          adds.push({ line: lines[i], ai, idx: i });
           ai++;
         }
         i++;
@@ -437,11 +442,24 @@
           oldAfterIdx: 0,      // dels use before-tokens, index not used for after
           newBeforeIdx: 0,
           newAfterIdx: a?.ai ?? 0,
+          rows: [d?.idx, a?.idx].filter((x): x is number => x !== undefined),
         });
       }
     }
 
     return rows;
+  }
+
+  /**
+   * Does this split row show any hunk line the ring covers? The ring's edges are
+   * decided by comparing neighbours with this, not by testing whether a row holds
+   * `ring.from` / `ring.to`: a pair puts a deletion and an addition on one row, so
+   * with more deletions than additions the run's LAST hunk line sits on an early
+   * visual row and the bottom edge would be drawn mid-block.
+   */
+  function rowInRing(row: SplitRow | undefined, ring: { from: number; to: number } | null): boolean {
+    if (!row || !ring) return false;
+    return row.rows.some((r) => r >= ring.from && r <= ring.to);
   }
 
   // ─── Rendering helper: tokens → HTML string (safe; tokens contain raw highlighted text) ──
@@ -640,9 +658,24 @@
                     </tr>
                   {/each}
                 {:else}
+                  {@const splitRows = toSplitRows(hunk)}
                   <!-- ── SPLIT view ── -->
-                  {#each toSplitRows(hunk) as row, ri (ri)}
-                    <tr class="diff-row split-row">
+                  {#each splitRows as row, ri (ri)}
+                    {@const head = row.rows[0] ?? 0}
+                    {@const inRing = rowInRing(row, ring)}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <tr
+                      class="diff-row split-row"
+                      class:ring={inRing}
+                      class:ring-first={inRing && !rowInRing(splitRows[ri - 1], ring)}
+                      class:ring-last={inRing && !rowInRing(splitRows[ri + 1], ring)}
+                      data-h={hi}
+                      data-i={head}
+                      style={hasActions && (row.oldLine?.kind === "del" || row.newLine?.kind === "add") ? "cursor: pointer" : ""}
+                      onmouseenter={() => hoverRow(fi, hi, head)}
+                      onclick={(e) => onRowClick(e, fi, hi, head)}
+                      ondblclick={() => lockSelection(fi, hi, head)}
+                    >
                       <!-- Old side -->
                       <td class="gutter old-gutter" class:commentable={!!onLineComment}>
                         {row.oldLine?.oldNo ?? ""}
