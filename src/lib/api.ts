@@ -198,6 +198,10 @@ export const api = {
     invoke<void>("stage_lines", { repo, path, hunkIndex, selected, context }),
   unstageLines: (repo: string, path: string, hunkIndex: number, selected: number[], context = 3) =>
     invoke<void>("unstage_lines", { repo, path, hunkIndex, selected, context }),
+  discardHunk: (repo: string, path: string, hunkIndex: number, context = 3) =>
+    invoke<void>("discard_hunk", { repo, path, hunkIndex, context }),
+  discardLines: (repo: string, path: string, hunkIndex: number, selected: number[], context = 3) =>
+    invoke<void>("discard_lines", { repo, path, hunkIndex, selected, context }),
   stashPush: (repo: string, message: string | null) =>
     invoke<void>("stash_push", { repo, message }),
   stashList: (repo: string) => invoke<StashEntry[]>("stash_list", { repo }),

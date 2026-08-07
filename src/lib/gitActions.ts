@@ -870,6 +870,51 @@ export const gitActions = {
     runWorktree(`Stage ${selected.length} line(s) in ${path}`, () => api.stageLines(appState.repo, path, hunkIndex, selected, appState.effectiveDiffContext)),
   unstageLines: (path: string, hunkIndex: number, selected: number[]) =>
     runWorktree(`Unstage ${selected.length} line(s) in ${path}`, () => api.unstageLines(appState.repo, path, hunkIndex, selected, appState.effectiveDiffContext)),
+  // Hunk/line discard is DESTRUCTIVE and NOT undoable — same reasoning as the
+  // file-level `discard` below: uncommitted work is not in the reflog, so there is
+  // no backup bundle to take. Guard BEFORE confirming so the browser preview never
+  // shows a dialog it cannot honour.
+  discardHunk: async (path: string, hunkIndex: number): Promise<boolean> => {
+    if (!isTauri()) {
+      appState.status = "That action needs the desktop app (not the browser preview).";
+      return false;
+    }
+    if (!appState.repo) {
+      appState.status = "Open a repository first.";
+      return false;
+    }
+    const confirmed = await dialogs.confirm({
+      title: "Discard hunk",
+      message: `Permanently discard this hunk of ${path}. This cannot be undone. (Stash instead to keep it.)`,
+      confirmLabel: "Discard",
+      danger: true,
+    });
+    if (!confirmed) return false;
+    return runWorktree(`Discard hunk in ${path}`, () =>
+      api.discardHunk(appState.repo, path, hunkIndex, appState.effectiveDiffContext),
+    );
+  },
+  discardLines: async (path: string, hunkIndex: number, selected: number[]): Promise<boolean> => {
+    if (!isTauri()) {
+      appState.status = "That action needs the desktop app (not the browser preview).";
+      return false;
+    }
+    if (!appState.repo) {
+      appState.status = "Open a repository first.";
+      return false;
+    }
+    const n = selected.length;
+    const confirmed = await dialogs.confirm({
+      title: "Discard lines",
+      message: `Permanently discard ${n} line${n === 1 ? "" : "s"} in ${path}. This cannot be undone. (Stash instead to keep them.)`,
+      confirmLabel: "Discard",
+      danger: true,
+    });
+    if (!confirmed) return false;
+    return runWorktree(`Discard ${n} line(s) in ${path}`, () =>
+      api.discardLines(appState.repo, path, hunkIndex, selected, appState.effectiveDiffContext),
+    );
+  },
   commitChanges: (message: string, signoff = false) =>
     runWorktree("Commit", () => api.commit(appState.repo, message, signoff)),
   // Seamless composer amend (Fork-style): folds the currently-staged changes into
