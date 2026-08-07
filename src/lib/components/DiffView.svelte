@@ -1,7 +1,14 @@
 <script lang="ts">
   import { parseDiff } from "../diff/parse";
   import { getHighlighter, LANGS } from "../diff/highlight";
-  import { blocksOf, blockAt, ordsInRange } from "../diff/blocks";
+  import { blocksOf, blockAt, ordsInRange, type Block } from "../diff/blocks";
+  import {
+    toSplitRows,
+    isChangeRow,
+    splitBlocksOf,
+    splitBlockAt,
+    ordsInSplitRange,
+  } from "../diff/splitRows";
   import { appState } from "../store.svelte";
   import type { DiffFile, DiffHunk, DiffLine } from "../diff/types";
   import type { Highlighter, ThemedToken } from "shiki";
@@ -33,15 +40,32 @@
     !!(onStageHunk || onUnstageHunk || onStageLines || onUnstageLines || onDiscardHunk || onDiscardLines),
   );
 
-  // Hovered unit. `block` is the index into blocksOf(hunk), or null on a context row
-  // (which targets the whole hunk instead).
+  // Hovered unit. `block` is the index into blocksForView(hunk), or null on a context
+  // row (which targets the whole hunk instead).
   let hov = $state<{ fi: number; hi: number; block: number | null } | null>(null);
+
+  /**
+   * Row indices mean different things per view: in unified they index `hunk.lines`,
+   * in split they index the paired visual rows. Every hover/selection/ring value in
+   * this component is in the CURRENT view's space; these two helpers are the only
+   * places that translate.
+   */
+  function selectionOrds(h: DiffHunk, from: number, to: number): number[] {
+    return appState.diffSplit
+      ? ordsInSplitRange(h, toSplitRows(h), from, to)
+      : ordsInRange(h, from, to);
+  }
+
+  function blocksForView(h: DiffHunk): Block[] {
+    return appState.diffSplit ? splitBlocksOf(h, toSplitRows(h)) : blocksOf(h);
+  }
 
   function hoverRow(fi: number, hi: number, ri: number) {
     if (!hasActions || sel) return; // locked: hover is dead
     const h = parsed.files[fi]?.hunks[hi];
     if (!h) return;
-    hov = { fi, hi, block: blockAt(h, ri) };
+    const block = appState.diffSplit ? splitBlockAt(toSplitRows(h), ri) : blockAt(h, ri);
+    hov = { fi, hi, block };
   }
 
   function clearHover() {
@@ -61,7 +85,7 @@
     if (!hov || hov.fi !== fi || hov.hi !== hi || hov.block === null) return null;
     const h = parsed.files[fi]?.hunks[hi];
     if (!h) return null;
-    const b = blocksOf(h)[hov.block];
+    const b = blocksForView(h)[hov.block];
     return b ? { from: b.rows[0], to: b.rows[b.rows.length - 1] } : null;
   }
 
@@ -71,7 +95,7 @@
     scope: "sel" | "blk" | "hunk";
     /** null for a whole-hunk target — the hunk ops take no ordinals. */
     ords: number[] | null;
-    /** Row the toolbar anchors to. */
+    /** Row the toolbar anchors to, in the current view's index space (see `selectionOrds`). */
     anchorRow: number;
   }
 
@@ -81,7 +105,7 @@
     if (sel) {
       const h = parsed.files[sel.fi]?.hunks[sel.hi];
       if (!h) return null;
-      const ords = ordsInRange(h, sel.from, sel.to);
+      const ords = selectionOrds(h, sel.from, sel.to);
       return ords.length
         ? { fi: sel.fi, hi: sel.hi, scope: "sel", ords, anchorRow: sel.from }
         : null;
@@ -90,7 +114,7 @@
     const h = parsed.files[hov.fi]?.hunks[hov.hi];
     if (!h) return null;
     if (hov.block !== null) {
-      const b = blocksOf(h)[hov.block];
+      const b = blocksForView(h)[hov.block];
       if (b) return { fi: hov.fi, hi: hov.hi, scope: "blk", ords: b.ords, anchorRow: b.rows[0] };
     }
     return { fi: hov.fi, hi: hov.hi, scope: "hunk", ords: null, anchorRow: 0 };
@@ -336,22 +360,33 @@
   }
 
   // ─── Line selection ───────────────────────────────────────────────────────────
-  // A contiguous row range inside ONE hunk. `anchor` is the row the range grew
-  // from, so extending down and then back up pivots correctly. Ranges may span
-  // context rows; `ordsInRange` keeps only the change lines.
+  // A contiguous row range inside ONE hunk, in the current view's index space.
+  // `anchor` is the row the range grew from, so extending down and then back up
+  // pivots correctly. Ranges may span context rows; `selectionOrds` keeps only the
+  // change lines.
   let sel = $state<{ fi: number; hi: number; anchor: number; from: number; to: number } | null>(null);
 
-  // A new patch re-indexes every hunk, so any range we were holding is meaningless.
+  // A new patch re-indexes every hunk, and flipping Unified/Split re-indexes the rows
+  // themselves — a range held across either is meaningless.
   $effect(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     patch;
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    appState.diffSplit;
     sel = null;
+    hov = null;
   });
 
   function lockSelection(fi: number, hi: number, ri: number) {
     if (!hasActions) return;
     const h = parsed.files[fi]?.hunks[hi];
-    if (!h || h.lines[ri]?.kind === "context") return;
+    if (!h) return;
+    if (appState.diffSplit) {
+      const srows = toSplitRows(h);
+      if (!srows[ri] || !isChangeRow(srows[ri])) return;
+    } else if (h.lines[ri]?.kind === "context") {
+      return;
+    }
     sel = { fi, hi, anchor: ri, from: ri, to: ri };
     hov = null;
     // A double-click is also the browser's select-word gesture, and `.diff-cell`
@@ -365,7 +400,7 @@
     if (!h) return;
     const from = Math.min(sel.anchor, ri);
     const to = Math.max(sel.anchor, ri);
-    if (!ordsInRange(h, from, to).length) return;
+    if (!selectionOrds(h, from, to).length) return;
     sel = { fi, hi, anchor: sel.anchor, from, to };
     window.getSelection()?.removeAllRanges();
   }
@@ -381,85 +416,6 @@
       return;
     }
     clearSelection();
-  }
-
-  // ─── Split view helpers ───────────────────────────────────────────────────────
-
-  interface SplitRow {
-    oldLine: DiffLine | null;
-    newLine: DiffLine | null;
-    oldBeforeIdx: number;
-    oldAfterIdx: number;
-    newBeforeIdx: number;
-    newAfterIdx: number;
-    /** Hunk line indices this row represents: 1 for context, 1-2 for a change pair. */
-    rows: number[];
-  }
-
-  /** Pair up del/add lines into side-by-side rows, with context lines spanning both. */
-  function toSplitRows(hunk: DiffHunk): SplitRow[] {
-    const rows: SplitRow[] = [];
-    let bi = 0;
-    let ai = 0;
-
-    let i = 0;
-    const lines = hunk.lines;
-
-    while (i < lines.length) {
-      const line = lines[i];
-
-      if (line.kind === "context") {
-        rows.push({ oldLine: line, newLine: line, oldBeforeIdx: bi, oldAfterIdx: ai, newBeforeIdx: bi, newAfterIdx: ai, rows: [i] });
-        bi++;
-        ai++;
-        i++;
-        continue;
-      }
-
-      // Collect a contiguous run of del/add lines and pair them up.
-      const dels: Array<{ line: DiffLine; bi: number; idx: number }> = [];
-      const adds: Array<{ line: DiffLine; ai: number; idx: number }> = [];
-
-      while (i < lines.length && (lines[i].kind === "del" || lines[i].kind === "add")) {
-        if (lines[i].kind === "del") {
-          dels.push({ line: lines[i], bi, idx: i });
-          bi++;
-        } else {
-          adds.push({ line: lines[i], ai, idx: i });
-          ai++;
-        }
-        i++;
-      }
-
-      const maxLen = Math.max(dels.length, adds.length);
-      for (let j = 0; j < maxLen; j++) {
-        const d = dels[j] ?? null;
-        const a = adds[j] ?? null;
-        rows.push({
-          oldLine: d?.line ?? null,
-          newLine: a?.line ?? null,
-          oldBeforeIdx: d?.bi ?? 0,
-          oldAfterIdx: 0,      // dels use before-tokens, index not used for after
-          newBeforeIdx: 0,
-          newAfterIdx: a?.ai ?? 0,
-          rows: [d?.idx, a?.idx].filter((x): x is number => x !== undefined),
-        });
-      }
-    }
-
-    return rows;
-  }
-
-  /**
-   * Does this split row show any hunk line the ring covers? The ring's edges are
-   * decided by comparing neighbours with this, not by testing whether a row holds
-   * `ring.from` / `ring.to`: a pair puts a deletion and an addition on one row, so
-   * with more deletions than additions the run's LAST hunk line sits on an early
-   * visual row and the bottom edge would be drawn mid-block.
-   */
-  function rowInRing(row: SplitRow | undefined, ring: { from: number; to: number } | null): boolean {
-    if (!row || !ring) return false;
-    return row.rows.some((r) => r >= ring.from && r <= ring.to);
   }
 
   // ─── Rendering helper: tokens → HTML string (safe; tokens contain raw highlighted text) ──
@@ -658,23 +614,20 @@
                     </tr>
                   {/each}
                 {:else}
-                  {@const splitRows = toSplitRows(hunk)}
                   <!-- ── SPLIT view ── -->
-                  {#each splitRows as row, ri (ri)}
-                    {@const head = row.rows[0] ?? 0}
-                    {@const inRing = rowInRing(row, ring)}
+                  {#each toSplitRows(hunk) as row, ri (ri)}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <tr
                       class="diff-row split-row"
-                      class:ring={inRing}
-                      class:ring-first={inRing && !rowInRing(splitRows[ri - 1], ring)}
-                      class:ring-last={inRing && !rowInRing(splitRows[ri + 1], ring)}
+                      class:ring={ring !== null && ri >= ring.from && ri <= ring.to}
+                      class:ring-first={ring !== null && ri === ring.from}
+                      class:ring-last={ring !== null && ri === ring.to}
                       data-h={hi}
-                      data-i={head}
-                      style={hasActions && (row.oldLine?.kind === "del" || row.newLine?.kind === "add") ? "cursor: pointer" : ""}
-                      onmouseenter={() => hoverRow(fi, hi, head)}
-                      onclick={(e) => onRowClick(e, fi, hi, head)}
-                      ondblclick={() => lockSelection(fi, hi, head)}
+                      data-i={ri}
+                      style={hasActions && isChangeRow(row) ? "cursor: pointer" : ""}
+                      onmouseenter={() => hoverRow(fi, hi, ri)}
+                      onclick={(e) => onRowClick(e, fi, hi, ri)}
+                      ondblclick={() => lockSelection(fi, hi, ri)}
                     >
                       <!-- Old side -->
                       <td class="gutter old-gutter" class:commentable={!!onLineComment}>
