@@ -323,6 +323,33 @@ pub fn unstage_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) ->
 // Line-level (intra-hunk) staging
 // ---------------------------------------------------------------------------
 
+/// Reject a selection whose change-line ordinals are not one contiguous run.
+///
+/// Callers select a contiguous RANGE of rows, so the ordinals they produce are always
+/// consecutive — context rows carry no ordinal and therefore open no gap. A gapped set
+/// means the caller grouped lines that are not adjacent in the hunk. `build_partial_hunk`
+/// emits in hunk source order, so such a patch applies cleanly while placing the kept and
+/// restored lines in the wrong order — silent corruption with no reflog to recover from.
+/// There is no position for the omitted lines that matches the caller's intent, so refusing
+/// is the only safe answer.
+fn require_contiguous(selected: &[usize]) -> Result<(), String> {
+    if selected.is_empty() {
+        return Ok(());
+    }
+    let mut s: Vec<usize> = selected.to_vec();
+    s.sort_unstable();
+    s.dedup();
+    let span = s[s.len() - 1] - s[0] + 1;
+    if span != s.len() {
+        return Err(format!(
+            "refusing a non-contiguous line selection {:?}: those change lines are not adjacent \
+             in the hunk, and applying them would reorder the file",
+            s
+        ));
+    }
+    Ok(())
+}
+
 /// Build a partial single-hunk patch keeping only the selected change lines.
 /// `selected` holds ORDINALS over the hunk's change lines (the +/- lines, counted
 /// in order starting at 0; context and `\ No newline` lines are NOT counted).
@@ -458,6 +485,7 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
 /// change-line ordinals line up with the diff the user is viewing. `build_partial_hunk`
 /// recomputes the `@@` header from the emitted lines, so any context depth works.
 pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize], context: u32) -> Result<(), String> {
+    require_contiguous(selected)?;
     let d = diff(repo, Some(path), false, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
@@ -471,6 +499,7 @@ pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize
 /// change-line ordinals line up with the diff the user is viewing. `build_partial_hunk`
 /// recomputes the `@@` header from the emitted lines, so any context depth works.
 pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize], context: u32) -> Result<(), String> {
+    require_contiguous(selected)?;
     let d = diff(repo, Some(path), true, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
@@ -499,6 +528,7 @@ pub fn discard_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) ->
 /// unselected `-` are dropped because they are not) — exactly what a worktree
 /// reverse-apply needs. DESTRUCTIVE / not undoable.
 pub fn discard_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize], context: u32) -> Result<(), String> {
+    require_contiguous(selected)?;
     let d = diff(repo, Some(path), false, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
@@ -1005,6 +1035,67 @@ mod tests {
         );
         let still = diff(&r.path, Some("f.txt"), true, 3).unwrap();
         assert!(still.contains("+keep"), "staged work must survive the discard");
+    }
+
+    #[test]
+    fn rejects_a_non_contiguous_selection_instead_of_reordering() {
+        let r = TempRepo::new();
+        r.commit_file("f.txt", "ctx1\nctx2\naaa\nbbb\nccc\nctx3\nctx4\n", "init");
+        r.write("f.txt", "ctx1\nctx2\nXXX\nYYY\nZZZ\nctx3\nctx4\n");
+
+        // Ordinals: -aaa=0 -bbb=1 -ccc=2 +XXX=3 +YYY=4 +ZZZ=5.
+        // [2,5] is the shape split view's paired-row selection used to emit.
+        let err = discard_lines(&r.path, "f.txt", 0, &[2, 5], 3).unwrap_err();
+        assert!(err.contains("non-contiguous"), "unexpected error: {}", err);
+
+        // The refusal must be total — the worktree is untouched.
+        assert_eq!(
+            fs::read_to_string(r.path.join("f.txt")).unwrap(),
+            "ctx1\nctx2\nXXX\nYYY\nZZZ\nctx3\nctx4\n"
+        );
+
+        let err = stage_lines(&r.path, "f.txt", 0, &[0, 3], 3).unwrap_err();
+        assert!(err.contains("non-contiguous"), "unexpected error: {}", err);
+        assert!(r.staged_paths().is_empty(), "nothing may reach the index");
+    }
+
+    #[test]
+    fn contiguous_selections_are_still_accepted() {
+        let r = TempRepo::new();
+        r.commit_file("f.txt", "base\n", "init");
+        r.write("f.txt", "base\nl1\nl2\nl3\n");
+        // Out of order and with a duplicate — still one contiguous run once normalized.
+        discard_lines(&r.path, "f.txt", 0, &[2, 1, 1], 3).unwrap();
+        assert_eq!(
+            fs::read_to_string(r.path.join("f.txt")).unwrap(),
+            "base\nl1\n"
+        );
+    }
+
+    /// The `-` path: discard must put a line BACK, not just remove one. Every existing
+    /// discard test uses a pure-addition hunk, so this branch of `build_partial_hunk`
+    /// was only ever exercised against the INDEX by `unstage_lines`, never against the
+    /// working tree.
+    #[test]
+    fn discard_lines_restores_a_deleted_line() {
+        let r = TempRepo::new();
+        r.commit_file("f.txt", "a\nb\nc\n", "init");
+        r.write("f.txt", "a\nc\n");
+        discard_lines(&r.path, "f.txt", 0, &[0], 3).unwrap();
+        assert_eq!(fs::read_to_string(r.path.join("f.txt")).unwrap(), "a\nb\nc\n");
+    }
+
+    /// A mixed hunk where only the deletion is discarded: `b` comes back and the
+    /// addition `B2` stays. Asserts exact file content so an off-by-one in the
+    /// context anchoring is caught rather than passing a substring check.
+    #[test]
+    fn discard_lines_mixed_hunk_restores_only_the_deletion() {
+        let r = TempRepo::new();
+        r.commit_file("f.txt", "a\nb\nc\n", "init");
+        r.write("f.txt", "a\nB2\nc\n");
+        // Ordinals: -b=0, +B2=1. Discard only the deletion.
+        discard_lines(&r.path, "f.txt", 0, &[0], 3).unwrap();
+        assert_eq!(fs::read_to_string(r.path.join("f.txt")).unwrap(), "a\nb\nB2\nc\n");
     }
 
     #[test]
