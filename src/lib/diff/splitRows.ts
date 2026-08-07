@@ -123,6 +123,44 @@ export function splitBlockAt(rows: SplitRow[], ri: number): number | null {
 }
 
 /**
+ * The split-row range covering every block the inclusive range [a, b] touches, or null
+ * when it touches none (a context-only range).
+ *
+ * Split-view selection snaps to whole blocks because a PARTIAL selection of a mixed
+ * deletion/addition block yields non-contiguous ordinals — and `build_partial_hunk`
+ * emits in hunk source order, so such a patch silently reorders the file. Whole blocks
+ * are always contiguous in ordinal space, as is any union of them, because ordinals run
+ * consecutively across the hunk.
+ */
+export function splitRangeSnappedToBlocks(
+  rows: SplitRow[],
+  a: number,
+  b: number,
+): { from: number; to: number } | null {
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  let from = Infinity;
+  let to = -Infinity;
+  let open = false;
+  let blockStart = 0;
+  for (let ri = 0; ri <= rows.length; ri++) {
+    const isChange = ri < rows.length && isChangeRow(rows[ri]);
+    if (isChange && !open) {
+      open = true;
+      blockStart = ri;
+    } else if (!isChange && open) {
+      open = false;
+      // The block spans [blockStart, ri - 1]; keep it if it overlaps [lo, hi].
+      if (ri - 1 >= lo && blockStart <= hi) {
+        from = Math.min(from, blockStart);
+        to = Math.max(to, ri - 1);
+      }
+    }
+  }
+  return from === Infinity ? null : { from, to };
+}
+
+/**
  * Change-line ordinals covered by an inclusive SPLIT-ROW range (either order).
  * Both sides of every paired row in the range are included — this is what makes
  * "a paired row selects as a unit" true rather than aspirational.

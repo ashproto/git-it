@@ -8,6 +8,7 @@
     splitBlocksOf,
     splitBlockAt,
     ordsInSplitRange,
+    splitRangeSnappedToBlocks,
   } from "../diff/splitRows";
   import { appState } from "../store.svelte";
   import type { DiffFile, DiffHunk, DiffLine } from "../diff/types";
@@ -382,12 +383,16 @@
     const h = parsed.files[fi]?.hunks[hi];
     if (!h) return;
     if (appState.diffSplit) {
-      const srows = toSplitRows(h);
-      if (!srows[ri] || !isChangeRow(srows[ri])) return;
-    } else if (h.lines[ri]?.kind === "context") {
-      return;
+      // Split view snaps to whole blocks: a paired row is a display artifact, and a
+      // partial selection of a mixed block yields non-contiguous ordinals, which
+      // reorder the file when applied.
+      const r = splitRangeSnappedToBlocks(toSplitRows(h), ri, ri);
+      if (!r) return;
+      sel = { fi, hi, anchor: ri, from: r.from, to: r.to };
+    } else {
+      if (h.lines[ri]?.kind === "context") return;
+      sel = { fi, hi, anchor: ri, from: ri, to: ri };
     }
-    sel = { fi, hi, anchor: ri, from: ri, to: ri };
     hov = null;
     // A double-click is also the browser's select-word gesture, and `.diff-cell`
     // deliberately opts back into user-select so diff code stays copyable.
@@ -398,8 +403,17 @@
     if (!sel || sel.fi !== fi || sel.hi !== hi) return;
     const h = parsed.files[fi]?.hunks[hi];
     if (!h) return;
-    const from = Math.min(sel.anchor, ri);
-    const to = Math.max(sel.anchor, ri);
+    let from: number;
+    let to: number;
+    if (appState.diffSplit) {
+      const r = splitRangeSnappedToBlocks(toSplitRows(h), sel.anchor, ri);
+      if (!r) return;
+      from = r.from;
+      to = r.to;
+    } else {
+      from = Math.min(sel.anchor, ri);
+      to = Math.max(sel.anchor, ri);
+    }
     if (!selectionOrds(h, from, to).length) return;
     sel = { fi, hi, anchor: sel.anchor, from, to };
     window.getSelection()?.removeAllRanges();
