@@ -122,21 +122,30 @@ export function ordsInRange(hunk: DiffHunk, from: number, to: number): number[]
 - Emit **one `<tbody class="hunk">` per hunk** instead of the single wrapping `<tbody>` at `:435`. This is the
   whole reason the hunk ring is free: a `<tbody>` is a real element and takes a CSS `outline`. A run of `<tr>`s
   is not, which is why the block ring cannot use the same mechanism.
-- Add **one overlay `<div class="diff-ring">` and one `<div class="diff-tools">`** inside `.diff-table-wrap`,
-  which gains `position: relative`. Both are positioned in JS from the first/last row of the target range.
-- `pointer-events: none` on the ring. The toolbar is interactive and must sit above the rows.
+- **The block/selection ring needs no JS.** `box-shadow` does not merge across CSS rules — a later declaration
+  replaces an earlier one wholesale — but *custom properties* do compose. Every `<td>` carries
+  `box-shadow: var(--rt,…), var(--rb,…), var(--rl,…), var(--rr,…)`, and four separate selectors
+  (`tr.ring-first td`, `tr.ring-last td`, `tr.ring td:first-child`, `tr.ring td:last-child`) each set one edge.
+  A ring around a run of `<tr>`s falls out with no measurement, no overlay, and no scroll listener.
+- **Only the toolbar needs JS**, and only for its vertical offset.
 
 **State:**
 ```ts
-let sel = $state<{ fi: number; hi: number; from: number; to: number } | null>(null);
+let sel = $state<{ fi: number; hi: number; anchor: number; from: number; to: number } | null>(null);
 let hov = $state<{ fi: number; hi: number; block: number | null } | null>(null);
 ```
-`sel` replaces `Map<string, Set<number>>` — contiguity makes a set unnecessary. The existing `$effect` that
-clears selection on `patch` change (`:213`) keeps working and stays.
+`sel` replaces `Map<string, Set<number>>` — contiguity makes a set unnecessary. `anchor` is the row the range
+grew from, kept distinct from `from`/`to` so extending down and then back up pivots on the original
+double-clicked row rather than on whichever edge moved last. The existing `$effect` that clears selection on
+`patch` change (`:213`) keeps working and stays.
 
-**Positioning:** the ring and toolbar are absolutely positioned against `.diff-table-wrap`, offset by both
-`scrollTop` **and `scrollLeft`** — the table is `width: max-content` and scrolls horizontally. A `scroll` listener
-on the wrap repaints. The prototype validated this approach including the horizontal case.
+**Toolbar positioning:** the toolbar is absolutely positioned inside a **new non-scrolling**
+`.diff-table-outer` that wraps `.diff-table-wrap`. This matters: an absolutely-positioned child of an
+`overflow: auto` element scrolls with its content, so a toolbar inside the wrap would drift sideways on a
+horizontally scrolling diff. From outside it, `right: 14px` stays pinned. Its vertical offset is measured as a
+`getBoundingClientRect()` difference against the wrap — already relative to the visible box, so `scrollTop`
+needs no separate arithmetic — and is recomputed on hover/selection change and on scroll. When the anchor row
+scrolls out of view the toolbar hides rather than floating.
 
 **Split view:** the ring spans the **full row width**, covering both columns. A paired row's change ordinals are
 the same set as in Unified, so `stage_lines` / `discard_lines` receive identical arguments in both modes and no
