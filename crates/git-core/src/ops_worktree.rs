@@ -444,24 +444,67 @@ fn require_contiguous(selected: &[usize]) -> Result<(), String> {
 ///   - Unselected `-` lines are dropped (they are absent from the staged file).
 ///
 /// Selected `+`/`-` lines: kept as-is in both directions (mark real change).
-/// Context, `\ No newline` handling, and the any_real_change guard are unchanged.
+/// The any_real_change guard is unchanged; `\ No newline` handling is described below.
 ///
 /// The `@@` counts are recomputed from the emitted lines and the start lines are re-anchored
 /// (see `reanchor`). Dropping lines never moves the side we anchor on: forward, the emitted old
 /// side is exactly the hunk's old side (dropped `+` occupy no old line); reverse, the emitted new
 /// side is exactly the hunk's new side (dropped `-` occupy no new line).
-/// Returns None when the selection keeps no change line (caller should no-op).
-fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, reverse: bool) -> Option<String> {
+///
+/// `Ok(None)` when the selection keeps no change line (caller supplies its own message).
+/// `Err` when the selection cannot be expressed as a patch at all — see the `'\\'` arm.
+fn build_partial_hunk(
+    hunk: &str,
+    selected: &std::collections::HashSet<usize>,
+    reverse: bool,
+) -> Result<Option<String>, String> {
     let mut lines = hunk.splitn(2, '\n');
     let at_line = lines.next().unwrap_or("");
     let body = lines.next().unwrap_or("");
 
-    let (old_start, _, new_start, _, heading) = parse_hunk_header(at_line)?;
+    let Some((old_start, _, new_start, _, heading)) = parse_hunk_header(at_line) else {
+        return Ok(None);
+    };
+
+    // Signs of the change lines, indexed by ordinal — the lookahead a `\ No newline`
+    // marker needs to tell whether the line it follows is still file-final once the
+    // unselected lines are dropped or demoted.
+    let signs: Vec<char> = body
+        .split_inclusive('\n')
+        .filter_map(|l| match l.chars().next() {
+            Some(c @ ('+' | '-')) => Some(c),
+            _ => None,
+        })
+        .collect();
+
+    // Does any change line from ordinal `from` onward still occupy `old_side`
+    // (or the new side) of the emitted patch? A demoted line becomes context and
+    // so occupies both; a dropped one occupies neither.
+    let occupies_from = |from: usize, old_side: bool| -> bool {
+        signs.iter().enumerate().skip(from).any(|(o, &s)| {
+            match (s, selected.contains(&o)) {
+                ('+', true) => !old_side,
+                ('-', true) => old_side,
+                ('+', false) => reverse,
+                ('-', false) => !reverse,
+                _ => false,
+            }
+        })
+    };
+
+    // What the previous source line was actually emitted as. Paired with the first
+    // ordinal that comes after it — the marker arm needs both.
+    #[derive(Clone, Copy)]
+    enum Emitted {
+        Context,
+        Del,
+        Add,
+    }
 
     let mut old_n: u64 = 0;
     let mut new_n: u64 = 0;
     let mut ord: usize = 0;
-    let mut last_emitted = false;
+    let mut last: Option<(Emitted, usize)> = None;
     let mut any_real_change = false;
     let mut out = String::new();
 
@@ -474,7 +517,7 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
                 out.push_str(raw_line);
                 old_n += 1;
                 new_n += 1;
-                last_emitted = true;
+                last = Some((Emitted::Context, ord));
             }
             Some('+') => {
                 let this = ord;
@@ -483,7 +526,7 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
                     // Selected addition: keep as `+` in both directions.
                     out.push_str(raw_line);
                     new_n += 1;
-                    last_emitted = true;
+                    last = Some((Emitted::Add, ord));
                     any_real_change = true;
                 } else if reverse {
                     // Unstage path: this `+` line IS in the staged (new) image,
@@ -493,10 +536,10 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
                     out.push_str(rest);
                     old_n += 1;
                     new_n += 1;
-                    last_emitted = true;
+                    last = Some((Emitted::Context, ord));
                 } else {
                     // Stage path: unselected addition → drop it entirely.
-                    last_emitted = false;
+                    last = None;
                 }
             }
             Some('-') => {
@@ -506,12 +549,12 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
                     // Selected deletion: keep as `-` in both directions.
                     out.push_str(raw_line);
                     old_n += 1;
-                    last_emitted = true;
+                    last = Some((Emitted::Del, ord));
                     any_real_change = true;
                 } else if reverse {
                     // Unstage path: this `-` line is absent from the staged (new) image,
                     // so drop it entirely (it has no presence in the staged file to anchor on).
-                    last_emitted = false;
+                    last = None;
                 } else {
                     // Stage path: unselected deletion → demote to context.
                     let rest = &raw_line[1..];
@@ -519,15 +562,49 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
                     out.push_str(rest);
                     old_n += 1;
                     new_n += 1;
-                    last_emitted = true;
+                    last = Some((Emitted::Context, ord));
                 }
             }
             Some('\\') => {
-                // "\ No newline at end of file" — keep only if last line was emitted
-                if last_emitted {
-                    out.push_str(raw_line);
+                // `\ No newline at end of file` claims the line before it is the LAST line
+                // of the image(s) that line belongs to. A partial selection can leave content
+                // after it on one of those sides, which makes the claim false — and `git apply`
+                // resolves the contradiction by CONCATENATING the two lines onto one, silently
+                // and with no reflog on the discard path. So the marker survives only while it
+                // is still true.
+                match last {
+                    Some((Emitted::Del, from)) => {
+                        if !occupies_from(from, true) {
+                            out.push_str(raw_line);
+                        }
+                    }
+                    Some((Emitted::Add, from)) => {
+                        if !occupies_from(from, false) {
+                            out.push_str(raw_line);
+                        }
+                    }
+                    Some((Emitted::Context, from)) => {
+                        // A context line is one line shared by both images, so it cannot end
+                        // one of them and not the other. When the selection asks for exactly
+                        // that — staging an addition after a demoted final line, say — no
+                        // patch expresses it, and emitting one anyway is how the corruption
+                        // happened. Refuse instead; the whole-hunk action still works.
+                        let old_more = occupies_from(from, true);
+                        let new_more = occupies_from(from, false);
+                        if old_more != new_more {
+                            return Err("this selection cannot be expressed as a patch: it splits \
+                                        a change at a no-newline end of file, where the kept line \
+                                        would have to end with a newline on one side and not the \
+                                        other. Use the whole-hunk action instead."
+                                .to_string());
+                        }
+                        if !old_more {
+                            out.push_str(raw_line);
+                        }
+                    }
+                    None => {}
                 }
-                // do not change counts or last_emitted
+                // do not change counts or `last`
             }
             None | Some(_) => {
                 // bare empty line or other: treat as context
@@ -541,18 +618,18 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
                     out.push_str(&content);
                     old_n += 1;
                     new_n += 1;
-                    last_emitted = true;
+                    last = Some((Emitted::Context, ord));
                 }
             }
         }
     }
 
     if !any_real_change {
-        return None;
+        return Ok(None);
     }
 
     let (o, n) = reanchor(old_start, old_n, new_start, new_n, reverse);
-    Some(format!("{}{}", hunk_header(o, old_n, n, new_n, heading), out))
+    Ok(Some(format!("{}{}", hunk_header(o, old_n, n, new_n, heading), out)))
 }
 
 /// Stage selected lines (change-line ordinals) of one hunk of `path`'s UNSTAGED diff.
@@ -566,7 +643,7 @@ pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
-    let partial = build_partial_hunk(h, &set, false).ok_or("no lines selected to stage")?;
+    let partial = build_partial_hunk(h, &set, false)?.ok_or("no lines selected to stage")?;
     git_apply(repo, &format!("{}{}", header, partial), false, true, context == 0)
 }
 
@@ -581,7 +658,7 @@ pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usi
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
-    let partial = build_partial_hunk(h, &set, true).ok_or("no lines selected to unstage")?;
+    let partial = build_partial_hunk(h, &set, true)?.ok_or("no lines selected to unstage")?;
     git_apply(repo, &format!("{}{}", header, partial), true, true, context == 0)
 }
 
@@ -651,7 +728,7 @@ pub fn discard_lines(
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
-    let partial = build_partial_hunk(h, &set, true).ok_or("no lines selected to discard")?;
+    let partial = build_partial_hunk(h, &set, true)?.ok_or("no lines selected to discard")?;
     git_apply(repo, &format!("{}{}", header, partial), true, false, context == 0)
 }
 
@@ -1127,7 +1204,7 @@ mod tests {
     #[test]
     fn partial_hunk_two_adds_select_first() {
         let hunk = "@@ -10,3 +10,5 @@\n context\n+add0\n+add1\n context2\n";
-        let result = build_partial_hunk(hunk, &set(&[0]), false).expect("should produce patch");
+        let result = build_partial_hunk(hunk, &set(&[0]), false).unwrap().expect("should produce patch");
         assert!(result.contains("+add0"), "selected add kept");
         assert!(!result.contains("+add1"), "unselected add dropped");
         // old_n: 2 context lines = 2; new_n: 2 context + 1 kept add = 3
@@ -1139,7 +1216,7 @@ mod tests {
     fn partial_hunk_minus_kept_vs_demoted() {
         // hunk with two `-` lines (ordinals 0,1); select only 0
         let hunk = "@@ -5,4 +5,2 @@\n ctx\n-keep\n-demote\n ctx2\n";
-        let result = build_partial_hunk(hunk, &set(&[0]), false).expect("should produce patch");
+        let result = build_partial_hunk(hunk, &set(&[0]), false).unwrap().expect("should produce patch");
         // "keep" stays as `-keep`
         assert!(result.contains("-keep"), "kept minus preserved");
         // "demote" becomes ` demote` (context)
@@ -1153,7 +1230,7 @@ mod tests {
     fn partial_hunk_mixed_select_plus_only() {
         let hunk = "@@ -12,4 +12,4 @@\n ctx1\n-removed\n+added\n ctx2\n";
         // ordinal 0 = `-removed`, ordinal 1 = `+added`; select only 1
-        let result = build_partial_hunk(hunk, &set(&[1]), false).expect("should produce patch");
+        let result = build_partial_hunk(hunk, &set(&[1]), false).unwrap().expect("should produce patch");
         assert!(result.starts_with("@@ -12,3 +12,4 @@\n"), "header: {}", &result);
         assert!(result.contains(" removed"), "demoted to context");
         assert!(!result.contains("-removed"), "not a removal");
@@ -1165,17 +1242,20 @@ mod tests {
     fn partial_hunk_no_newline_marker() {
         let hunk = "@@ -1,1 +1,1 @@\n-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n";
         // ordinal 0 = `-old`, ordinal 1 = `+new`
-        // select only 1 (the add); `-old` becomes context
-        let result_add_only = build_partial_hunk(hunk, &set(&[1]), false).expect("patch");
-        // The no-newline after `-old` becomes context so last_emitted=true → marker kept
-        // The no-newline after `+new` which is kept → also kept
-        assert!(result_add_only.contains("\\ No newline"), "marker kept after emitted lines");
 
-        // Now select only 0 (the remove); `+new` is dropped
-        let result_rm_only = build_partial_hunk(hunk, &set(&[0]), false).expect("patch");
-        // The no-newline after `-old` (which is kept): last_emitted=true → kept
-        // The no-newline after `+new` (which is dropped): last_emitted=false → dropped
-        // We expect marker after the kept `-old`, but not a second one after dropped `+new`
+        // Select only 1 (the add), so `-old` is demoted to context. This USED to emit a
+        // patch keeping the marker after that context line, which asserted `old` was
+        // file-final while `+new` followed it. `git apply --cached` accepts that and
+        // resolves the contradiction by concatenating: the index became "oldnew", not
+        // "old\nnew" (verified against real git). One context line cannot end the old
+        // image and not the new one, so no patch expresses this selection — refuse it.
+        let err = build_partial_hunk(hunk, &set(&[1]), false).unwrap_err();
+        assert!(err.contains("no-newline"), "should name the cause, got: {err}");
+
+        // Now select only 0 (the remove); `+new` is dropped. The old side genuinely ends
+        // at `old` with no newline and nothing follows it, so the marker still holds.
+        let result_rm_only = build_partial_hunk(hunk, &set(&[0]), false).unwrap().expect("patch");
+        // Marker after the kept `-old`, but not a second one after the dropped `+new`.
         let count = result_rm_only.matches("\\ No newline").count();
         assert_eq!(count, 1, "only one no-newline marker (after kept line), got: {}", result_rm_only);
     }
@@ -1184,14 +1264,14 @@ mod tests {
     #[test]
     fn partial_hunk_empty_selection_is_none() {
         let hunk = "@@ -1,2 +1,3 @@\n ctx\n+add\n ctx2\n";
-        assert!(build_partial_hunk(hunk, &set(&[]), false).is_none());
+        assert!(build_partial_hunk(hunk, &set(&[]), false).unwrap().is_none());
     }
 
     /// Count-omitted header `@@ -5 +5 @@` parses old_start as 5.
     #[test]
     fn partial_hunk_count_omitted_header() {
         let hunk = "@@ -5 +5 @@\n+newline\n";
-        let result = build_partial_hunk(hunk, &set(&[0]), false).expect("patch");
+        let result = build_partial_hunk(hunk, &set(&[0]), false).unwrap().expect("patch");
         assert!(result.starts_with("@@ -5,"), "old_start=5: {}", result);
     }
 
@@ -1207,7 +1287,7 @@ mod tests {
         let hunk = "@@ -10,14 +10,14 @@\n c1\n c2\n c3\n c4\n c5\n c6\n-removed\n+added\n c7\n c8\n c9\n c10\n c11\n c12\n";
 
         // Select only the `+added` (ordinal 1): the unselected `-removed` is demoted to context.
-        let result = build_partial_hunk(hunk, &set(&[1]), false).expect("should produce patch");
+        let result = build_partial_hunk(hunk, &set(&[1]), false).unwrap().expect("should produce patch");
         assert!(result.contains("+added"), "selected add kept");
         assert!(result.contains(" removed"), "unselected minus demoted to context");
         assert!(!result.contains("-removed"), "unselected minus is not a removal");
@@ -1235,7 +1315,7 @@ mod tests {
         assert_eq!(header, expected, "header counts must match emitted body: {}", result);
 
         // Select only the `-removed` (ordinal 0): the unselected `+added` is dropped.
-        let rm_only = build_partial_hunk(hunk, &set(&[0]), false).expect("should produce patch");
+        let rm_only = build_partial_hunk(hunk, &set(&[0]), false).unwrap().expect("should produce patch");
         assert!(rm_only.contains("-removed"), "selected minus kept as removal");
         assert!(!rm_only.contains("+added"), "unselected add dropped");
     }
@@ -1667,6 +1747,92 @@ mod tests {
         assert_eq!(fs::read_to_string(r.path.join("f.txt")).unwrap(), "a\nb\nB2\nc\n");
     }
 
+    // ---------------------------------------------------------------------
+    // Partial selections at a no-newline end of file
+    //
+    // When the last line of a file with no trailing newline changes, git emits a
+    // `-`/`+` pair where BOTH sides carry `\ No newline at end of file`. Selecting
+    // one half of that pair asks for a file where the restored line is no longer
+    // final — so it must GAIN a trailing newline that the marker denies it.
+    //
+    // The two directions are not symmetric. Reversing (discard/unstage) keeps the
+    // other half as context on the side that still ends there, so dropping the
+    // stale marker expresses it exactly. Going forward (stage) would need the
+    // demoted line to be newline-terminated on the new side and not on the old —
+    // which a single context line cannot say — so that one is refused.
+    // ---------------------------------------------------------------------
+
+    fn index_content(r: &TempRepo, f: &str) -> String {
+        let o = Command::new("git")
+            .current_dir(&r.path)
+            .args(["cat-file", "-p", &format!(":{}", f)])
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "git cat-file failed");
+        String::from_utf8_lossy(&o.stdout).to_string()
+    }
+
+    /// Restoring the deletion must leave `t` and `T2` on SEPARATE lines. Before the
+    /// fix this returned Ok and silently produced "a\ntT2" — the two lines merged —
+    /// on the discard path, which has no reflog to recover from.
+    #[test]
+    fn discard_lines_at_no_newline_eof_keeps_lines_separate() {
+        let r = TempRepo::new();
+        r.commit_file("f.txt", "a\nt", "init");
+        r.write("f.txt", "a\nT2");
+        // Ordinals: -t=0, +T2=1. Restore the deletion, keep the addition.
+        discard_lines_now(&r, "f.txt", 0, &[0], 3).unwrap();
+        assert_eq!(read_file(&r, "f.txt"), "a\nt\nT2");
+    }
+
+    /// The index twin of the case above: same shape, same merge, same fix.
+    #[test]
+    fn unstage_lines_at_no_newline_eof_keeps_lines_separate() {
+        let r = TempRepo::new();
+        r.commit_file("f.txt", "a\nt", "init");
+        r.write("f.txt", "a\nT2");
+        r.git(&["add", "f.txt"]);
+        // Ordinals in the STAGED diff: -t=0, +T2=1. Unstage the deletion.
+        unstage_lines(&r.path, "f.txt", 0, &[0], 3).unwrap();
+        assert_eq!(index_content(&r, "f.txt"), "a\nt\nT2");
+    }
+
+    /// Staging only the addition cannot be expressed: `t` would have to be
+    /// newline-terminated in the index and not in HEAD, and one context line cannot
+    /// carry both. Refuse rather than emit a patch that applies cleanly and corrupts.
+    #[test]
+    fn stage_lines_at_no_newline_eof_refuses_rather_than_corrupting() {
+        let r = TempRepo::new();
+        r.commit_file("f.txt", "a\nt", "init");
+        r.write("f.txt", "a\nT2");
+        // Ordinals: -t=0, +T2=1. Stage only the addition.
+        let err = stage_lines(&r.path, "f.txt", 0, &[1], 3).unwrap_err();
+        assert!(
+            err.contains("no-newline"),
+            "error should name the cause, got: {err}"
+        );
+        // Nothing staged, and the working tree is untouched.
+        assert_eq!(index_content(&r, "f.txt"), "a\nt");
+        assert_eq!(read_file(&r, "f.txt"), "a\nT2");
+    }
+
+    /// The escape hatch the refusal leaves open: whole-hunk ops replay git's own
+    /// hunk verbatim, so they are unaffected by any of this.
+    #[test]
+    fn whole_hunk_ops_at_no_newline_eof_are_unaffected() {
+        let r = TempRepo::new();
+        r.commit_file("f.txt", "a\nt", "init");
+        r.write("f.txt", "a\nT2");
+        stage_hunk(&r.path, "f.txt", 0, 3).unwrap();
+        assert_eq!(index_content(&r, "f.txt"), "a\nT2");
+
+        let r2 = TempRepo::new();
+        r2.commit_file("f.txt", "a\nt", "init");
+        r2.write("f.txt", "a\nT2");
+        discard_hunk_now(&r2, "f.txt", 0, 3).unwrap();
+        assert_eq!(read_file(&r2, "f.txt"), "a\nt");
+    }
+
     #[test]
     fn working_changes_handles_space_in_path() {
         let r = TempRepo::new();
@@ -1711,7 +1877,7 @@ mod tests {
     fn partial_hunk_reverse_mixed_select_plus_drops_minus() {
         // ordinal 0 = `-removed`, ordinal 1 = `+added`; select only 1 (the add)
         let hunk = "@@ -12,4 +12,4 @@\n ctx1\n-removed\n+added\n ctx2\n";
-        let result = build_partial_hunk(hunk, &set(&[1]), true).expect("should produce patch");
+        let result = build_partial_hunk(hunk, &set(&[1]), true).unwrap().expect("should produce patch");
         // `-removed` must be dropped entirely in reverse mode (absent from staged image)
         assert!(!result.contains("-removed"), "unselected minus dropped in reverse");
         assert!(!result.contains(" removed"), "demoted context must NOT appear in reverse");
