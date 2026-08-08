@@ -462,14 +462,16 @@ pub fn unstage_lines(repo: String, path: String, hunk_index: usize, selected: Ve
     ops_worktree::unstage_lines(&PathBuf::from(repo), &path, hunk_index, &selected, context)
 }
 
+// `expected_diff` is the diff text the UI displayed. Discard is irreversible, so git-core
+// refuses the op when the live diff has moved on — see ops_worktree::require_unchanged_diff.
 #[tauri::command]
-pub fn discard_hunk(repo: String, path: String, hunk_index: usize, context: u32) -> Result<(), String> {
-    ops_worktree::discard_hunk(&PathBuf::from(repo), &path, hunk_index, context)
+pub fn discard_hunk(repo: String, path: String, hunk_index: usize, expected_diff: String, context: u32) -> Result<(), String> {
+    ops_worktree::discard_hunk(&PathBuf::from(repo), &path, hunk_index, &expected_diff, context)
 }
 
 #[tauri::command]
-pub fn discard_lines(repo: String, path: String, hunk_index: usize, selected: Vec<usize>, context: u32) -> Result<(), String> {
-    ops_worktree::discard_lines(&PathBuf::from(repo), &path, hunk_index, &selected, context)
+pub fn discard_lines(repo: String, path: String, hunk_index: usize, selected: Vec<usize>, expected_diff: String, context: u32) -> Result<(), String> {
+    ops_worktree::discard_lines(&PathBuf::from(repo), &path, hunk_index, &selected, &expected_diff, context)
 }
 
 #[tauri::command]

@@ -259,10 +259,85 @@ pub fn split_hunks(diff: &str) -> (String, Vec<String>) {
     (header, hunks)
 }
 
+/// Parse `@@ -A[,B] +C[,D] @@[ heading]` into `(old_start, old_n, new_start, new_n, heading)`.
+/// An omitted count means 1 — git writes `@@ -5 +5 @@` for a single-line range. `heading` is
+/// everything after the closing `@@` (git's function-context hint), returned verbatim so it can
+/// be spliced back on. None if the line is not a hunk header.
+fn parse_hunk_header(at_line: &str) -> Option<(u64, u64, u64, u64, &str)> {
+    let (ranges, heading) = at_line.strip_prefix("@@ ")?.split_once(" @@")?;
+    let (old, new) = ranges.split_once(' ')?;
+    let range = |s: &str, sign: char| -> Option<(u64, u64)> {
+        let s = s.strip_prefix(sign)?;
+        Some(match s.split_once(',') {
+            Some((start, count)) => (start.parse().ok()?, count.parse().ok()?),
+            None => (s.parse().ok()?, 1),
+        })
+    };
+    let (old_start, old_n) = range(old, '-')?;
+    let (new_start, new_n) = range(new, '+')?;
+    Some((old_start, old_n, new_start, new_n, heading))
+}
+
+/// Format a hunk header, always with explicit counts and always newline-terminated.
+fn hunk_header(old_start: u64, old_n: u64, new_start: u64, new_n: u64, heading: &str) -> String {
+    let heading = heading.strip_suffix('\n').unwrap_or(heading);
+    format!("@@ -{},{} +{},{} @@{}\n", old_start, old_n, new_start, new_n, heading)
+}
+
+/// Re-anchor one hunk lifted out of a multi-hunk diff so it applies at the right line ALONE.
+///
+/// `git apply` positions a hunk by the coordinate of the image it is producing: `new_start`
+/// going forward, `old_start` going `--reverse` (reverse swaps the two sides). It then searches
+/// for the preimage around that line, which is why an off-by-N coordinate usually goes unnoticed.
+/// But at `-U0` a pure insertion (forward) or a pure deletion (reverse) has an EMPTY preimage —
+/// there is nothing to search for, so git applies at exactly the line named and reports success
+/// from the wrong place.
+///
+/// An extracted hunk carries both coordinates from the FULL diff, where the side we are not
+/// applying against is offset by every line the hunks we did NOT extract added or removed earlier
+/// in the file. Only the side facing our target is trustworthy: `old_start` for a forward apply
+/// (the target is the diff's old image — the index), `new_start` for a reverse one (the target is
+/// its new image — the worktree, or the index when unstaging). Keep that side, derive the other.
+///
+/// `prefix` is the number of unchanged lines before the hunk. git writes a zero-length range as
+/// the line it sits AFTER (`-16,0` = insert after old line 16) and a non-empty range as the first
+/// line it covers (`prefix + 1`) — that convention is the whole of the arithmetic below.
+fn reanchor(old_start: u64, old_n: u64, new_start: u64, new_n: u64, reverse: bool) -> (u64, u64) {
+    if reverse {
+        let prefix = if new_n == 0 { new_start } else { new_start.saturating_sub(1) };
+        (if old_n == 0 { prefix } else { prefix + 1 }, new_start)
+    } else {
+        let prefix = if old_n == 0 { old_start } else { old_start.saturating_sub(1) };
+        (old_start, if new_n == 0 { prefix } else { prefix + 1 })
+    }
+}
+
+/// Re-anchor a whole hunk taken verbatim from git's diff (see `reanchor`). The body — and so both
+/// line counts — is untouched. A header we cannot parse is handed back unchanged: git wrote it, so
+/// git can read it, and refusing to guess beats emitting something we invented.
+fn reanchor_hunk(hunk: &str, reverse: bool) -> String {
+    let mut parts = hunk.splitn(2, '\n');
+    let at_line = parts.next().unwrap_or("");
+    let body = parts.next().unwrap_or("");
+    match parse_hunk_header(at_line) {
+        Some((old_start, old_n, new_start, new_n, heading)) => {
+            let (o, n) = reanchor(old_start, old_n, new_start, new_n, reverse);
+            format!("{}{}", hunk_header(o, old_n, n, new_n, heading), body)
+        }
+        None => hunk.to_string(),
+    }
+}
+
 /// Pipe a patch (reconstructed from git's own diff output) to `git apply` via stdin.
 /// `cached` selects the target: true → `--cached` (the index, for stage/unstage),
 /// false → the WORKING TREE only (for discard). Never uses a temp file or shell.
-fn git_apply(repo: &Path, patch: &str, reverse: bool, cached: bool) -> Result<(), String> {
+///
+/// `zero_context` must be set when the patch came from a `-U0` diff. Without it git enforces
+/// "a hunk with no trailing context must match at the end of the file", which a context-free
+/// hunk always trips: reverse applies then fail outright, and a forward insertion silently lands
+/// at EOF. `--unidiff-zero` lifts exactly that rule, so it is passed ONLY at `-U0` — at any real
+/// context depth those checks are the safety net and stay on.
+fn git_apply(repo: &Path, patch: &str, reverse: bool, cached: bool, zero_context: bool) -> Result<(), String> {
     let mut c = Command::new("git");
     c.current_dir(repo).arg("apply");
     if cached {
@@ -270,6 +345,9 @@ fn git_apply(repo: &Path, patch: &str, reverse: bool, cached: bool) -> Result<()
     }
     if reverse {
         c.arg("--reverse");
+    }
+    if zero_context {
+        c.arg("--unidiff-zero");
     }
     c.arg("-")
         .stdin(Stdio::piped())
@@ -294,29 +372,31 @@ fn git_apply(repo: &Path, patch: &str, reverse: bool, cached: bool) -> Result<()
 /// Stage one hunk (by index) of `path`'s UNSTAGED diff.
 /// The patch is reconstructed from a diff fetched at the caller's display `context`,
 /// so the supplied `hunk_index` lines up with the hunks the user is actually viewing
-/// (the frontend fetches the displayed diff at the same context). The partial-hunk
-/// builder recomputes the `@@` header from the emitted lines, so any context depth works.
+/// (the frontend fetches the displayed diff at the same context). `reanchor_hunk` repairs
+/// the coordinate the extracted hunk inherited from the hunks left behind, so any context
+/// depth works — see `reanchor` for why that is not cosmetic at `-U0`.
 /// Hunk indices refer to the CURRENT live diff; after a successful stage/unstage the remaining
 /// diff re-indexes, so callers must re-fetch the diff before issuing another hunk op.
 pub fn stage_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) -> Result<(), String> {
     let d = diff(repo, Some(path), false, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
-    git_apply(repo, &format!("{}{}", header, h), false, true)
+    git_apply(repo, &format!("{}{}", header, reanchor_hunk(h, false)), false, true, context == 0)
 }
 
 /// Unstage one hunk (by index) of `path`'s STAGED diff.
 /// The patch is reconstructed from a diff fetched at the caller's display `context`,
 /// so the supplied `hunk_index` lines up with the hunks the user is actually viewing
-/// (the frontend fetches the displayed diff at the same context). The partial-hunk
-/// builder recomputes the `@@` header from the emitted lines, so any context depth works.
+/// (the frontend fetches the displayed diff at the same context). `reanchor_hunk` repairs
+/// the coordinate the extracted hunk inherited from the hunks left behind, so any context
+/// depth works — see `reanchor` for why that is not cosmetic at `-U0`.
 /// Hunk indices refer to the CURRENT live diff; after a successful stage/unstage the remaining
 /// diff re-indexes, so callers must re-fetch the diff before issuing another hunk op.
 pub fn unstage_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) -> Result<(), String> {
     let d = diff(repo, Some(path), true, context)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
-    git_apply(repo, &format!("{}{}", header, h), true, true)
+    git_apply(repo, &format!("{}{}", header, reanchor_hunk(h, true)), true, true, context == 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -364,24 +444,19 @@ fn require_contiguous(selected: &[usize]) -> Result<(), String> {
 ///   - Unselected `-` lines are dropped (they are absent from the staged file).
 ///
 /// Selected `+`/`-` lines: kept as-is in both directions (mark real change).
-/// Context, `\ No newline` handling, header recompute, and the any_real_change
-/// guard are unchanged.
+/// Context, `\ No newline` handling, and the any_real_change guard are unchanged.
+///
+/// The `@@` counts are recomputed from the emitted lines and the start lines are re-anchored
+/// (see `reanchor`). Dropping lines never moves the side we anchor on: forward, the emitted old
+/// side is exactly the hunk's old side (dropped `+` occupy no old line); reverse, the emitted new
+/// side is exactly the hunk's new side (dropped `-` occupy no new line).
 /// Returns None when the selection keeps no change line (caller should no-op).
 fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, reverse: bool) -> Option<String> {
     let mut lines = hunk.splitn(2, '\n');
     let at_line = lines.next().unwrap_or("");
     let body = lines.next().unwrap_or("");
 
-    // Parse @@ -A[,B] +C[,D] @@ [heading]
-    // We only need A (old_start). Be tolerant of missing counts.
-    let old_start: u64 = {
-        // Find "-A" after "@@"
-        let after_at = at_line.trim_start_matches('@').trim_start_matches(' ');
-        // e.g. "-12,6 +12,7 @@ heading" or "-5 +5 @@"
-        let old_part = after_at.trim_start_matches('-');
-        let end = old_part.find([',', ' ']).unwrap_or(old_part.len());
-        old_part[..end].parse().unwrap_or(1)
-    };
+    let (old_start, _, new_start, _, heading) = parse_hunk_header(at_line)?;
 
     let mut old_n: u64 = 0;
     let mut new_n: u64 = 0;
@@ -476,14 +551,15 @@ fn build_partial_hunk(hunk: &str, selected: &std::collections::HashSet<usize>, r
         return None;
     }
 
-    let header = format!("@@ -{},{} +{},{} @@\n", old_start, old_n, old_start, new_n);
-    Some(format!("{}{}", header, out))
+    let (o, n) = reanchor(old_start, old_n, new_start, new_n, reverse);
+    Some(format!("{}{}", hunk_header(o, old_n, n, new_n, heading), out))
 }
 
 /// Stage selected lines (change-line ordinals) of one hunk of `path`'s UNSTAGED diff.
 /// The diff is fetched at the caller's display `context` so `hunk_index` and the
 /// change-line ordinals line up with the diff the user is viewing. `build_partial_hunk`
-/// recomputes the `@@` header from the emitted lines, so any context depth works.
+/// recomputes the `@@` header counts from the emitted lines and re-anchors its start lines
+/// (see `reanchor`), so any context depth works.
 pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize], context: u32) -> Result<(), String> {
     require_contiguous(selected)?;
     let d = diff(repo, Some(path), false, context)?;
@@ -491,13 +567,14 @@ pub fn stage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
     let partial = build_partial_hunk(h, &set, false).ok_or("no lines selected to stage")?;
-    git_apply(repo, &format!("{}{}", header, partial), false, true)
+    git_apply(repo, &format!("{}{}", header, partial), false, true, context == 0)
 }
 
 /// Unstage selected lines (change-line ordinals) of one hunk of `path`'s STAGED diff.
 /// The diff is fetched at the caller's display `context` so `hunk_index` and the
 /// change-line ordinals line up with the diff the user is viewing. `build_partial_hunk`
-/// recomputes the `@@` header from the emitted lines, so any context depth works.
+/// recomputes the `@@` header counts from the emitted lines and re-anchors its start lines
+/// (see `reanchor`), so any context depth works.
 pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize], context: u32) -> Result<(), String> {
     require_contiguous(selected)?;
     let d = diff(repo, Some(path), true, context)?;
@@ -505,7 +582,29 @@ pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usi
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
     let partial = build_partial_hunk(h, &set, true).ok_or("no lines selected to unstage")?;
-    git_apply(repo, &format!("{}{}", header, partial), true, true)
+    git_apply(repo, &format!("{}{}", header, partial), true, true, context == 0)
+}
+
+/// Refuse a discard whose `hunk_index` / ordinals were picked against a different diff.
+///
+/// `expected_diff` is the exact `diff()` text the caller displayed. The confirmation dialog in
+/// front of a discard has no timeout, so an external edit — another editor, another Git It window,
+/// a build step — can re-split the file between the click and the confirm. Nothing about a plain
+/// integer index says which hunk it meant, so a re-fetched diff would happily reverse-apply hunk N
+/// of a file the user never saw, and unlike stage/unstage there is no index or reflog to undo it.
+///
+/// The comparison is deliberately whole-file rather than per-hunk. Not every edit moves the hunk
+/// the user picked — one confined to a later hunk does not — but telling those apart means trusting
+/// the same index arithmetic that is in question, and refusing costs one retry while guessing wrong
+/// costs work that cannot be recovered. This is additive — `require_contiguous` remains the
+/// independent defence against a gapped selection reordering the file.
+fn require_unchanged_diff(live: &str, expected: &str) -> Result<(), String> {
+    if live == expected {
+        return Ok(());
+    }
+    Err("the file changed since the diff you were shown — nothing was discarded. \
+         Check the updated diff and try again."
+        .to_string())
 }
 
 /// Discard one hunk (by index) of `path`'s UNSTAGED diff: reverse-apply it to the
@@ -513,13 +612,21 @@ pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usi
 /// INDEX, the lines revert to their staged state — staged changes to the same file
 /// are untouched. DESTRUCTIVE / not undoable.
 ///
-/// Hunk indices refer to the CURRENT live diff; after a successful op the remaining
-/// diff re-indexes, so callers must re-fetch before issuing another.
-pub fn discard_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) -> Result<(), String> {
+/// `expected_diff` is the diff the caller showed the user; the op is refused if the live diff
+/// no longer matches it (see `require_unchanged_diff`). Hunk indices refer to that diff; after a
+/// successful op the remaining diff re-indexes, so callers must re-fetch before issuing another.
+pub fn discard_hunk(
+    repo: &Path,
+    path: &str,
+    hunk_index: usize,
+    expected_diff: &str,
+    context: u32,
+) -> Result<(), String> {
     let d = diff(repo, Some(path), false, context)?;
+    require_unchanged_diff(&d, expected_diff)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
-    git_apply(repo, &format!("{}{}", header, h), true, false)
+    git_apply(repo, &format!("{}{}", header, reanchor_hunk(h, true)), true, false, context == 0)
 }
 
 /// Discard selected change-line ordinals of one hunk of `path`'s UNSTAGED diff.
@@ -527,14 +634,25 @@ pub fn discard_hunk(repo: &Path, path: &str, hunk_index: usize, context: u32) ->
 /// working file (unselected `+` become context because they ARE present there;
 /// unselected `-` are dropped because they are not) — exactly what a worktree
 /// reverse-apply needs. DESTRUCTIVE / not undoable.
-pub fn discard_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usize], context: u32) -> Result<(), String> {
+///
+/// `expected_diff` is the diff the caller showed the user; the op is refused if the live diff
+/// no longer matches it (see `require_unchanged_diff`).
+pub fn discard_lines(
+    repo: &Path,
+    path: &str,
+    hunk_index: usize,
+    selected: &[usize],
+    expected_diff: &str,
+    context: u32,
+) -> Result<(), String> {
     require_contiguous(selected)?;
     let d = diff(repo, Some(path), false, context)?;
+    require_unchanged_diff(&d, expected_diff)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
     let partial = build_partial_hunk(h, &set, true).ok_or("no lines selected to discard")?;
-    git_apply(repo, &format!("{}{}", header, partial), true, false)
+    git_apply(repo, &format!("{}{}", header, partial), true, false, context == 0)
 }
 
 /// Stash current changes (staged + unstaged). Message is optional.
@@ -828,6 +946,183 @@ mod tests {
         v.iter().copied().collect()
     }
 
+    const BASE_20: &str =
+        "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\n";
+    const TWO_ADD_HUNKS: &str =
+        "a\nb\nB2\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nQ2\nq\nr\ns\nt\n";
+    const FIRST_ADD_ONLY: &str =
+        "a\nb\nB2\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\n";
+    const SECOND_ADD_ONLY: &str =
+        "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nQ2\nq\nr\ns\nt\n";
+    const THREE_LINE_SHIFT_HUNKS: &str =
+        "a\nb\nB2a\nB2b\nB2c\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nQ2\nq\nr\ns\nt\n";
+    const THREE_LINE_SHIFT_FIRST_ONLY: &str =
+        "a\nb\nB2a\nB2b\nB2c\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\n";
+    // A 3-line insertion early on, then a PURE DELETION later: the reverse-apply twin of the
+    // pure-insertion case above. Restoring `q` has an empty preimage, so nothing anchors the
+    // patch except the header coordinate, and the earlier hunk shifts it by 3.
+    const SHIFTED_DELETE_HUNKS: &str =
+        "a\nb\nB2a\nB2b\nB2c\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nr\ns\nt\n";
+    const SHIFTED_DELETE_RESTORED: &str =
+        "a\nb\nB2a\nB2b\nB2c\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\n";
+    const MIXED_SECOND_HUNK: &str =
+        "a\nb\nB2\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nQ2\nr\ns\nt\n";
+    const MIXED_SECOND_ONLY: &str =
+        "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nQ2\nr\ns\nt\n";
+    const MIXED_FIRST_ONLY: &str =
+        "a\nb\nB2\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\n";
+    const MIXED_SELECTED_DELETION_STAGED: &str =
+        "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nr\ns\nt\n";
+    const MIXED_SELECTED_DELETION_RESTORED: &str =
+        "a\nb\nB2\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nQ2\nr\ns\nt\n";
+
+    fn read_index_file(r: &TempRepo, path: &str) -> String {
+        let output = Command::new("git")
+            .current_dir(&r.path)
+            .arg("show")
+            .arg(format!(":{}", path))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git show index file: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    /// Discard against the diff as it stands right now — the freshness snapshot the UI
+    /// captures when the user clicks. Tests that exercise the stale-snapshot refusal pass
+    /// their own `expected_diff` instead.
+    fn discard_hunk_now(r: &TempRepo, path: &str, hunk_index: usize, context: u32) -> Result<(), String> {
+        let live = diff(&r.path, Some(path), false, context)?;
+        discard_hunk(&r.path, path, hunk_index, &live, context)
+    }
+
+    fn discard_lines_now(
+        r: &TempRepo,
+        path: &str,
+        hunk_index: usize,
+        selected: &[usize],
+        context: u32,
+    ) -> Result<(), String> {
+        let live = diff(&r.path, Some(path), false, context)?;
+        discard_lines(&r.path, path, hunk_index, selected, &live, context)
+    }
+
+    fn repo_with_second_hunk(
+        edited: &str,
+        staged: bool,
+        context: u32,
+        second_header_prefix: &str,
+    ) -> TempRepo {
+        let r = TempRepo::new();
+        r.commit_file("matrix.txt", BASE_20, "init");
+        r.write("matrix.txt", edited);
+        if staged {
+            r.git(&["add", "matrix.txt"]);
+        }
+        let d = diff(&r.path, Some("matrix.txt"), staged, context).unwrap();
+        let (_header, hunks) = split_hunks(&d);
+        assert_eq!(hunks.len(), 2, "expected two hunks, diff was:\n{}", d);
+        assert!(
+            hunks[1].starts_with(second_header_prefix),
+            "second hunk must have the expected divergent starts, diff was:\n{}",
+            d
+        );
+        r
+    }
+
+    fn assert_operation_content(
+        r: &TempRepo,
+        result: Result<(), String>,
+        expected_index: &str,
+        expected_worktree: &str,
+    ) {
+        let actual_index = read_index_file(r, "matrix.txt");
+        let actual_worktree = fs::read_to_string(r.path.join("matrix.txt")).unwrap();
+        assert!(
+            result.is_ok()
+                && actual_index == expected_index
+                && actual_worktree == expected_worktree,
+            "result: {:?}\nindex expected:\n{}index actual:\n{}worktree expected:\n{}worktree actual:\n{}",
+            result,
+            expected_index,
+            actual_index,
+            expected_worktree,
+            actual_worktree
+        );
+    }
+
+    fn assert_stage_hunk_case(
+        edited: &str,
+        context: u32,
+        second_header_prefix: &str,
+        expected_index: &str,
+    ) {
+        let r = repo_with_second_hunk(edited, false, context, second_header_prefix);
+        let result = stage_hunk(&r.path, "matrix.txt", 1, context);
+        assert_operation_content(&r, result, expected_index, edited);
+    }
+
+    fn assert_unstage_hunk_case(
+        edited: &str,
+        context: u32,
+        second_header_prefix: &str,
+        expected_index: &str,
+    ) {
+        let r = repo_with_second_hunk(edited, true, context, second_header_prefix);
+        let result = unstage_hunk(&r.path, "matrix.txt", 1, context);
+        assert_operation_content(&r, result, expected_index, edited);
+    }
+
+    fn assert_stage_lines_case(
+        edited: &str,
+        context: u32,
+        second_header_prefix: &str,
+        selected: &[usize],
+        expected_index: &str,
+    ) {
+        let r = repo_with_second_hunk(edited, false, context, second_header_prefix);
+        let result = stage_lines(&r.path, "matrix.txt", 1, selected, context);
+        assert_operation_content(&r, result, expected_index, edited);
+    }
+
+    fn assert_unstage_lines_case(
+        edited: &str,
+        context: u32,
+        second_header_prefix: &str,
+        selected: &[usize],
+        expected_index: &str,
+    ) {
+        let r = repo_with_second_hunk(edited, true, context, second_header_prefix);
+        let result = unstage_lines(&r.path, "matrix.txt", 1, selected, context);
+        assert_operation_content(&r, result, expected_index, edited);
+    }
+
+    fn assert_discard_hunk_case(
+        edited: &str,
+        context: u32,
+        second_header_prefix: &str,
+        expected_worktree: &str,
+    ) {
+        let r = repo_with_second_hunk(edited, false, context, second_header_prefix);
+        let result = discard_hunk_now(&r, "matrix.txt", 1, context);
+        assert_operation_content(&r, result, BASE_20, expected_worktree);
+    }
+
+    fn assert_discard_lines_case(
+        edited: &str,
+        context: u32,
+        second_header_prefix: &str,
+        selected: &[usize],
+        expected_worktree: &str,
+    ) {
+        let r = repo_with_second_hunk(edited, false, context, second_header_prefix);
+        let result = discard_lines_now(&r, "matrix.txt", 1, selected, context);
+        assert_operation_content(&r, result, BASE_20, expected_worktree);
+    }
+
     /// Two added lines; select only ordinal 0. The second add is dropped; new_n reduced by 1.
     #[test]
     fn partial_hunk_two_adds_select_first() {
@@ -971,6 +1266,204 @@ mod tests {
         assert!(unstaged.contains("+line3"), "line3 still unstaged");
     }
 
+    // ── context / multi-hunk operation matrix ───────────────────────────────
+
+    #[test]
+    fn context_three_second_hunk_stage_hunk_updates_index_at_exact_position() {
+        assert_stage_hunk_case(TWO_ADD_HUNKS, 3, "@@ -14,6 +15,7 @@", SECOND_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_three_second_hunk_unstage_hunk_updates_index_at_exact_position() {
+        assert_unstage_hunk_case(TWO_ADD_HUNKS, 3, "@@ -14,6 +15,7 @@", FIRST_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_three_second_hunk_stage_lines_updates_index_at_exact_position() {
+        assert_stage_lines_case(TWO_ADD_HUNKS, 3, "@@ -14,6 +15,7 @@", &[0], SECOND_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_three_second_hunk_unstage_lines_updates_index_at_exact_position() {
+        assert_unstage_lines_case(TWO_ADD_HUNKS, 3, "@@ -14,6 +15,7 @@", &[0], FIRST_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_three_second_hunk_discard_hunk_updates_worktree_at_exact_position() {
+        assert_discard_hunk_case(TWO_ADD_HUNKS, 3, "@@ -14,6 +15,7 @@", FIRST_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_three_second_hunk_discard_lines_updates_worktree_at_exact_position() {
+        assert_discard_lines_case(TWO_ADD_HUNKS, 3, "@@ -14,6 +15,7 @@", &[0], FIRST_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_zero_second_hunk_stage_hunk_updates_index_at_exact_position() {
+        assert_stage_hunk_case(TWO_ADD_HUNKS, 0, "@@ -16,0 +18 @@", SECOND_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_zero_second_hunk_unstage_hunk_updates_index_at_exact_position() {
+        assert_unstage_hunk_case(TWO_ADD_HUNKS, 0, "@@ -16,0 +18 @@", FIRST_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_zero_second_hunk_stage_lines_updates_index_at_exact_position() {
+        assert_stage_lines_case(TWO_ADD_HUNKS, 0, "@@ -16,0 +18 @@", &[0], SECOND_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_zero_second_hunk_unstage_lines_updates_index_at_exact_position() {
+        assert_unstage_lines_case(TWO_ADD_HUNKS, 0, "@@ -16,0 +18 @@", &[0], FIRST_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_zero_second_hunk_discard_hunk_updates_worktree_at_exact_position() {
+        assert_discard_hunk_case(TWO_ADD_HUNKS, 0, "@@ -16,0 +18 @@", FIRST_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_zero_second_hunk_discard_lines_updates_worktree_at_exact_position() {
+        assert_discard_lines_case(TWO_ADD_HUNKS, 0, "@@ -16,0 +18 @@", &[0], FIRST_ADD_ONLY);
+    }
+
+    #[test]
+    fn context_zero_mixed_second_hunk_stage_hunk_updates_index_exactly() {
+        assert_stage_hunk_case(MIXED_SECOND_HUNK, 0, "@@ -17 +18 @@", MIXED_SECOND_ONLY);
+    }
+
+    #[test]
+    fn context_zero_mixed_second_hunk_unstage_hunk_updates_index_exactly() {
+        assert_unstage_hunk_case(MIXED_SECOND_HUNK, 0, "@@ -17 +18 @@", MIXED_FIRST_ONLY);
+    }
+
+    #[test]
+    fn context_zero_mixed_second_hunk_stage_lines_stages_only_the_deletion() {
+        assert_stage_lines_case(
+            MIXED_SECOND_HUNK,
+            0,
+            "@@ -17 +18 @@",
+            &[0],
+            MIXED_SELECTED_DELETION_STAGED,
+        );
+    }
+
+    #[test]
+    fn context_zero_mixed_second_hunk_unstage_lines_unstages_only_the_deletion() {
+        assert_unstage_lines_case(
+            MIXED_SECOND_HUNK,
+            0,
+            "@@ -17 +18 @@",
+            &[0],
+            MIXED_SELECTED_DELETION_RESTORED,
+        );
+    }
+
+    #[test]
+    fn context_zero_mixed_second_hunk_discard_hunk_updates_worktree_exactly() {
+        assert_discard_hunk_case(MIXED_SECOND_HUNK, 0, "@@ -17 +18 @@", MIXED_FIRST_ONLY);
+    }
+
+    #[test]
+    fn context_zero_mixed_second_hunk_discard_lines_restores_only_the_deletion() {
+        assert_discard_lines_case(
+            MIXED_SECOND_HUNK,
+            0,
+            "@@ -17 +18 @@",
+            &[0],
+            MIXED_SELECTED_DELETION_RESTORED,
+        );
+    }
+
+    // Reverse-direction twin of the ctx-0 pure-insertion cases: the hunk that RESTORES `q` has
+    // an empty preimage, so `git apply --reverse` places it purely by the header coordinate, and
+    // the extracted hunk inherits an old-side start that the 3-line earlier insertion has moved.
+    // Without `reanchor` the line comes back three rows too high — Ok(()), wrong file.
+    #[test]
+    fn context_zero_shifted_deletion_discard_hunk_restores_at_exact_position() {
+        assert_discard_hunk_case(SHIFTED_DELETE_HUNKS, 0, "@@ -17 +19,0 @@", SHIFTED_DELETE_RESTORED);
+    }
+
+    #[test]
+    fn context_zero_shifted_deletion_discard_lines_restores_at_exact_position() {
+        assert_discard_lines_case(
+            SHIFTED_DELETE_HUNKS,
+            0,
+            "@@ -17 +19,0 @@",
+            &[0],
+            SHIFTED_DELETE_RESTORED,
+        );
+    }
+
+    #[test]
+    fn context_zero_shifted_deletion_unstage_hunk_restores_at_exact_position() {
+        assert_unstage_hunk_case(SHIFTED_DELETE_HUNKS, 0, "@@ -17 +19,0 @@", SHIFTED_DELETE_RESTORED);
+    }
+
+    #[test]
+    fn context_one_three_line_shift_stage_hunk_updates_index_at_exact_position() {
+        assert_stage_hunk_case(
+            THREE_LINE_SHIFT_HUNKS,
+            1,
+            "@@ -16,2 +19,3 @@",
+            SECOND_ADD_ONLY,
+        );
+    }
+
+    #[test]
+    fn context_one_three_line_shift_unstage_hunk_updates_index_at_exact_position() {
+        assert_unstage_hunk_case(
+            THREE_LINE_SHIFT_HUNKS,
+            1,
+            "@@ -16,2 +19,3 @@",
+            THREE_LINE_SHIFT_FIRST_ONLY,
+        );
+    }
+
+    #[test]
+    fn context_one_three_line_shift_stage_lines_updates_index_at_exact_position() {
+        assert_stage_lines_case(
+            THREE_LINE_SHIFT_HUNKS,
+            1,
+            "@@ -16,2 +19,3 @@",
+            &[0],
+            SECOND_ADD_ONLY,
+        );
+    }
+
+    #[test]
+    fn context_one_three_line_shift_unstage_lines_updates_index_at_exact_position() {
+        assert_unstage_lines_case(
+            THREE_LINE_SHIFT_HUNKS,
+            1,
+            "@@ -16,2 +19,3 @@",
+            &[0],
+            THREE_LINE_SHIFT_FIRST_ONLY,
+        );
+    }
+
+    #[test]
+    fn context_one_three_line_shift_discard_hunk_updates_worktree_at_exact_position() {
+        assert_discard_hunk_case(
+            THREE_LINE_SHIFT_HUNKS,
+            1,
+            "@@ -16,2 +19,3 @@",
+            THREE_LINE_SHIFT_FIRST_ONLY,
+        );
+    }
+
+    #[test]
+    fn context_one_three_line_shift_discard_lines_updates_worktree_at_exact_position() {
+        assert_discard_lines_case(
+            THREE_LINE_SHIFT_HUNKS,
+            1,
+            "@@ -16,2 +19,3 @@",
+            &[0],
+            THREE_LINE_SHIFT_FIRST_ONLY,
+        );
+    }
+
     // ── discard (worktree reverse-apply) ─────────────────────────────────────
 
     #[test]
@@ -989,7 +1482,7 @@ mod tests {
         let (_h, hunks) = split_hunks(&d);
         assert_eq!(hunks.len(), 2, "expected two hunks, diff was:\n{}", d);
 
-        discard_hunk(&r.path, "f.txt", 0, 3).unwrap();
+        discard_hunk_now(&r, "f.txt", 0, 3).unwrap();
 
         let now = fs::read_to_string(r.path.join("f.txt")).unwrap();
         assert!(now.contains("line2\n"), "hunk 0 should be reverted");
@@ -1003,7 +1496,7 @@ mod tests {
         r.commit_file("f.txt", "base\n", "init");
         r.write("f.txt", "base\nline1\nline2\nline3\n");
         // ordinals 0,1,2 == +line1,+line2,+line3 — discard only line2.
-        discard_lines(&r.path, "f.txt", 0, &[1], 3).unwrap();
+        discard_lines_now(&r, "f.txt", 0, &[1], 3).unwrap();
         assert_eq!(
             fs::read_to_string(r.path.join("f.txt")).unwrap(),
             "base\nline1\nline3\n",
@@ -1026,7 +1519,7 @@ mod tests {
         assert!(staged.contains("+keep"), "precondition: keep must be staged");
 
         // The unstaged diff now holds exactly one change line (`+drop`) at ordinal 0.
-        discard_lines(&r.path, "f.txt", 0, &[0], 3).unwrap();
+        discard_lines_now(&r, "f.txt", 0, &[0], 3).unwrap();
 
         assert_eq!(
             fs::read_to_string(r.path.join("f.txt")).unwrap(),
@@ -1045,7 +1538,7 @@ mod tests {
 
         // Ordinals: -aaa=0 -bbb=1 -ccc=2 +XXX=3 +YYY=4 +ZZZ=5.
         // [2,5] is the shape split view's paired-row selection used to emit.
-        let err = discard_lines(&r.path, "f.txt", 0, &[2, 5], 3).unwrap_err();
+        let err = discard_lines_now(&r, "f.txt", 0, &[2, 5], 3).unwrap_err();
         assert!(err.contains("non-contiguous"), "unexpected error: {}", err);
 
         // The refusal must be total — the worktree is untouched.
@@ -1065,23 +1558,99 @@ mod tests {
         r.commit_file("f.txt", "base\n", "init");
         r.write("f.txt", "base\nl1\nl2\nl3\n");
         // Out of order and with a duplicate — still one contiguous run once normalized.
-        discard_lines(&r.path, "f.txt", 0, &[2, 1, 1], 3).unwrap();
+        discard_lines_now(&r, "f.txt", 0, &[2, 1, 1], 3).unwrap();
         assert_eq!(
             fs::read_to_string(r.path.join("f.txt")).unwrap(),
             "base\nl1\n"
         );
     }
 
-    /// The `-` path: discard must put a line BACK, not just remove one. Every existing
-    /// discard test uses a pure-addition hunk, so this branch of `build_partial_hunk`
-    /// was only ever exercised against the INDEX by `unstage_lines`, never against the
-    /// working tree.
+    // ── stale diff snapshot (discard TOCTOU) ─────────────────────────────────
+
+    /// Set up the exact race the confirmation dialog opens: the user is shown a two-hunk diff and
+    /// picks hunk 1 (`Q2`); while the modal sits there something else edits the file, adding a
+    /// change EARLIER in it. Hunk 1 is still in range — it now names the new edit instead.
+    /// Returns (repo, the diff the user saw, the file as the user last saw it).
+    fn repo_with_diff_changed_under_the_dialog() -> (TempRepo, String, String) {
+        // 30 lines so three edits ~9 apart stay three separate hunks at -U3.
+        let base: String = (1..=30).map(|i| format!("line{}\n", i)).collect();
+        let seen_state = base
+            .replace("line3\n", "B2\nline3\n")
+            .replace("line21\n", "Q2\nline21\n");
+
+        let r = TempRepo::new();
+        r.commit_file("f.txt", &base, "init");
+        r.write("f.txt", &seen_state);
+        let shown = diff(&r.path, Some("f.txt"), false, 3).unwrap();
+        assert_eq!(split_hunks(&shown).1.len(), 2, "user saw two hunks:\n{}", shown);
+
+        // …meanwhile, an external edit lands between `B2` and `Q2`.
+        r.write("f.txt", &seen_state.replace("line12\n", "H2\nline12\n"));
+        let now = diff(&r.path, Some("f.txt"), false, 3).unwrap();
+        assert_eq!(
+            split_hunks(&now).1.len(),
+            3,
+            "index 1 must now name a DIFFERENT hunk:\n{}",
+            now
+        );
+        (r, shown, seen_state)
+    }
+
+    /// Stale index 1 would reverse-apply the `H2` hunk — an edit the user never saw, with no
+    /// reflog to get it back. The snapshot check must refuse and leave the file alone.
+    #[test]
+    fn discard_hunk_refuses_a_diff_that_changed_under_the_dialog() {
+        let (r, shown, _) = repo_with_diff_changed_under_the_dialog();
+        let before = read_file(&r, "f.txt");
+
+        let err = discard_hunk(&r.path, "f.txt", 1, &shown, 3).unwrap_err();
+        assert!(err.contains("nothing was discarded"), "unexpected error: {}", err);
+        assert_eq!(
+            read_file(&r, "f.txt"),
+            before,
+            "a refused discard must not touch the worktree"
+        );
+    }
+
+    #[test]
+    fn discard_lines_refuses_a_diff_that_changed_under_the_dialog() {
+        let (r, shown, _) = repo_with_diff_changed_under_the_dialog();
+        let before = read_file(&r, "f.txt");
+
+        let err = discard_lines(&r.path, "f.txt", 1, &[0], &shown, 3).unwrap_err();
+        assert!(err.contains("nothing was discarded"), "unexpected error: {}", err);
+        assert_eq!(
+            read_file(&r, "f.txt"),
+            before,
+            "a refused discard must not touch the worktree"
+        );
+    }
+
+    /// The refusal has to be a retry, not a dead end: re-reading the diff and discarding against
+    /// THAT succeeds, and hits the hunk the fresh diff actually names.
+    #[test]
+    fn discard_succeeds_once_the_snapshot_is_refreshed() {
+        let (r, shown, seen_state) = repo_with_diff_changed_under_the_dialog();
+        assert!(discard_hunk(&r.path, "f.txt", 1, &shown, 3).is_err());
+
+        discard_hunk_now(&r, "f.txt", 1, 3).unwrap();
+        assert_eq!(
+            read_file(&r, "f.txt"),
+            seen_state,
+            "hunk 1 of the FRESH diff is the H2 insertion"
+        );
+    }
+
+    /// The `-` path: discard must put a line BACK, not just remove one. The discard tests
+    /// that came before this one all used a pure-addition hunk, so this branch of
+    /// `build_partial_hunk` was only ever exercised against the INDEX by `unstage_lines`,
+    /// never against the working tree.
     #[test]
     fn discard_lines_restores_a_deleted_line() {
         let r = TempRepo::new();
         r.commit_file("f.txt", "a\nb\nc\n", "init");
         r.write("f.txt", "a\nc\n");
-        discard_lines(&r.path, "f.txt", 0, &[0], 3).unwrap();
+        discard_lines_now(&r, "f.txt", 0, &[0], 3).unwrap();
         assert_eq!(fs::read_to_string(r.path.join("f.txt")).unwrap(), "a\nb\nc\n");
     }
 
@@ -1094,7 +1663,7 @@ mod tests {
         r.commit_file("f.txt", "a\nb\nc\n", "init");
         r.write("f.txt", "a\nB2\nc\n");
         // Ordinals: -b=0, +B2=1. Discard only the deletion.
-        discard_lines(&r.path, "f.txt", 0, &[0], 3).unwrap();
+        discard_lines_now(&r, "f.txt", 0, &[0], 3).unwrap();
         assert_eq!(fs::read_to_string(r.path.join("f.txt")).unwrap(), "a\nb\nB2\nc\n");
     }
 

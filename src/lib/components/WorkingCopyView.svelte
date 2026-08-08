@@ -593,11 +593,23 @@
             onDiscardHunk={selectedIsStaged || selectedIsUntracked
               ? undefined
               : (i, n) =>
-                  gitActions.discardHunk(selectedFile!, i, n, selectedHasStagedCounterpart)}
+                  gitActions.discardHunk(
+                    selectedFile!,
+                    i,
+                    n,
+                    diffPatch,
+                    selectedHasStagedCounterpart,
+                  )}
             onDiscardLines={selectedIsStaged || selectedIsUntracked
               ? undefined
               : (hi, sel) =>
-                  gitActions.discardLines(selectedFile!, hi, sel, selectedHasStagedCounterpart)}
+                  gitActions.discardLines(
+                    selectedFile!,
+                    hi,
+                    sel,
+                    diffPatch,
+                    selectedHasStagedCounterpart,
+                  )}
           />
         {/if}
       </div>

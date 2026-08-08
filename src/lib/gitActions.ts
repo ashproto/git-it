@@ -885,10 +885,14 @@ export const gitActions = {
   // file-level `discard` below: uncommitted work is not in the reflog, so there is
   // no backup bundle to take. Guard BEFORE confirming so the browser preview never
   // shows a dialog it cannot honour.
+  // `expectedDiff` is captured at click time and carried across the confirmation await:
+  // it is what pins hunkIndex/selected to the diff the user actually judged, however long
+  // the dialog stays open. See ops_worktree::require_unchanged_diff.
   discardHunk: async (
     path: string,
     hunkIndex: number,
     changedLines: number,
+    expectedDiff: string,
     revertsToIndex = false,
   ): Promise<boolean> => {
     if (!isTauri()) {
@@ -911,13 +915,14 @@ export const gitActions = {
     });
     if (!confirmed) return false;
     return runWorktree(`Discard hunk in ${path}`, () =>
-      api.discardHunk(appState.repo, path, hunkIndex, appState.effectiveDiffContext),
+      api.discardHunk(appState.repo, path, hunkIndex, expectedDiff, appState.effectiveDiffContext),
     );
   },
   discardLines: async (
     path: string,
     hunkIndex: number,
     selected: number[],
+    expectedDiff: string,
     revertsToIndex = false,
   ): Promise<boolean> => {
     if (!isTauri()) {
@@ -937,7 +942,14 @@ export const gitActions = {
     });
     if (!confirmed) return false;
     return runWorktree(`Discard ${n} line(s) in ${path}`, () =>
-      api.discardLines(appState.repo, path, hunkIndex, selected, appState.effectiveDiffContext),
+      api.discardLines(
+        appState.repo,
+        path,
+        hunkIndex,
+        selected,
+        expectedDiff,
+        appState.effectiveDiffContext,
+      ),
     );
   },
   commitChanges: (message: string, signoff = false) =>
