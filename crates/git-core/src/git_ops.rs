@@ -356,10 +356,12 @@ mod tests {
             let id = COUNTER.fetch_add(1, Ordering::SeqCst);
             let path = std::env::temp_dir()
                 .join(format!("git-it-init-test-{}-{}", std::process::id(), id));
-            // Deliberately `create_dir`, not `create_dir_all`: with pid + counter a
-            // collision is impossible, so if one ever happens it should panic loudly
-            // rather than be silently absorbed.
-            fs::create_dir(&path).unwrap();
+            // pid + counter is unique among LIVE processes, but not against the dead: a run
+            // killed before `Drop` leaves its directories behind, and once the OS recycles
+            // that pid a fresh process counting from zero reproduces the same path. Clear
+            // any such leftover first — the same guard the other TempRepo fixtures use.
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap();
             Self(path)
         }
     }
