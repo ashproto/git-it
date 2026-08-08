@@ -47,7 +47,15 @@
   // Hovered unit. `block` is the index into blocksForView(hunk), or null on a context
   // row (which targets the whole hunk instead). `ri` is the row itself, kept so the
   // hunk-scope toolbar can anchor to a row the user can actually see.
-  let hov = $state<{ fi: number; hi: number; ri: number; block: number | null } | null>(null);
+  let hov = $state<{ fi: number; hi: number; block: number | null } | null>(null);
+
+  /**
+   * Sentinel `data-i` for a hunk's header row (the `@@ … @@` bar). Real row indices are
+   * >= 0, so -1 can't collide. Hunk-scope actions anchor here rather than to whichever
+   * line the pointer happens to be on: every context row would otherwise re-anchor the
+   * toolbar, making it chase the cursor down the hunk.
+   */
+  const HUNK_HEADER_ROW = -1;
 
   /**
    * Row indices mean different things per view: in unified they index `hunk.lines`,
@@ -70,7 +78,7 @@
     const h = parsed.files[fi]?.hunks[hi];
     if (!h) return;
     const block = appState.diffSplit ? splitBlockAt(toSplitRows(h), ri) : blockAt(h, ri);
-    hov = { fi, hi, ri, block };
+    hov = { fi, hi, block };
   }
 
   function clearHover() {
@@ -124,7 +132,7 @@
     }
     // Anchor to the hovered row, not row 0: a hunk taller than the pane would otherwise
     // put its anchor off-screen and `measureTool` would hide the toolbar entirely.
-    return { fi: hov.fi, hi: hov.hi, scope: "hunk", ords: null, anchorRow: hov.ri };
+    return { fi: hov.fi, hi: hov.hi, scope: "hunk", ords: null, anchorRow: HUNK_HEADER_ROW };
   }
 
   function runAction(kind: "stage" | "unstage" | "discard") {
@@ -476,7 +484,9 @@
       if (!wrap) return;
       // Querying the DOM keeps this correct across hunk boundaries without duplicating
       // the unified/split row-space logic — the rendered order IS the navigation order.
-      const rows = [...wrap.querySelectorAll<HTMLElement>("tr[data-h][data-i]")];
+      // `.diff-row` excludes the hunk-header rows, which also carry data-h/data-i (as the
+      // toolbar's anchor) but are not focusable — arrowing onto one would dead-end.
+      const rows = [...wrap.querySelectorAll<HTMLElement>("tr.diff-row[data-h][data-i]")];
       const cur = rows.findIndex(
         (el) => el.dataset.h === String(hi) && el.dataset.i === String(ri),
       );
@@ -648,7 +658,7 @@
                 class:hunk-hover={hasActions && !sel && hov?.fi === fi && hov?.hi === hi}
               >
                 <!-- Hunk header row -->
-                <tr class="hunk-header-row">
+                <tr class="hunk-header-row" data-h={hi} data-i={HUNK_HEADER_ROW}>
                   {#if appState.diffSplit}
                     <td class="hunk-header-cell" colspan="4">
                       <span class="hunk-range">{hunk.header}</span>
