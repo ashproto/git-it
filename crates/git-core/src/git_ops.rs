@@ -37,6 +37,39 @@ fn is_inside_worktree(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Is `path` ITSELF a Git directory? True for a bare repository's own folder — which has no
+/// `.git` child, so an existence check on that never sees it — and for a normal repository's
+/// `.git`. `--resolve-git-dir` answers for the path given and does NOT walk up to a parent,
+/// so a plain folder that merely sits inside a repository is not mistaken for one; that case
+/// belongs to `is_inside_worktree`. Callers pass an absolute path (`parent` is canonicalized
+/// before the join), so the operand cannot be read as a flag.
+/// Is `path` inside a repository's metadata — the Git directory itself, or anything below it?
+///
+/// `is_git_dir` answers only for the exact directory, so a folder picker landing on
+/// `repo/.git/hooks` or `bare.git/objects` walked straight past it, and `--is-inside-work-tree` is
+/// false down there as well. `--is-inside-git-dir` is documented to be true anywhere below the
+/// repository directory, which is exactly the question a candidate PARENT has to answer.
+/// A path in no repository at all makes git exit non-zero; that counts as false.
+fn is_inside_git_dir(path: &Path) -> bool {
+    Command::new("git")
+        .current_dir(path)
+        .args(["rev-parse", "--is-inside-git-dir"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "true")
+        .unwrap_or(false)
+}
+
+fn is_git_dir(path: &Path) -> bool {
+    Command::new("git")
+        .args(["rev-parse", "--resolve-git-dir"])
+        .arg(path)
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
 /// Initialize a repository in one direct child of an existing parent folder.
 /// A non-empty destination is reported without mutation until the caller
 /// explicitly retries with `allow_non_empty`.
@@ -50,6 +83,18 @@ pub fn initialize_repository(
         .map_err(|error| format!("Could not open the parent folder: {error}"))?;
     if !parent.is_dir() {
         return Err("The selected parent path is not a folder.".to_string());
+    }
+    // A Git directory is still a folder, and `--is-inside-work-tree` answers false inside one, so
+    // the nesting probe below cannot catch it either — and when the destination does not exist yet
+    // that probe falls back to this very path. Picking `some-repo/.git`, or a bare repo, would
+    // therefore create the new repository inside another repository's metadata. `is_inside_git_dir`
+    // rather than `is_git_dir` because a picker reaches `.git/hooks` and `bare.git/objects` just as
+    // easily as the top of either, and an exact-path probe does not see those.
+    if is_inside_git_dir(&parent) {
+        return Err(
+            "The selected parent folder is a Git repository's internal directory. Choose a different folder."
+                .to_string(),
+        );
     }
 
     let name = folder_name.trim();
@@ -91,7 +136,10 @@ pub fn initialize_repository(
     if destination.exists() && !destination.is_dir() {
         return Err("A file already exists at the requested repository path.".to_string());
     }
-    if destination.join(".git").exists() {
+    // `.git` catches a normal repository; `is_git_dir` catches a bare one, which has no `.git`
+    // child and reports `false` for `--is-inside-work-tree`, so it slipped past both guards and
+    // `git init` would nest a fresh repository inside it.
+    if destination.join(".git").exists() || is_git_dir(&destination) {
         return Err("That folder is already a Git repository. Open it instead.".to_string());
     }
     let nesting_probe = if destination.is_dir() {
@@ -431,5 +479,81 @@ mod tests {
 
         assert!(err.contains("nested repository"));
         assert!(!parent.0.join("nested").exists());
+    }
+
+    /// A bare repository has no `.git` child, and `rev-parse --is-inside-work-tree` answers
+    /// `false` inside one — so neither existing guard saw it. `allow_non_empty` here is the
+    /// dangerous path: the user is warned the folder is not empty, confirms, and `git init`
+    /// then creates a nested repository inside the bare one.
+    #[test]
+    fn initialize_repository_rejects_an_existing_bare_repository() {
+        let parent = TempFolder::new();
+        let mut init = Command::new("git");
+        init.current_dir(&parent.0).args(["init", "-q", "--bare", "shipped.git"]);
+        run(&mut init).unwrap();
+
+        let err = initialize_repository(&parent.0, "shipped.git", "main", true).unwrap_err();
+
+        assert!(
+            err.contains("already a Git repository"),
+            "should be refused as an existing repository, got: {err}"
+        );
+        assert!(
+            !parent.0.join("shipped.git").join(".git").exists(),
+            "must not have initialized a nested repository inside the bare one"
+        );
+    }
+
+    /// The same blind spot one level up. When the destination does not exist yet the nesting probe
+    /// falls back to the PARENT, and `--is-inside-work-tree` is false inside a Git directory just
+    /// as it is inside a bare repo — so picking `some-repo/.git` (or a bare repo) as the parent
+    /// created the new repository inside another repository's metadata.
+    #[test]
+    fn initialize_repository_rejects_a_git_directory_as_parent() {
+        let outer = TempFolder::new();
+
+        // A normal repository's `.git`, and a bare repository, are both Git directories.
+        let mut init = Command::new("git");
+        init.current_dir(&outer.0).args(["init", "-q", "host"]);
+        run(&mut init).unwrap();
+        let mut bare = Command::new("git");
+        bare.current_dir(&outer.0).args(["init", "-q", "--bare", "shipped.git"]);
+        run(&mut bare).unwrap();
+
+        // The Git directory itself, a bare repo, and — because an exact-path probe misses them —
+        // directories BELOW either one, which a folder picker reaches just as easily.
+        for parent in [
+            outer.0.join("host").join(".git"),
+            outer.0.join("host").join(".git").join("hooks"),
+            outer.0.join("shipped.git"),
+            outer.0.join("shipped.git").join("objects"),
+        ] {
+            let err = initialize_repository(&parent, "proj", "main", false)
+                .expect_err(&format!("{} should have been refused", parent.display()));
+            assert!(
+                err.contains("Git repository"),
+                "{}: should be refused, got: {err}",
+                parent.display()
+            );
+            assert!(
+                !parent.join("proj").exists(),
+                "{}: must not have created anything inside a Git directory",
+                parent.display()
+            );
+        }
+    }
+
+    /// The guard must not over-reach: a plain folder that merely sits next to a repository
+    /// is still a valid destination. `--resolve-git-dir` answers for the path given and does
+    /// not walk up, which is what keeps this case working.
+    #[test]
+    fn initialize_repository_still_accepts_a_plain_empty_folder() {
+        let parent = TempFolder::new();
+        fs::create_dir(parent.0.join("fresh")).unwrap();
+
+        let result = initialize_repository(&parent.0, "fresh", "main", true).unwrap();
+
+        assert!(result.initialized);
+        assert!(parent.0.join("fresh").join(".git").is_dir());
     }
 }

@@ -72,6 +72,9 @@ If `git` or `python3` is missing, the app shows a startup banner with an **Insta
 
 ## Build from source
 
+Needs **Node `^20.19.0 || >=22.12.0`** (Vite 8's floor; CI builds on 24). `npm install` only warns
+on an older runtime, so the failure would otherwise surface later as a confusing build error.
+
 ```sh
 npm install
 npm run tauri dev      # run the app in development

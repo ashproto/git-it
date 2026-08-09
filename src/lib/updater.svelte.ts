@@ -115,6 +115,14 @@ async function checkForUpdates(
   const manual = source === "manual";
   let available: UpdateInfo | null = null;
   if (manual) {
+    // A manual check replaces the backend's pending-update slot, so anything an automatic check
+    // queued for later is now superseded — whatever this check finds (or does not find) is the
+    // truth. Keeping the queue meant a prompt could resurface after the overlay closed naming a
+    // version the backend no longer had: Download then failed with "no pending update", or
+    // fetched something other than what the dialog said. Clearing it here covers the
+    // nothing-found and different-version cases that an exact version match missed. The retry
+    // timer needs no cancelling — it re-checks this variable and stops on its own.
+    pendingAutomaticUpdate = null;
     appState.setBusyOp("Checking for updates");
     appState.status = "Checking for updates…";
   }
@@ -130,7 +138,6 @@ async function checkForUpdates(
 
   if (!available) return;
   if (manual) {
-    if (pendingAutomaticUpdate?.version === available.version) pendingAutomaticUpdate = null;
     await presentUpdate(available);
   } else {
     queueAutomaticUpdate(available);
