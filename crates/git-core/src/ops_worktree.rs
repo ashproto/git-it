@@ -178,6 +178,13 @@ pub fn diff(repo: &Path, path: Option<&str>, staged: bool, context: u32) -> Resu
     c.current_dir(repo)
         .arg("diff")
         .arg("--no-color")
+        // Pin the path prefixes. `diff.mnemonicPrefix` rewrites them per-command (`i/`, `w/`, `c/`)
+        // and `diff.noprefix` removes them entirely, and this output is not just displayed — the
+        // hunks are fed straight back to `git apply`. Under `noprefix` the patch loses a path
+        // component to apply's default `-p1` and lands on the WRONG FILE; anything that reads the
+        // `a/`…`b/` convention out of the header is likewise wrong. The user's config governs what
+        // they read in a terminal, not what this reconstructs and re-applies.
+        .args(["--src-prefix=a/", "--dst-prefix=b/"])
         .arg(format!("-U{}", context));
     if staged {
         c.arg("--cached");
@@ -662,6 +669,70 @@ pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usi
     git_apply(repo, &format!("{}{}", header, partial), true, true, context == 0)
 }
 
+/// Build the file header for a discard patch: git's own header, minus the parts that describe
+/// the FILE rather than its contents and would otherwise be applied as unasked-for side effects.
+///
+/// - `old mode` / `new mode`. `git apply` honours a mode pair, so `chmod +x` plus an edited line
+///   — one diff, one header — meant "Discard 1 line" also took the executable bit off. Not in the
+///   confirmation, not in the line count, not undoable. Always dropped here. Stage and unstage
+///   keep the mode deliberately: there it belongs to the same index entry the caller is moving,
+///   and the result is recoverable either way.
+///
+/// - `new file mode` + `--- /dev/null`. True of the whole diff of an intent-to-add path
+///   (`git add -N`), which `working_changes` reports as tracked-and-unstaged so the UI offers
+///   line-level discard on it. But a partial selection keeps the unselected additions as CONTEXT,
+///   which gives the patch an old side the header denies, and git refuses the lot with
+///   "new file X depends on old contents". Rewritten to an ordinary content header exactly when
+///   the emitted hunk has an old side, so a selection covering every addition still deletes the
+///   file the way a whole-hunk discard does.
+///
+/// The deleted-file mirror (`+++ /dev/null`) needs no such repair: reverse-apply DROPS unselected
+/// `-` lines rather than demoting them, so the new side stays empty and the header stays true.
+fn discard_header(header: &str, hunk: &str) -> String {
+    let keeps_old_side = parse_hunk_header(hunk.lines().next().unwrap_or(""))
+        .is_some_and(|(_, old_n, _, _, _)| old_n > 0);
+    // Derive the `---` side from the `+++` one rather than re-deriving the path: swapping the
+    // leading `b/` leaves git's quoting of exotic paths intact (the quote precedes the prefix,
+    // so `"b/od\td"` becomes `"a/od\td"`).
+    //
+    // Only ever swap a LEADING `b/`. `diff()` pins the prefixes, but if that ever stops being
+    // true a blind `replace` would hit the first `b/` inside the pathname instead — turning
+    // `w/lib/util.js` into `w/lia/util.js`, which git reads as a rename and applies to a file the
+    // user never touched. Verified: it empties the real file and rewrites the innocent one, and
+    // returns success. When the prefix is absent we emit nothing and git refuses the patch, which
+    // is the only acceptable default on an apply with no reflog behind it.
+    let old_side = header
+        .lines()
+        .find_map(|l| l.strip_prefix("+++ "))
+        .and_then(|p| {
+            let (quote, rest) = match p.strip_prefix('"') {
+                Some(rest) => ("\"", rest),
+                None => ("", p),
+            };
+            rest.strip_prefix("b/")
+                .map(|tail| format!("--- {quote}a/{tail}\n"))
+        });
+    // Repair the new-file header only when there is a real path to repair it WITH. Otherwise
+    // leave every line of it alone: an untouched header is the behaviour that shipped before
+    // this repair existed, and git refuses it. Half-repairing — dropping `new file mode` while
+    // keeping `--- /dev/null` — is a shape nothing has verified.
+    let normalize_new_file = keeps_old_side && old_side.is_some();
+    header
+        .split_inclusive('\n')
+        .filter_map(|line| {
+            let mode_pair = line.starts_with("old mode ") || line.starts_with("new mode ");
+            let new_file = normalize_new_file && line.starts_with("new file mode ");
+            if mode_pair || new_file {
+                None
+            } else if normalize_new_file && line.starts_with("--- /dev/null") {
+                old_side.clone()
+            } else {
+                Some(line.to_string())
+            }
+        })
+        .collect()
+}
+
 /// Refuse a discard whose `hunk_index` / ordinals were picked against a different diff.
 ///
 /// `expected_diff` is the exact `diff()` text the caller displayed. The confirmation dialog in
@@ -703,7 +774,8 @@ pub fn discard_hunk(
     require_unchanged_diff(&d, expected_diff)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
-    git_apply(repo, &format!("{}{}", header, reanchor_hunk(h, true)), true, false, context == 0)
+    let reanchored = reanchor_hunk(h, true);
+    git_apply(repo, &format!("{}{}", discard_header(&header, &reanchored), reanchored), true, false, context == 0)
 }
 
 /// Discard selected change-line ordinals of one hunk of `path`'s UNSTAGED diff.
@@ -729,7 +801,7 @@ pub fn discard_lines(
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
     let partial = build_partial_hunk(h, &set, true)?.ok_or("no lines selected to discard")?;
-    git_apply(repo, &format!("{}{}", header, partial), true, false, context == 0)
+    git_apply(repo, &format!("{}{}", discard_header(&header, &partial), partial), true, false, context == 0)
 }
 
 /// Stash current changes (staged + unstaged). Message is optional.
@@ -1831,6 +1903,101 @@ mod tests {
         r2.write("f.txt", "a\nT2");
         discard_hunk_now(&r2, "f.txt", 0, 3).unwrap();
         assert_eq!(read_file(&r2, "f.txt"), "a\nt");
+    }
+
+    /// `chmod +x` plus an edit makes git put `old mode`/`new mode` in the FILE header, and the
+    /// whole header is what gets reverse-applied. Discarding text would then also revert the
+    /// executable bit — a change the confirmation never mentions and the line count never counts.
+    #[test]
+    fn discard_lines_leaves_a_mode_change_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let r = TempRepo::new();
+        r.commit_file("f.sh", "a\nb\nc\n", "init");
+        r.write("f.sh", "a\nB2\nc\n");
+        fs::set_permissions(r.path.join("f.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+
+        // Ordinals: -b=0, +B2=1. Discard only the deletion.
+        discard_lines_now(&r, "f.sh", 0, &[0], 3).unwrap();
+
+        assert_eq!(read_file(&r, "f.sh"), "a\nb\nB2\nc\n");
+        let mode = fs::metadata(r.path.join("f.sh")).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "the chmod +x must survive a line discard");
+    }
+
+    /// `git add -N` makes a path tracked-but-unstaged, so the UI offers line-level discard on it.
+    /// Its diff header says `new file mode` / `--- /dev/null`, and a partial selection keeps the
+    /// unselected additions as CONTEXT — giving the patch a non-empty old side the header denies.
+    /// Git refused the whole thing with "new file n.txt depends on old contents".
+    #[test]
+    fn discard_lines_on_an_intent_to_add_file_keeps_the_unselected_lines() {
+        let r = TempRepo::new();
+        r.commit_file("base.txt", "base\n", "init");
+        r.write("n.txt", "a\nb\nc\n");
+        r.git(&["add", "-N", "--", "n.txt"]);
+
+        // Ordinals: +a=0, +b=1, +c=2. Discard only the first added line.
+        discard_lines_now(&r, "n.txt", 0, &[0], 3).unwrap();
+
+        assert_eq!(read_file(&r, "n.txt"), "b\nc\n");
+    }
+
+    /// `diff.mnemonicPrefix` renames the path prefixes per-command (`i/`, `w/`), and `diff.noprefix`
+    /// drops them. This output is not merely displayed — it is fed back to `git apply` — so an
+    /// unpinned prefix aims the patch at the wrong path. Caught by review: rewriting the `---` side
+    /// by replacing the first `b/` anywhere turned `w/lib/util.js` into `w/lia/util.js`, which git
+    /// reads as a rename; it emptied the file the user was editing, rewrote an untouched committed
+    /// one, and returned Ok. `diff()` now pins `--src-prefix`/`--dst-prefix`.
+    #[test]
+    fn discard_lines_is_unaffected_by_diff_prefix_config() {
+        for (key, value) in [("diff.mnemonicPrefix", "true"), ("diff.noprefix", "true")] {
+            let r = TempRepo::new();
+            r.git(&["config", key, value]);
+            // A committed neighbour whose name is one byte from the `b/`-mangled form of `lib/…`.
+            r.git(&["config", "user.email", "t@example.com"]);
+            r.write("lia.txt", "a\nb\nc\n");
+            r.git(&["add", "--", "lia.txt"]);
+            r.git(&["commit", "-qm", "seed"]);
+            fs::create_dir_all(r.path.join("lib")).unwrap();
+            r.write("lib/util.js", "a\nb\nc\n");
+            r.git(&["add", "-N", "--", "lib/util.js"]);
+
+            discard_lines_now(&r, "lib/util.js", 0, &[0], 3)
+                .unwrap_or_else(|e| panic!("{key}={value}: discard failed: {e}"));
+
+            assert_eq!(read_file(&r, "lib/util.js"), "b\nc\n", "{key}={value}: wrong file content");
+            assert_eq!(read_file(&r, "lia.txt"), "a\nb\nc\n", "{key}={value}: neighbour was touched");
+        }
+    }
+
+    /// The other side of that repair: when the selection covers every addition the patch has no
+    /// old side at all, so the `new file` header is still true and must be left alone — the file
+    /// goes away, exactly as a whole-hunk discard would do.
+    #[test]
+    fn discard_lines_on_an_intent_to_add_file_selecting_all_removes_the_file() {
+        let r = TempRepo::new();
+        r.commit_file("base.txt", "base\n", "init");
+        r.write("n.txt", "a\nb\nc\n");
+        r.git(&["add", "-N", "--", "n.txt"]);
+
+        discard_lines_now(&r, "n.txt", 0, &[0, 1, 2], 3).unwrap();
+
+        assert!(!r.path.join("n.txt").exists(), "every added line discarded — file should be gone");
+    }
+
+    /// Same leak one function over: `discard_hunk` reverse-applies the same header.
+    #[test]
+    fn discard_hunk_leaves_a_mode_change_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let r = TempRepo::new();
+        r.commit_file("f.sh", "a\nb\nc\n", "init");
+        r.write("f.sh", "a\nB2\nc\n");
+        fs::set_permissions(r.path.join("f.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+
+        discard_hunk_now(&r, "f.sh", 0, 3).unwrap();
+
+        assert_eq!(read_file(&r, "f.sh"), "a\nb\nc\n");
+        let mode = fs::metadata(r.path.join("f.sh")).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "the chmod +x must survive a hunk discard");
     }
 
     #[test]

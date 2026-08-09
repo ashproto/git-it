@@ -1952,6 +1952,17 @@ function makeState() {
       workingChanges = v;
       workingChangesRev++;
     },
+    /**
+     * Force the displayed diff to re-fetch when the file LIST has not changed.
+     * `applyWorkingChanges` compares WorkingFile metadata and skips the update when it
+     * matches, so an external edit to an already-modified file never bumps the revision
+     * and the shown patch silently goes stale. Discard sends that patch to the backend as
+     * proof of what the user was looking at, so a stale one is refused — and without this
+     * every retry would be refused identically.
+     */
+    invalidateWorkingDiff() {
+      workingChangesRev++;
+    },
     get workingChangesRev() {
       return workingChangesRev;
     },

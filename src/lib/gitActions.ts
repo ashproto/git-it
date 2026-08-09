@@ -529,6 +529,21 @@ function discardMessage(n: number, unit: string, path: string, revertsToIndex: b
     : `Permanently discard ${what}. This cannot be undone. (Stash instead to keep them.)`;
 }
 
+/**
+ * Settle a discard result. On failure, force the shown diff to re-fetch.
+ *
+ * A discard carries the patch the user was judging so git-core can refuse one picked against a
+ * diff that has since moved. But the fswatch refresh compares WorkingFile metadata, so an
+ * external edit to an already-modified file leaves the status list identical and the shown patch
+ * stale — every retry would then be refused with the same stale patch until the user happened to
+ * reselect the file or change the context depth. Re-fetching turns the refusal into something the
+ * next click can actually get past. Success needs nothing: `runWorktree` already reloads.
+ */
+function discarded(ok: boolean): boolean {
+  if (!ok) appState.invalidateWorkingDiff();
+  return ok;
+}
+
 // Run a working-copy op (non-destructive): guard → run → refresh working changes + graph.
 async function runWorktree(label: string, fn: () => Promise<unknown>): Promise<boolean> {
   if (!isTauri()) {
@@ -914,8 +929,10 @@ export const gitActions = {
       danger: true,
     });
     if (!confirmed) return false;
-    return runWorktree(`Discard hunk in ${path}`, () =>
-      api.discardHunk(appState.repo, path, hunkIndex, expectedDiff, appState.effectiveDiffContext),
+    return discarded(
+      await runWorktree(`Discard hunk in ${path}`, () =>
+        api.discardHunk(appState.repo, path, hunkIndex, expectedDiff, appState.effectiveDiffContext),
+      ),
     );
   },
   discardLines: async (
@@ -941,14 +958,16 @@ export const gitActions = {
       danger: true,
     });
     if (!confirmed) return false;
-    return runWorktree(`Discard ${n} line(s) in ${path}`, () =>
-      api.discardLines(
-        appState.repo,
-        path,
-        hunkIndex,
-        selected,
-        expectedDiff,
-        appState.effectiveDiffContext,
+    return discarded(
+      await runWorktree(`Discard ${n} line(s) in ${path}`, () =>
+        api.discardLines(
+          appState.repo,
+          path,
+          hunkIndex,
+          selected,
+          expectedDiff,
+          appState.effectiveDiffContext,
+        ),
       ),
     );
   },
