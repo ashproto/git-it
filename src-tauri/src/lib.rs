@@ -200,6 +200,8 @@ pub fn run() {
             commands::unstage_hunk,
             commands::stage_lines,
             commands::unstage_lines,
+            commands::discard_hunk,
+            commands::discard_lines,
             commands::stash_push,
             commands::stash_list,
             commands::stash_apply,

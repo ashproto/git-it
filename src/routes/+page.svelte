@@ -668,6 +668,7 @@
     --diff-add-bg: rgba(46, 160, 67, 0.18);      --diff-del-bg: rgba(210, 35, 35, 0.18);
     --diff-add-bg-dark: rgba(46, 160, 67, 0.24); --diff-del-bg-dark: rgba(210, 35, 35, 0.24);
     --diff-add-fg: #2da44e;                      --diff-del-fg: #cf222e;
+    --diff-ring: var(--accent);
     /* File-status glyph colours (A/M/D…), keyed by what the change MEANS:
        add = green, modify = yellow/amber (a legible gold on white), remove = red. */
     --status-add: #2da44e;
