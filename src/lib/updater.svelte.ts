@@ -3,6 +3,7 @@
 // decisions use the app's modal dialog system.
 import { appState } from "./store.svelte";
 import { dialogs } from "./dialogs.svelte";
+import { anyOverlayOpen } from "./overlays";
 import { api } from "./api";
 import type { DownloadEvent, UpdateInfo } from "./types";
 
@@ -149,12 +150,12 @@ async function tryPresentPendingAutomaticUpdate(): Promise<void> {
     pendingAutomaticUpdate = null;
     return;
   }
-  if (
-    !pendingAutomaticUpdate ||
-    checking ||
-    presenting ||
-    dialogs.state.kind !== "none"
-  ) {
+  // `anyOverlayOpen()` rather than just `dialogs.state`: an automatic check that lands while
+  // Settings, Manage Repository, amend/rebase, branch-colour or a GitHub action is open would
+  // otherwise mount the update dialog — which sits at a higher z-index — straight over the
+  // workflow the user is in the middle of. overlays.ts is the one place that knows every
+  // overlay singleton, so asking it there keeps this from drifting as new ones are added.
+  if (!pendingAutomaticUpdate || checking || presenting || anyOverlayOpen()) {
     schedulePendingPromptRetry();
     return;
   }

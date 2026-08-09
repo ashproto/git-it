@@ -292,7 +292,19 @@
         updateCheckOnActivate();
       }
     };
-    const suppressNativeContextMenu = (event: MouseEvent) => event.preventDefault();
+    // Keep WebKit's menu off the app's own chrome, but let it through where text is
+    // selectable — that is where Copy/Paste/Look Up/spelling are worth having, and
+    // losing them on a commit message or a diff reads as broken on macOS. The
+    // `user-select` allowlist below already curates exactly that set, so read the
+    // computed value rather than keeping a second list in sync with it. It inherits,
+    // so descendants of `.md`/`.selectable` are covered, and DiffView's gutter
+    // re-suppresses itself. Rows with their own menu call preventDefault themselves.
+    const suppressNativeContextMenu = (event: MouseEvent) => {
+      const el = event.target as Element | null;
+      const style = el && getComputedStyle(el);
+      if (style && (style.webkitUserSelect || style.userSelect) !== "none") return;
+      event.preventDefault();
+    };
     window.addEventListener("focus", onActivate);
     document.addEventListener("visibilitychange", onActivate);
     window.addEventListener("contextmenu", suppressNativeContextMenu);
