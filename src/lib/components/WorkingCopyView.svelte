@@ -104,8 +104,13 @@
   // monotonic revision counter (workingChangesRev) instead of the file count so that
   // a hunk stage/unstage — which doesn't change the file count but does re-index
   // hunks on the backend — also triggers a re-fetch and prevents stale hunk indices.
+  // `section` is null once the path is in NO list — its last change was committed or
+  // discarded, so the file is no longer part of the working copy. Keying on `selectedFile`
+  // alone kept the key non-empty there and fetched an unstaged diff for a file with nothing
+  // to diff: no row could highlight (the row test already requires a matching section), while
+  // the pane showed an empty diff instead of the nothing-selected state.
   const diffKey = $derived(
-    selectedFile !== null
+    selectedFile !== null && section !== null
       ? `${selectedFile}::${section}::${selectedIsUntracked}::${appState.workingChangesRev}::${appState.effectiveDiffContext}`
       : "",
   );
@@ -570,7 +575,9 @@
 
       <!-- ── Diff pane (right column) ─────────────────────────────────────────── -->
       <div class="diff-pane">
-        {#if !selectedFile}
+        <!-- `section === null` means the selected path has left the working copy entirely, so
+             there is nothing to show and no row is highlighted — same state as no selection. -->
+        {#if !selectedFile || section === null}
           <p class="diff-loading">Select a file to view its diff.</p>
         {:else if diffLoading}
           <p class="diff-loading">Loading diff…</p>
