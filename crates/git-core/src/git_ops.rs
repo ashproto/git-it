@@ -43,6 +43,24 @@ fn is_inside_worktree(path: &Path) -> bool {
 /// so a plain folder that merely sits inside a repository is not mistaken for one; that case
 /// belongs to `is_inside_worktree`. Callers pass an absolute path (`parent` is canonicalized
 /// before the join), so the operand cannot be read as a flag.
+/// Is `path` inside a repository's metadata — the Git directory itself, or anything below it?
+///
+/// `is_git_dir` answers only for the exact directory, so a folder picker landing on
+/// `repo/.git/hooks` or `bare.git/objects` walked straight past it, and `--is-inside-work-tree` is
+/// false down there as well. `--is-inside-git-dir` is documented to be true anywhere below the
+/// repository directory, which is exactly the question a candidate PARENT has to answer.
+/// A path in no repository at all makes git exit non-zero; that counts as false.
+fn is_inside_git_dir(path: &Path) -> bool {
+    Command::new("git")
+        .current_dir(path)
+        .args(["rev-parse", "--is-inside-git-dir"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "true")
+        .unwrap_or(false)
+}
+
 fn is_git_dir(path: &Path) -> bool {
     Command::new("git")
         .args(["rev-parse", "--resolve-git-dir"])
@@ -69,8 +87,10 @@ pub fn initialize_repository(
     // A Git directory is still a folder, and `--is-inside-work-tree` answers false inside one, so
     // the nesting probe below cannot catch it either — and when the destination does not exist yet
     // that probe falls back to this very path. Picking `some-repo/.git`, or a bare repo, would
-    // therefore create the new repository inside another repository's metadata.
-    if is_git_dir(&parent) {
+    // therefore create the new repository inside another repository's metadata. `is_inside_git_dir`
+    // rather than `is_git_dir` because a picker reaches `.git/hooks` and `bare.git/objects` just as
+    // easily as the top of either, and an exact-path probe does not see those.
+    if is_inside_git_dir(&parent) {
         return Err(
             "The selected parent folder is a Git repository's internal directory. Choose a different folder."
                 .to_string(),
@@ -500,7 +520,14 @@ mod tests {
         bare.current_dir(&outer.0).args(["init", "-q", "--bare", "shipped.git"]);
         run(&mut bare).unwrap();
 
-        for parent in [outer.0.join("host").join(".git"), outer.0.join("shipped.git")] {
+        // The Git directory itself, a bare repo, and — because an exact-path probe misses them —
+        // directories BELOW either one, which a folder picker reaches just as easily.
+        for parent in [
+            outer.0.join("host").join(".git"),
+            outer.0.join("host").join(".git").join("hooks"),
+            outer.0.join("shipped.git"),
+            outer.0.join("shipped.git").join("objects"),
+        ] {
             let err = initialize_repository(&parent, "proj", "main", false)
                 .expect_err(&format!("{} should have been refused", parent.display()));
             assert!(
