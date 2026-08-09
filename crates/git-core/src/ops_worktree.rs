@@ -585,6 +585,20 @@ pub fn unstage_lines(repo: &Path, path: &str, hunk_index: usize, selected: &[usi
     git_apply(repo, &format!("{}{}", header, partial), true, true, context == 0)
 }
 
+/// Strip `old mode` / `new mode` from a file header, leaving the content change alone.
+///
+/// A discard reverse-applies to the WORKING TREE, and `git apply` honours a mode pair in the
+/// header. So `chmod +x` plus an edited line — one diff, one header — meant "Discard 1 line"
+/// silently reverted the executable bit too: not in the confirmation, not in the line count, and
+/// not undoable. Stage/unstage keep the mode deliberately; there the mode belongs to the same
+/// index entry the caller is moving, and the result is recoverable either way.
+fn content_only_header(header: &str) -> String {
+    header
+        .split_inclusive('\n')
+        .filter(|line| !line.starts_with("old mode ") && !line.starts_with("new mode "))
+        .collect()
+}
+
 /// Refuse a discard whose `hunk_index` / ordinals were picked against a different diff.
 ///
 /// `expected_diff` is the exact `diff()` text the caller displayed. The confirmation dialog in
@@ -626,7 +640,7 @@ pub fn discard_hunk(
     require_unchanged_diff(&d, expected_diff)?;
     let (header, hunks) = split_hunks(&d);
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
-    git_apply(repo, &format!("{}{}", header, reanchor_hunk(h, true)), true, false, context == 0)
+    git_apply(repo, &format!("{}{}", content_only_header(&header), reanchor_hunk(h, true)), true, false, context == 0)
 }
 
 /// Discard selected change-line ordinals of one hunk of `path`'s UNSTAGED diff.
@@ -652,7 +666,7 @@ pub fn discard_lines(
     let h = hunks.get(hunk_index).ok_or("hunk index out of range")?;
     let set: std::collections::HashSet<usize> = selected.iter().copied().collect();
     let partial = build_partial_hunk(h, &set, true).ok_or("no lines selected to discard")?;
-    git_apply(repo, &format!("{}{}", header, partial), true, false, context == 0)
+    git_apply(repo, &format!("{}{}", content_only_header(&header), partial), true, false, context == 0)
 }
 
 /// Stash current changes (staged + unstaged). Message is optional.
@@ -1665,6 +1679,41 @@ mod tests {
         // Ordinals: -b=0, +B2=1. Discard only the deletion.
         discard_lines_now(&r, "f.txt", 0, &[0], 3).unwrap();
         assert_eq!(fs::read_to_string(r.path.join("f.txt")).unwrap(), "a\nb\nB2\nc\n");
+    }
+
+    /// `chmod +x` plus an edit makes git put `old mode`/`new mode` in the FILE header, and the
+    /// whole header is what gets reverse-applied. Discarding text would then also revert the
+    /// executable bit — a change the confirmation never mentions and the line count never counts.
+    #[test]
+    fn discard_lines_leaves_a_mode_change_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let r = TempRepo::new();
+        r.commit_file("f.sh", "a\nb\nc\n", "init");
+        r.write("f.sh", "a\nB2\nc\n");
+        fs::set_permissions(r.path.join("f.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+
+        // Ordinals: -b=0, +B2=1. Discard only the deletion.
+        discard_lines_now(&r, "f.sh", 0, &[0], 3).unwrap();
+
+        assert_eq!(read_file(&r, "f.sh"), "a\nb\nB2\nc\n");
+        let mode = fs::metadata(r.path.join("f.sh")).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "the chmod +x must survive a line discard");
+    }
+
+    /// Same leak one function over: `discard_hunk` reverse-applies the same header.
+    #[test]
+    fn discard_hunk_leaves_a_mode_change_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let r = TempRepo::new();
+        r.commit_file("f.sh", "a\nb\nc\n", "init");
+        r.write("f.sh", "a\nB2\nc\n");
+        fs::set_permissions(r.path.join("f.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+
+        discard_hunk_now(&r, "f.sh", 0, 3).unwrap();
+
+        assert_eq!(read_file(&r, "f.sh"), "a\nb\nc\n");
+        let mode = fs::metadata(r.path.join("f.sh")).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "the chmod +x must survive a hunk discard");
     }
 
     #[test]
