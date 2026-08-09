@@ -1,6 +1,16 @@
 <script lang="ts">
   import { parseDiff } from "../diff/parse";
   import { getHighlighter, LANGS } from "../diff/highlight";
+  import { blocksOf, blockAt, ordinalsOf, ordsInRange, type Block } from "../diff/blocks";
+  import {
+    toSplitRows,
+    isChangeRow,
+    splitBlocksOf,
+    splitBlockAt,
+    splitBlockRanges,
+    ordsInSplitRange,
+    splitRangeSnappedToBlocks,
+  } from "../diff/splitRows";
   import { appState } from "../store.svelte";
   import type { DiffFile, DiffHunk, DiffLine } from "../diff/types";
   import type { Highlighter, ThemedToken } from "shiki";
@@ -15,6 +25,10 @@
     onUnstageHunk?: (i: number) => void;
     onStageLines?: (hunkIndex: number, selected: number[]) => void;
     onUnstageLines?: (hunkIndex: number, selected: number[]) => void;
+    /** `changedLines` is how many +/- lines the hunk holds — the confirm dialog states it,
+        because in Whole-file mode one hunk covers the entire file. */
+    onDiscardHunk?: (i: number, changedLines: number) => void;
+    onDiscardLines?: (hunkIndex: number, selected: number[]) => void;
     // PR-review comment affordance (GitHub line/side semantics: RIGHT = new-file
     // line number for context + added rows, LEFT = old-file line number for
     // deleted rows). Purely additive — when absent, nothing changes.
@@ -22,7 +36,170 @@
     hasComment?: (line: number, side: "LEFT" | "RIGHT") => boolean;
   }
 
-  let { patch, language, staged = false, onStageHunk, onUnstageHunk, onStageLines, onUnstageLines, onLineComment, hasComment }: Props = $props();
+  let { patch, language, staged = false, onStageHunk, onUnstageHunk, onStageLines, onUnstageLines, onDiscardHunk, onDiscardLines, onLineComment, hasComment }: Props = $props();
+
+  // The whole hover/selection affordance only exists where actions do. Commit diffs
+  // (CommitFilesDiff) and PR review diffs (PrFilesTab) pass no callbacks and stay inert.
+  const hasActions = $derived(
+    !!(onStageHunk || onUnstageHunk || onStageLines || onUnstageLines || onDiscardHunk || onDiscardLines),
+  );
+
+  // Hovered unit. `block` is the index into blocksForView(hunk), or null on a context
+  // row (which targets the whole hunk instead). `ri` is the row itself, kept so the
+  // hunk-scope toolbar can anchor to a row the user can actually see.
+  let hov = $state<{ fi: number; hi: number; block: number | null } | null>(null);
+
+  /**
+   * Sentinel `data-i` for a hunk's header row (the `@@ … @@` bar). Real row indices are
+   * >= 0, so -1 can't collide. Hunk-scope actions anchor here rather than to whichever
+   * line the pointer happens to be on: every context row would otherwise re-anchor the
+   * toolbar, making it chase the cursor down the hunk.
+   */
+  const HUNK_HEADER_ROW = -1;
+
+  /**
+   * Row indices mean different things per view: in unified they index `hunk.lines`,
+   * in split they index the paired visual rows. Every hover/selection/ring value in
+   * this component is in the CURRENT view's space; these two helpers are the only
+   * places that translate.
+   */
+  function selectionOrds(h: DiffHunk, from: number, to: number): number[] {
+    return appState.diffSplit
+      ? ordsInSplitRange(h, toSplitRows(h), from, to)
+      : ordsInRange(h, from, to);
+  }
+
+  function blocksForView(h: DiffHunk): Block[] {
+    return appState.diffSplit ? splitBlocksOf(h, toSplitRows(h)) : blocksOf(h);
+  }
+
+  function hoverRow(fi: number, hi: number, ri: number) {
+    if (!hasActions || sel) return; // locked: hover is dead
+    const h = parsed.files[fi]?.hunks[hi];
+    if (!h) return;
+    const block = appState.diffSplit ? splitBlockAt(toSplitRows(h), ri) : blockAt(h, ri);
+    hov = { fi, hi, block };
+  }
+
+  function clearHover() {
+    if (sel) return;
+    hov = null;
+  }
+
+  /**
+   * The row range the ring should cover for this hunk, or null for none. A locked
+   * selection owns the ring outright; otherwise only a hovered BLOCK gets it and a
+   * hovered context row gets the outer `<tbody>` outline instead (`hunk-hover`).
+   */
+  function ringRange(fi: number, hi: number): { from: number; to: number } | null {
+    if (sel) {
+      return sel.fi === fi && sel.hi === hi ? { from: sel.from, to: sel.to } : null;
+    }
+    if (!hov || hov.fi !== fi || hov.hi !== hi || hov.block === null) return null;
+    const h = parsed.files[fi]?.hunks[hi];
+    if (!h) return null;
+    const b = blocksForView(h)[hov.block];
+    return b ? { from: b.rows[0], to: b.rows[b.rows.length - 1] } : null;
+  }
+
+  interface ActionTarget {
+    fi: number;
+    hi: number;
+    scope: "sel" | "blk" | "hunk";
+    /** null for a whole-hunk target — the hunk ops take no ordinals. */
+    ords: number[] | null;
+    /** Row the toolbar anchors to, in the current view's index space (see `selectionOrds`). */
+    anchorRow: number;
+  }
+
+  /** What the visible toolbar acts on right now. A locked selection outranks hover. */
+  function activeTarget(): ActionTarget | null {
+    if (!hasActions) return null;
+    if (sel) {
+      const h = parsed.files[sel.fi]?.hunks[sel.hi];
+      if (!h) return null;
+      const ords = selectionOrds(h, sel.from, sel.to);
+      return ords.length
+        ? { fi: sel.fi, hi: sel.hi, scope: "sel", ords, anchorRow: sel.from }
+        : null;
+    }
+    if (!hov) return null;
+    const h = parsed.files[hov.fi]?.hunks[hov.hi];
+    if (!h) return null;
+    if (hov.block !== null) {
+      const b = blocksForView(h)[hov.block];
+      if (b) return { fi: hov.fi, hi: hov.hi, scope: "blk", ords: b.ords, anchorRow: b.rows[0] };
+    }
+    // Anchor to the hovered row, not row 0: a hunk taller than the pane would otherwise
+    // put its anchor off-screen and `measureTool` would hide the toolbar entirely.
+    return { fi: hov.fi, hi: hov.hi, scope: "hunk", ords: null, anchorRow: HUNK_HEADER_ROW };
+  }
+
+  function runAction(kind: "stage" | "unstage" | "discard") {
+    const t = activeTarget();
+    if (!t) return;
+    if (t.scope === "hunk") {
+      if (kind === "stage") onStageHunk?.(t.hi);
+      else if (kind === "unstage") onUnstageHunk?.(t.hi);
+      else {
+        const h = parsed.files[t.fi]?.hunks[t.hi];
+        const changed = h ? ordinalsOf(h).filter((o) => o !== null).length : 0;
+        onDiscardHunk?.(t.hi, changed);
+      }
+    } else {
+      const ords = t.ords ?? [];
+      if (!ords.length) return;
+      if (kind === "stage") onStageLines?.(t.hi, ords);
+      else if (kind === "unstage") onUnstageLines?.(t.hi, ords);
+      else onDiscardLines?.(t.hi, ords);
+    }
+    hov = null;
+    sel = null;
+  }
+
+  // The toolbar lives OUTSIDE the horizontally-scrolling table wrap so `right` pins
+  // it to the visible edge. Only its vertical offset needs measuring, and using
+  // getBoundingClientRect differences means scrollTop needs no separate arithmetic.
+  let wrapEls = $state<Record<number, HTMLDivElement | undefined>>({});
+  let toolTop = $state(0);
+  let toolVisible = $state(false);
+
+  // Enough room for the toolbar's own height so clamping never parks it half out of view.
+  const TOOLBAR_CLEARANCE = 30;
+
+  function measureTool() {
+    const t = activeTarget();
+    const wrap = t ? wrapEls[t.fi] : undefined;
+    if (!t || !wrap) {
+      toolVisible = false;
+      return;
+    }
+    const row = wrap.querySelector<HTMLElement>(
+      `tr[data-h="${t.hi}"][data-i="${t.anchorRow}"]`,
+    );
+    if (!row) {
+      toolVisible = false;
+      return;
+    }
+    const raw = row.getBoundingClientRect().top - wrap.getBoundingClientRect().top;
+    // Clamp rather than hide. The ring stays drawn whenever a target is live, so hiding
+    // the toolbar would leave a visible target with no route to act on it — which happens
+    // routinely for a block or selection taller than the pane, and whenever the user
+    // scrolls with a selection locked.
+    const maxTop = Math.max(0, wrap.clientHeight - TOOLBAR_CLEARANCE);
+    toolTop = Math.min(Math.max(raw, 0), maxTop);
+    toolVisible = true;
+  }
+
+  // Runs after the DOM settles, so the anchor row is guaranteed to exist.
+  // diffSplit is tracked too: toggling Unified/Split unmounts the anchor row out
+  // from under a toolbar that would otherwise keep floating at a stale offset.
+  $effect(() => {
+    hov;
+    sel;
+    appState.diffSplit;
+    measureTool();
+  });
 
   // ─── Theme detection ──────────────────────────────────────────────────────────
 
@@ -204,109 +381,139 @@
     });
   }
 
-  // ─── Line-level selection ─────────────────────────────────────────────────────
+  // ─── Line selection ───────────────────────────────────────────────────────────
+  // A contiguous row range inside ONE hunk, in the current view's index space.
+  // `anchor` is the row the range grew from, so extending down and then back up
+  // pivots correctly. Ranges may span context rows; `selectionOrds` keeps only the
+  // change lines.
+  let sel = $state<{ fi: number; hi: number; anchor: number; from: number; to: number } | null>(null);
 
-  // Map keyed by "${fi}:${hi}" → Set of change-line ordinals (0-based among +/- lines).
-  let selected = $state<Map<string, Set<number>>>(new Map());
+  // Roving tabindex: exactly ONE row per file is a tab stop, so the diff contributes a
+  // single stop to the app's tab order and Tab from it reaches `.diff-tools` directly.
+  // Unshifted arrows move between rows; every row stays programmatically focusable at -1.
+  let focusedRow = $state<{ fi: number; hi: number; ri: number } | null>(null);
 
-  // Clear selection whenever the patch changes (file/diff switch).
+  function isTabStop(fi: number, hi: number, ri: number): boolean {
+    if (!hasActions) return false;
+    if (focusedRow) return focusedRow.fi === fi && focusedRow.hi === hi && focusedRow.ri === ri;
+    return hi === 0 && ri === 0; // nothing focused yet: the file's first row
+  }
+
+  // A new patch re-indexes every hunk, and flipping Unified/Split re-indexes the rows
+  // themselves — a range held across either is meaningless. `focusedRow` goes too: a
+  // stale one matches no rendered row, which would leave the diff with NO tab stop.
   $effect(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     patch;
-    selected = new Map();
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    appState.diffSplit;
+    sel = null;
+    hov = null;
+    focusedRow = null;
   });
 
-  /** Map each +/- line of a hunk to its 0-based change ordinal (context lines excluded). */
-  function hunkOrdinals(hunk: DiffHunk): Map<DiffLine, number> {
-    const m = new Map<DiffLine, number>();
-    let ord = 0;
-    for (const line of hunk.lines) if (line.kind !== "context") m.set(line, ord++);
-    return m;
-  }
-
-  function keyOf(fi: number, hi: number) { return `${fi}:${hi}`; }
-  function isSelected(fi: number, hi: number, ord: number) { return selected.get(keyOf(fi, hi))?.has(ord) ?? false; }
-
-  function toggleLine(fi: number, hi: number, ord: number) {
-    const k = keyOf(fi, hi);
-    const next = new Map(selected);
-    const s = new Set(next.get(k) ?? []);
-    if (s.has(ord)) s.delete(ord); else s.add(ord);
-    if (s.size) next.set(k, s); else next.delete(k);
-    selected = next;
-  }
-
-  function selCount(fi: number, hi: number) { return selected.get(keyOf(fi, hi))?.size ?? 0; }
-
-  function applyLines(fi: number, hi: number) {
-    const ords = [...(selected.get(keyOf(fi, hi)) ?? [])].sort((a, b) => a - b);
-    if (!ords.length) return;
-    if (staged) onUnstageLines?.(hi, ords); else onStageLines?.(hi, ords);
-    const next = new Map(selected); next.delete(keyOf(fi, hi)); selected = next;
-  }
-
-  // ─── Split view helpers ───────────────────────────────────────────────────────
-
-  interface SplitRow {
-    oldLine: DiffLine | null;
-    newLine: DiffLine | null;
-    oldBeforeIdx: number;
-    oldAfterIdx: number;
-    newBeforeIdx: number;
-    newAfterIdx: number;
-  }
-
-  /** Pair up del/add lines into side-by-side rows, with context lines spanning both. */
-  function toSplitRows(hunk: DiffHunk): SplitRow[] {
-    const rows: SplitRow[] = [];
-    let bi = 0;
-    let ai = 0;
-
-    let i = 0;
-    const lines = hunk.lines;
-
-    while (i < lines.length) {
-      const line = lines[i];
-
-      if (line.kind === "context") {
-        rows.push({ oldLine: line, newLine: line, oldBeforeIdx: bi, oldAfterIdx: ai, newBeforeIdx: bi, newAfterIdx: ai });
-        bi++;
-        ai++;
-        i++;
-        continue;
-      }
-
-      // Collect a contiguous run of del/add lines and pair them up.
-      const dels: Array<{ line: DiffLine; bi: number }> = [];
-      const adds: Array<{ line: DiffLine; ai: number }> = [];
-
-      while (i < lines.length && (lines[i].kind === "del" || lines[i].kind === "add")) {
-        if (lines[i].kind === "del") {
-          dels.push({ line: lines[i], bi });
-          bi++;
-        } else {
-          adds.push({ line: lines[i], ai });
-          ai++;
-        }
-        i++;
-      }
-
-      const maxLen = Math.max(dels.length, adds.length);
-      for (let j = 0; j < maxLen; j++) {
-        const d = dels[j] ?? null;
-        const a = adds[j] ?? null;
-        rows.push({
-          oldLine: d?.line ?? null,
-          newLine: a?.line ?? null,
-          oldBeforeIdx: d?.bi ?? 0,
-          oldAfterIdx: 0,      // dels use before-tokens, index not used for after
-          newBeforeIdx: 0,
-          newAfterIdx: a?.ai ?? 0,
-        });
-      }
+  function lockSelection(fi: number, hi: number, ri: number) {
+    if (!hasActions) return;
+    const h = parsed.files[fi]?.hunks[hi];
+    if (!h) return;
+    if (appState.diffSplit) {
+      // Split view snaps to whole blocks: a paired row is a display artifact, and a
+      // partial selection of a mixed block yields non-contiguous ordinals, which
+      // reorder the file when applied.
+      const r = splitRangeSnappedToBlocks(toSplitRows(h), ri, ri);
+      if (!r) return;
+      sel = { fi, hi, anchor: ri, from: r.from, to: r.to };
+    } else {
+      if (h.lines[ri]?.kind === "context") return;
+      sel = { fi, hi, anchor: ri, from: ri, to: ri };
     }
+    hov = null;
+    // A double-click is also the browser's select-word gesture, and `.diff-cell`
+    // deliberately opts back into user-select so diff code stays copyable.
+    window.getSelection()?.removeAllRanges();
+  }
 
-    return rows;
+  function extendSelection(fi: number, hi: number, ri: number) {
+    if (!sel || sel.fi !== fi || sel.hi !== hi) return;
+    const h = parsed.files[fi]?.hunks[hi];
+    if (!h) return;
+    let from: number;
+    let to: number;
+    if (appState.diffSplit) {
+      const r = splitRangeSnappedToBlocks(toSplitRows(h), sel.anchor, ri);
+      if (!r) return;
+      from = r.from;
+      to = r.to;
+    } else {
+      from = Math.min(sel.anchor, ri);
+      to = Math.max(sel.anchor, ri);
+    }
+    if (!selectionOrds(h, from, to).length) return;
+    sel = { fi, hi, anchor: sel.anchor, from, to };
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function clearSelection() {
+    sel = null;
+  }
+
+  function onRowClick(e: MouseEvent, fi: number, hi: number, ri: number) {
+    if (!hasActions) return;
+    if (e.shiftKey) {
+      extendSelection(fi, hi, ri);
+      return;
+    }
+    clearSelection();
+  }
+
+  /**
+   * Keyboard parity for the mouse affordance: Enter/Space is the double-click
+   * (lock), Shift+Arrow is the shift-click (extend). Focus itself is wired to
+   * `hoverRow` on the rows, which is what raises the ring and toolbar.
+   */
+  function onRowKeydown(e: KeyboardEvent, fi: number, hi: number, ri: number) {
+    if (!hasActions) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      lockSelection(fi, hi, ri);
+      return;
+    }
+    if (!e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const wrap = wrapEls[fi];
+      if (!wrap) return;
+      // Querying the DOM keeps this correct across hunk boundaries without duplicating
+      // the unified/split row-space logic — the rendered order IS the navigation order.
+      // `.diff-row` excludes the hunk-header rows, which also carry data-h/data-i (as the
+      // toolbar's anchor) but are not focusable — arrowing onto one would dead-end.
+      const rows = [...wrap.querySelectorAll<HTMLElement>("tr.diff-row[data-h][data-i]")];
+      const cur = rows.findIndex(
+        (el) => el.dataset.h === String(hi) && el.dataset.i === String(ri),
+      );
+      const next = rows[cur + (e.key === "ArrowDown" ? 1 : -1)];
+      next?.focus();
+      return;
+    }
+    if (e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp") && sel) {
+      e.preventDefault();
+      const delta = e.key === "ArrowDown" ? 1 : -1;
+      const edge = sel.to === sel.anchor ? sel.from : sel.to;
+      const h = parsed.files[fi]?.hunks[hi];
+      if (!h) return;
+      if (appState.diffSplit) {
+        // Split selections snap to whole blocks, so stepping one ROW would always land
+        // on the context between blocks and change nothing. Step one BLOCK instead.
+        const ranges = splitBlockRanges(toSplitRows(h));
+        const cur = ranges.findIndex((r) => edge >= r.from && edge <= r.to);
+        const target = ranges[cur + delta];
+        if (!target) return;
+        extendSelection(fi, hi, target.from);
+      } else {
+        const next = Math.max(0, Math.min(h.lines.length - 1, edge + delta));
+        extendSelection(fi, hi, next);
+      }
+      return;
+    }
   }
 
   // ─── Rendering helper: tokens → HTML string (safe; tokens contain raw highlighted text) ──
@@ -347,6 +554,12 @@
     }}
   >{marked ? "💬" : "＋"}</button>
 {/snippet}
+
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key === "Escape" && sel) clearSelection();
+  }}
+/>
 
 <div class="diff-view">
   <!-- Header: split/unified toggle + totals + context controls -->
@@ -418,7 +631,13 @@
       {:else if file.hunks.length === 0}
         <div class="empty-hunk">No textual changes.</div>
       {:else}
-        <div class="diff-table-wrap">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="diff-table-outer" onmouseleave={clearHover}>
+        <div
+          class="diff-table-wrap"
+          bind:this={wrapEls[fi]}
+          onscroll={measureTool}
+        >
           <table class="diff-table mono" class:split={appState.diffSplit}>
             {#if appState.diffSplit}
               <!-- Fixed column widths. Without this, the colspan hunk-header row is the
@@ -432,67 +651,48 @@
                 <col class="dt-side" />
               </colgroup>
             {/if}
-            <tbody>
-              {#each file.hunks as hunk, hi (hi)}
+            {#each file.hunks as hunk, hi (hi)}
+              {@const ring = ringRange(fi, hi)}
+              <tbody
+                class="hunk"
+                class:hunk-hover={hasActions && !sel && hov?.fi === fi && hov?.hi === hi}
+              >
                 <!-- Hunk header row -->
-                <tr class="hunk-header-row">
+                <tr class="hunk-header-row" data-h={hi} data-i={HUNK_HEADER_ROW}>
                   {#if appState.diffSplit}
                     <td class="hunk-header-cell" colspan="4">
                       <span class="hunk-range">{hunk.header}</span>
-                      {#if onStageHunk || onUnstageHunk}
-                        {#if onStageHunk && !staged}
-                          <button class="hunk-btn" onclick={() => onStageHunk!(hi)}>Stage hunk</button>
-                        {/if}
-                        {#if onUnstageHunk && staged}
-                          <button class="hunk-btn" onclick={() => onUnstageHunk!(hi)}>Unstage hunk</button>
-                        {/if}
-                      {/if}
-                      {#if selCount(fi, hi) > 0}
-                        {#if !staged && onStageLines}
-                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Stage {selCount(fi, hi)} line(s)</button>
-                        {/if}
-                        {#if staged && onUnstageLines}
-                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Unstage {selCount(fi, hi)} line(s)</button>
-                        {/if}
-                      {/if}
                     </td>
                   {:else}
                     <td class="gutter" colspan="2"></td>
                     <td class="hunk-header-cell">
                       <span class="hunk-range">{hunk.header}</span>
-                      {#if onStageHunk || onUnstageHunk}
-                        {#if onStageHunk && !staged}
-                          <button class="hunk-btn" onclick={() => onStageHunk!(hi)}>Stage hunk</button>
-                        {/if}
-                        {#if onUnstageHunk && staged}
-                          <button class="hunk-btn" onclick={() => onUnstageHunk!(hi)}>Unstage hunk</button>
-                        {/if}
-                      {/if}
-                      {#if selCount(fi, hi) > 0}
-                        {#if !staged && onStageLines}
-                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Stage {selCount(fi, hi)} line(s)</button>
-                        {/if}
-                        {#if staged && onUnstageLines}
-                          <button class="hunk-btn primary" onclick={() => applyLines(fi, hi)}>Unstage {selCount(fi, hi)} line(s)</button>
-                        {/if}
-                      {/if}
                     </td>
                   {/if}
                 </tr>
 
                 {#if !appState.diffSplit}
                   <!-- ── UNIFIED view ── -->
-                  {@const ords = hunkOrdinals(hunk)}
-                  {#each indexHunkLines(hunk) as { line, beforeIdx, afterIdx } (line.oldNo ?? `a${line.newNo}`)}
+                  {#each indexHunkLines(hunk) as { line, beforeIdx, afterIdx }, ri (ri)}
                     {@const toks = lineTokens(fi, hi, line, beforeIdx, afterIdx)}
-                    {@const ord = line.kind !== "context" ? ords.get(line) : undefined}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <tr
+                      data-h={hi}
+                      data-i={ri}
                       class="diff-row {line.kind}"
-                      class:selected={ord !== undefined && isSelected(fi, hi, ord)}
-                      style={line.kind !== "context" ? "cursor: pointer" : ""}
-                      onclick={() => { if (ord !== undefined) toggleLine(fi, hi, ord); }}
-                      onkeydown={(e) => { if (ord !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, ord); } }}
+                      class:ring={ring !== null && ri >= ring.from && ri <= ring.to}
+                      class:ring-first={ring !== null && ri === ring.from}
+                      class:ring-last={ring !== null && ri === ring.to}
+                      onmouseenter={() => hoverRow(fi, hi, ri)}
+                      style={hasActions && line.kind !== "context" ? "cursor: pointer" : ""}
+                      tabindex={hasActions ? (isTabStop(fi, hi, ri) ? 0 : -1) : undefined}
+                      onfocus={() => {
+                        focusedRow = { fi, hi, ri };
+                        hoverRow(fi, hi, ri);
+                      }}
+                      onkeydown={(e) => onRowKeydown(e, fi, hi, ri)}
+                      onclick={(e) => onRowClick(e, fi, hi, ri)}
+                      ondblclick={() => lockSelection(fi, hi, ri)}
                     >
                       <td class="gutter old-gutter" class:commentable={!!onLineComment}>
                         {line.oldNo ?? ""}
@@ -519,11 +719,26 @@
                   {/each}
                 {:else}
                   <!-- ── SPLIT view ── -->
-                  {@const ords = hunkOrdinals(hunk)}
                   {#each toSplitRows(hunk) as row, ri (ri)}
-                    {@const oldOrd = row.oldLine?.kind === "del" ? ords.get(row.oldLine) : undefined}
-                    {@const newOrd = row.newLine?.kind === "add" ? ords.get(row.newLine) : undefined}
-                    <tr class="diff-row split-row">
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <tr
+                      class="diff-row split-row"
+                      class:ring={ring !== null && ri >= ring.from && ri <= ring.to}
+                      class:ring-first={ring !== null && ri === ring.from}
+                      class:ring-last={ring !== null && ri === ring.to}
+                      data-h={hi}
+                      data-i={ri}
+                      style={hasActions && isChangeRow(row) ? "cursor: pointer" : ""}
+                      onmouseenter={() => hoverRow(fi, hi, ri)}
+                      tabindex={hasActions ? (isTabStop(fi, hi, ri) ? 0 : -1) : undefined}
+                      onfocus={() => {
+                        focusedRow = { fi, hi, ri };
+                        hoverRow(fi, hi, ri);
+                      }}
+                      onkeydown={(e) => onRowKeydown(e, fi, hi, ri)}
+                      onclick={(e) => onRowClick(e, fi, hi, ri)}
+                      ondblclick={() => lockSelection(fi, hi, ri)}
+                    >
                       <!-- Old side -->
                       <td class="gutter old-gutter" class:commentable={!!onLineComment}>
                         {row.oldLine?.oldNo ?? ""}
@@ -531,15 +746,10 @@
                           {@render commentBtn(row.oldLine.oldNo, "LEFT")}
                         {/if}
                       </td>
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <td
                         class="diff-cell split-cell"
                         class:del={row.oldLine?.kind === "del"}
                         class:context={row.oldLine?.kind === "context"}
-                        class:selected={oldOrd !== undefined && isSelected(fi, hi, oldOrd)}
-                        style={row.oldLine?.kind === "del" ? "cursor: pointer" : ""}
-                        onclick={() => { if (oldOrd !== undefined) toggleLine(fi, hi, oldOrd); }}
-                        onkeydown={(e) => { if (oldOrd !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, oldOrd); } }}
                       >
                         {#if row.oldLine}
                           {@const toks = row.oldLine.kind === "del"
@@ -562,15 +772,10 @@
                           {@render commentBtn(row.newLine.newNo, "RIGHT")}
                         {/if}
                       </td>
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <td
                         class="diff-cell split-cell"
                         class:add={row.newLine?.kind === "add"}
                         class:context={row.newLine?.kind === "context"}
-                        class:selected={newOrd !== undefined && isSelected(fi, hi, newOrd)}
-                        style={row.newLine?.kind === "add" ? "cursor: pointer" : ""}
-                        onclick={() => { if (newOrd !== undefined) toggleLine(fi, hi, newOrd); }}
-                        onkeydown={(e) => { if (newOrd !== undefined && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleLine(fi, hi, newOrd); } }}
                       >
                         {#if row.newLine}
                           {@const toks = row.newLine.kind === "add"
@@ -588,9 +793,27 @@
                     </tr>
                   {/each}
                 {/if}
-              {/each}
-            </tbody>
+              </tbody>
+            {/each}
           </table>
+        </div>
+        {#if hasActions && toolVisible}
+          {@const t = activeTarget()}
+          {#if t && t.fi === fi}
+            {@const label = t.scope === "hunk" ? "hunk" : String((t.ords ?? []).length)}
+            <div class="diff-tools" style="top: {toolTop}px">
+              {#if !staged && onStageHunk}
+                <button onclick={() => runAction("stage")}>Stage {label}</button>
+              {/if}
+              {#if !staged && onDiscardHunk}
+                <button class="danger" onclick={() => runAction("discard")}>Discard {label}</button>
+              {/if}
+              {#if staged && onUnstageHunk}
+                <button onclick={() => runAction("unstage")}>Unstage {label}</button>
+              {/if}
+            </div>
+          {/if}
+        {/if}
         </div>
       {/if}
     {/each}
@@ -718,9 +941,58 @@
   }
 
   /* ── Diff table ─────────────────────────────────────────────────────────────── */
+
+  /* Positioning context for the floating toolbar. It must NOT be the scroll
+     container: an absolutely-positioned child of a scroller is laid out against
+     the content, so `right` would drift as the diff scrolls sideways. */
+  .diff-table-outer {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
   .diff-table-wrap {
     overflow: auto;
     flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .diff-tools {
+    position: absolute;
+    right: 14px;
+    z-index: 6;
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    background: var(--header-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  .diff-tools button {
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--accent);
+    background: var(--btn-bg);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .diff-tools button:hover {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .diff-tools button.danger {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .diff-tools button.danger:hover {
+    background: var(--danger);
+    color: var(--on-accent);
   }
 
   .diff-table {
@@ -754,6 +1026,27 @@
     vertical-align: top;
     border-right: 1px solid var(--border-subtle);
     background: var(--header-bg);
+  }
+
+  /* ── Hover / selection ring ──────────────────────────────────────────────────
+     A hunk is a <tbody> and takes a plain outline. A BLOCK is only a run of <tr>s
+     with no wrapping element, so its ring is built from four box-shadow insets
+     spread across the run's cells. They must be four SEPARATE custom properties
+     feeding one box-shadow: written as four rules on `box-shadow` directly, the
+     last would simply win. As custom properties they compose. */
+  .diff-table td {
+    box-shadow: var(--rt, 0 0 transparent), var(--rb, 0 0 transparent),
+                var(--rl, 0 0 transparent), var(--rr, 0 0 transparent);
+  }
+  tr.ring-first td { --rt: inset 0 1.5px 0 var(--diff-ring); }
+  tr.ring-last td { --rb: inset 0 -1.5px 0 var(--diff-ring); }
+  tr.ring td:first-child { --rl: inset 1.5px 0 0 var(--diff-ring); }
+  tr.ring td:last-child { --rr: inset -1.5px 0 0 var(--diff-ring); }
+
+  /* Outer ring — subtler than the block ring, and drawn on the hunk's own element. */
+  tbody.hunk.hunk-hover {
+    outline: 1px solid color-mix(in srgb, var(--diff-ring) 34%, transparent);
+    outline-offset: -1px;
   }
 
   /* ── Diff rows ─────────────────────────────────────────────────────────────── */
@@ -859,40 +1152,6 @@
     font-size: 11px;
     color: var(--accent);
     margin-right: auto;
-  }
-
-  /* ── Stage/unstage hunk buttons ─────────────────────────────────────────────── */
-  .hunk-btn {
-    padding: 1px 8px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-    background: var(--btn-bg);
-    color: var(--text);
-    font-size: 11px;
-    cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .hunk-btn:hover {
-    background: var(--btn-hover);
-  }
-  .hunk-btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
-  }
-  .hunk-btn.primary:hover {
-    opacity: 0.88;
-  }
-
-  /* ── Line-level selection highlight ─────────────────────────────────────────── */
-  .diff-row.selected {
-    box-shadow: inset 2px 0 0 var(--accent);
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-  }
-  .split-cell.selected {
-    box-shadow: inset 2px 0 0 var(--accent);
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   /* ── Line-comment affordance (only present when onLineComment is passed) ────── */
