@@ -70,7 +70,21 @@
     jumpToRefWithLoad(sha);
   }
 
+  // A repo switch deliberately KEEPS the previous repo's refs on screen until the reload lands —
+  // clearing them flashed the sidebar empty mid-switch. But `appState.repo` already points at the
+  // NEW repo, so a command fired from a row still showing the OLD one runs against the new
+  // repository. With a name both repos have — `main`, `develop` — "Delete branch" then deletes the
+  // wrong repo's branch. Keep the rows visible (that was the point) but refuse anything that
+  // touches the repository until the switch completes. Selection and scrolling stay live: they
+  // read nothing and write nothing.
+  function refActionsBlocked(): boolean {
+    if (!appState.repoLoading) return false;
+    appState.status = "Still opening the repository — try that again in a moment.";
+    return true;
+  }
+
   function onRefCheckout(r: RefEntry, kind: "local" | "remote" | "tag") {
+    if (refActionsBlocked()) return;
     if (kind === "local") {
       gitActions.checkout(r.name);
     } else if (kind === "remote") {
@@ -84,6 +98,7 @@
   }
 
   async function confirmDeleteBranch(name: string) {
+    if (refActionsBlocked()) return;
     const detail = appState.refsDetailed.find((d) => d.kind === "local" && d.name === name);
     const tracking = detail?.upstream ?? null; // "origin/feature" | null (tracking CONFIG)
     // The tracking config outlives the remote branch ("gone" after a remote-side
@@ -114,6 +129,9 @@
 
   function onRefContext(event: MouseEvent, r: RefEntry, kind: "local" | "remote" | "tag") {
     event.preventDefault();
+    // Bail before building the menu, so Checkout / Fast-forward / Delete are not merely
+    // guarded but unreachable while the switch is in flight.
+    if (refActionsBlocked()) return;
     jumpTo(r.sha);
     selectRef(kind, r.name);
     const items: MenuItem[] = [];
@@ -236,6 +254,10 @@
   // (saves any commits made here) or hop back to the default local branch.
   function onDetachedContext(event: MouseEvent) {
     event.preventDefault();
+    // Same staleness, worse failure mode: "Create branch here" would use the OLD repo's HEAD sha.
+    // Two clones of one project share commit ids, so this can quietly succeed in the wrong
+    // repository rather than erroring on an unknown sha.
+    if (refActionsBlocked()) return;
     const sha = refs.head[0]?.sha;
     if (!sha) return;
     const items: MenuItem[] = [

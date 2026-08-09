@@ -133,6 +133,56 @@ describe("automatic updater lifecycle", () => {
     expect(mocks.confirm).toHaveBeenCalledOnce();
   });
 
+  // A manual check replaces the backend's pending-update slot. If the UI keeps the queued
+  // automatic update anyway, closing the overlay later presents a version the backend no longer
+  // has — Download then fails with "no pending update", or fetches something other than what the
+  // dialog named. Only an exact version match used to clear the queue.
+  it("drops a queued automatic update when a manual check finds nothing", async () => {
+    mocks.dialogState.kind = "prompt"; // an overlay is up, so the automatic prompt queues
+    mocks.checkUpdateOnChannel.mockResolvedValue({
+      version: "0.3.0-next.21",
+      currentVersion: "0.3.0-next.20",
+      notes: null,
+    });
+    const updater = await loadUpdater();
+    await updater.startupUpdateCheck();
+    expect(mocks.confirm).not.toHaveBeenCalled();
+
+    // User switches channel in Settings and checks by hand; this time there is nothing.
+    mocks.checkUpdateOnChannel.mockResolvedValue(null);
+    await updater.manualCheckForUpdates();
+
+    mocks.dialogState.kind = "none";
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mocks.confirm).not.toHaveBeenCalled();
+  });
+
+  it("drops a queued automatic update when a manual check finds a different version", async () => {
+    mocks.dialogState.kind = "prompt";
+    mocks.checkUpdateOnChannel.mockResolvedValue({
+      version: "0.3.0-next.21",
+      currentVersion: "0.3.0-next.20",
+      notes: null,
+    });
+    const updater = await loadUpdater();
+    await updater.startupUpdateCheck();
+    expect(mocks.confirm).not.toHaveBeenCalled();
+
+    mocks.checkUpdateOnChannel.mockResolvedValue({
+      version: "0.4.0",
+      currentVersion: "0.3.0-next.20",
+      notes: null,
+    });
+    await updater.manualCheckForUpdates();
+    // The manual check presents its own find immediately.
+    expect(mocks.confirm).toHaveBeenCalledOnce();
+
+    // Closing the overlay must NOT then present the superseded next.21 as well.
+    mocks.dialogState.kind = "none";
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mocks.confirm).toHaveBeenCalledOnce();
+  });
+
   it("uses activation as a catch-up check after a throttled timer window", async () => {
     const updater = await loadUpdater();
     await updater.startupUpdateCheck();
