@@ -66,6 +66,16 @@ pub fn initialize_repository(
     if !parent.is_dir() {
         return Err("The selected parent path is not a folder.".to_string());
     }
+    // A Git directory is still a folder, and `--is-inside-work-tree` answers false inside one, so
+    // the nesting probe below cannot catch it either — and when the destination does not exist yet
+    // that probe falls back to this very path. Picking `some-repo/.git`, or a bare repo, would
+    // therefore create the new repository inside another repository's metadata.
+    if is_git_dir(&parent) {
+        return Err(
+            "The selected parent folder is a Git repository's internal directory. Choose a different folder."
+                .to_string(),
+        );
+    }
 
     let name = folder_name.trim();
     if name.is_empty()
@@ -472,6 +482,38 @@ mod tests {
             !parent.0.join("shipped.git").join(".git").exists(),
             "must not have initialized a nested repository inside the bare one"
         );
+    }
+
+    /// The same blind spot one level up. When the destination does not exist yet the nesting probe
+    /// falls back to the PARENT, and `--is-inside-work-tree` is false inside a Git directory just
+    /// as it is inside a bare repo — so picking `some-repo/.git` (or a bare repo) as the parent
+    /// created the new repository inside another repository's metadata.
+    #[test]
+    fn initialize_repository_rejects_a_git_directory_as_parent() {
+        let outer = TempFolder::new();
+
+        // A normal repository's `.git`, and a bare repository, are both Git directories.
+        let mut init = Command::new("git");
+        init.current_dir(&outer.0).args(["init", "-q", "host"]);
+        run(&mut init).unwrap();
+        let mut bare = Command::new("git");
+        bare.current_dir(&outer.0).args(["init", "-q", "--bare", "shipped.git"]);
+        run(&mut bare).unwrap();
+
+        for parent in [outer.0.join("host").join(".git"), outer.0.join("shipped.git")] {
+            let err = initialize_repository(&parent, "proj", "main", false)
+                .expect_err(&format!("{} should have been refused", parent.display()));
+            assert!(
+                err.contains("Git repository"),
+                "{}: should be refused, got: {err}",
+                parent.display()
+            );
+            assert!(
+                !parent.join("proj").exists(),
+                "{}: must not have created anything inside a Git directory",
+                parent.display()
+            );
+        }
     }
 
     /// The guard must not over-reach: a plain folder that merely sits next to a repository
