@@ -643,9 +643,9 @@ fn discard_header(header: &str, hunk: &str) -> String {
     header
         .split_inclusive('\n')
         .filter_map(|line| {
-            if line.starts_with("old mode ") || line.starts_with("new mode ") {
-                None
-            } else if normalize_new_file && line.starts_with("new file mode ") {
+            let mode_pair = line.starts_with("old mode ") || line.starts_with("new mode ");
+            let new_file = normalize_new_file && line.starts_with("new file mode ");
+            if mode_pair || new_file {
                 None
             } else if normalize_new_file && line.starts_with("--- /dev/null") {
                 old_side.clone()
