@@ -705,6 +705,10 @@ async function runRemote(
     appState.status = "Open a repository first.";
     return false;
   }
+  // Capture before the FIRST attempt, not before the credentials prompt: a switch during
+  // that first await would otherwise be recorded as the "original" repo and the guard would
+  // wave the retry through.
+  const sameRepo = sameRepoAfterPrompt();
   appState.startRemoteProgress(label);
   try {
     // First attempt: no credentials (system helper / SSH agent / keychain).
@@ -712,9 +716,8 @@ async function runRemote(
 
     if (outcome.authFailed) {
       // Auth failed — prompt for credentials and retry once. `fn` reads `appState.repo` when
-      // invoked, so a switch during the prompt would retry against the NEW repository with the
-      // credentials just entered — pushing to a remote the user never chose.
-      const sameRepo = sameRepoAfterPrompt();
+      // invoked, so a switch anywhere in this flow would retry against the NEW repository with
+      // the credentials just entered — pushing to a remote the user never chose.
       const creds = await dialogs.confirmCredentials({ title: `${label}: sign in` });
       if (creds && sameRepo()) {
         outcome = await fn((l) => appState.pushRemoteLog(l), creds);
@@ -1252,12 +1255,15 @@ export const gitActions = {
         (n): n is string => !!n && others.includes(n),
       ) ?? null;
     const bases = preferred ? [preferred, ...others.filter((n) => n !== preferred)] : others;
+    // Capture before the first await: `branch` and `bases` were read from the CURRENT repo
+    // above, and a switch during the subjects lookup would otherwise be recorded as the
+    // original — creating a PR in the new repo from the old one's selections.
+    const sameRepo = sameRepoAfterPrompt();
     // Best-effort prefill from the commit subjects on base..HEAD.
     const subjects = await api
       .branchSubjects(appState.repo, bases[0], 20)
       .catch(() => [] as string[]);
     const prefill = prefillFromSubjects(subjects, branch);
-    const sameRepo = sameRepoAfterPrompt();
     const v = await dialogs.openCreatePr(branch, bases, prefill.title, prefill.body);
     if (!v || !sameRepo()) return;
     await run("Create pull request", async () => {
