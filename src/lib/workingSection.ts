@@ -28,6 +28,38 @@ export interface SectionPresence {
 }
 
 /**
+ * Build a `SectionPresence` from the working-copy file lists.
+ *
+ * The rule above — presence describes lists ON SCREEN, not file states — is easy to state and
+ * easy to get wrong: it has been violated once per field. Deriving it inline in the component
+ * meant `unstaged` was computed from the merged display list while `untracked` was computed
+ * from the raw file state, so with merging on a path reported presence in BOTH, `resolveSection`
+ * kept the recorded `"untracked"`, and the pane resolved to a section with no rows — nothing
+ * highlighted and the Unstaged header offered "Stage all" instead of "Stage". Encoding it here
+ * keeps the two fields from drifting apart again, and makes the merged case testable.
+ *
+ * `untracked` is asked twice for different reasons; do not conflate them. This answers "is the
+ * Untracked SECTION showing this row", which is false while merging. Whether the FILE is
+ * untracked — which decides `git diff --no-index` and disables hunk staging — is a separate
+ * question the caller must answer from the file list regardless of mode.
+ */
+export function renderedPresence(
+  path: string | null,
+  files: { staged: string[]; unstaged: string[]; untracked: string[] },
+  unifyUnstaged: boolean,
+): SectionPresence {
+  if (path === null) return { staged: false, unstaged: false, untracked: false };
+  const holds = (list: string[]) => list.includes(path);
+  return {
+    staged: holds(files.staged),
+    // With merging on, the Unstaged list renders the untracked rows too.
+    unstaged: holds(files.unstaged) || (unifyUnstaged && holds(files.untracked)),
+    // ...and the Untracked section is not rendered at all.
+    untracked: !unifyUnstaged && holds(files.untracked),
+  };
+}
+
+/**
  * The section the diff pane should actually show for the selected file.
  *
  * Normally this is just the section the user clicked. But the file can leave that

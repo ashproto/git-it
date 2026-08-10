@@ -8,7 +8,7 @@
   import CommitComposer from "./CommitComposer.svelte";
   import FileTree from "./FileTree.svelte";
   import { buildFileTree } from "../fileTree";
-  import { resolveSection, type WorkingSection } from "../workingSection";
+  import { renderedPresence, resolveSection, type WorkingSection } from "../workingSection";
   import type { WorkingFile } from "../types";
   import { crossfade, fade } from "svelte/transition";
   import { flip } from "svelte/animate";
@@ -62,15 +62,20 @@
 
   // Which RENDERED lists currently hold the selected path — sections are lists on screen,
   // not file states. A partially-staged file is in two of them at once, which is precisely
-  // why the clicked section has to be recorded. Note `unstagedDisplay`, not `unstagedFiles`:
-  // with unifyUnstaged on, untracked rows are rendered in the Unstaged list and report
-  // "unstaged", so presence has to agree or the selection resolves to a section that has
-  // no rows in that mode.
-  const presence = $derived({
-    staged: selectedFile !== null && stagedFiles.some((f) => f.path === selectedFile),
-    unstaged: selectedFile !== null && unstagedDisplay.some((f) => f.path === selectedFile),
-    untracked: selectedFile !== null && untrackedFiles.some((f) => f.path === selectedFile),
-  });
+  // why the clicked section has to be recorded. The merged-list handling lives in
+  // `renderedPresence` rather than here: computing the three fields inline is how they came
+  // to disagree about what "rendered" means.
+  const presence = $derived(
+    renderedPresence(
+      selectedFile,
+      {
+        staged: stagedFiles.map((f) => f.path),
+        unstaged: unstagedFiles.map((f) => f.path),
+        untracked: untrackedFiles.map((f) => f.path),
+      },
+      appState.unifyUnstaged,
+    ),
+  );
 
   // The section the pane actually shows: the one the user clicked, or — if the file has
   // since left it (they staged all of it, say) — wherever it went. See resolveSection().
@@ -87,8 +92,12 @@
   // Untracked files have no index entry, so the regular diff is empty — they need the
   // `git diff --no-index` path (and hunk/line staging doesn't apply to them). This is a
   // property of the FILE, not of the section: with unifyUnstaged on, an untracked file
-  // is rendered in the Unstaged list but still needs --no-index.
-  const selectedIsUntracked = $derived(presence.untracked);
+  // is rendered in the Unstaged list but still needs --no-index. Read from the file list,
+  // NOT from `presence.untracked`, which answers the narrower "is the Untracked section
+  // showing this row" and is false while merging.
+  const selectedIsUntracked = $derived(
+    selectedFile !== null && untrackedFiles.some((f) => f.path === selectedFile),
+  );
 
   // Whether the selected file is displayed in the Unstaged section — including an
   // untracked file that unifyUnstaged has merged into that list, which `presence.unstaged`

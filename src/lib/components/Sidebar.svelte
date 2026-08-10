@@ -83,6 +83,23 @@
     return true;
   }
 
+  // `refActionsBlocked()` only covers the instant of the click. Every ref action that asks
+  // first then waits on a prompt with no timeout, during which the repository can change —
+  // and `gitActions` targets `appState.repo`, not whatever was on screen when the dialog
+  // opened. Confirming afterwards would run the OLD repo's branch or tag name against the
+  // NEW repository; where both hold that name, "Delete" force-deletes the wrong one.
+  //
+  // Capture the repo before the await and re-check after it. Returns a predicate rather than
+  // taking a callback so each call site keeps its own control flow readable.
+  function sameRepoAfterPrompt(): () => boolean {
+    const opened = appState.repo;
+    return () => {
+      if (appState.repo === opened) return true;
+      appState.status = "Repository changed while that dialog was open — nothing was done.";
+      return false;
+    };
+  }
+
   function onRefCheckout(r: RefEntry, kind: "local" | "remote" | "tag") {
     if (refActionsBlocked()) return;
     if (kind === "local") {
@@ -108,8 +125,9 @@
     const upstream = remoteExists ? tracking : null;
     const remoteGone = tracking !== null && !remoteExists;
     const worktree = worktreeFor(name) ?? null;
+    const sameRepo = sameRepoAfterPrompt();
     const res = await dialogs.confirmBranchDelete({ branch: name, upstream, remoteGone, worktree });
-    if (!res.confirmed) return;
+    if (!res.confirmed || !sameRepo()) return;
     let remote: string | undefined;
     let remoteBranch: string | undefined;
     if (res.deleteRemote && upstream) {
@@ -175,15 +193,17 @@
       items.push({
         label: "Rename…",
         action: async () => {
+          const sameRepo = sameRepoAfterPrompt();
           const n = await dialogs.prompt({ title: "Rename branch", label: "New name", value: r.name });
-          if (n && n !== r.name) gitActions.renameBranch(r.name, n);
+          if (n && n !== r.name && sameRepo()) gitActions.renameBranch(r.name, n);
         },
       });
       items.push({
         label: "Create tag here…",
         action: async () => {
+          const sameRepo = sameRepoAfterPrompt();
           const n = await dialogs.prompt({ title: "New tag", label: "Tag name", placeholder: "v1.0.0" });
-          if (n) gitActions.createTag(n, r.sha);
+          if (n && sameRepo()) gitActions.createTag(n, r.sha);
         },
       });
       items.push({ separator: true });
@@ -193,8 +213,9 @@
       items.push({
         label: "Create local branch…",
         action: async () => {
+          const sameRepo = sameRepoAfterPrompt();
           const n = await dialogs.prompt({ title: `New branch from ${r.name}`, label: "Branch name" });
-          if (n) gitActions.createBranch(n, r.sha);
+          if (n && sameRepo()) gitActions.createBranch(n, r.sha);
         },
       });
       items.push({ separator: true });
@@ -205,13 +226,14 @@
           const slash = r.name.indexOf("/");
           const remote = r.name.slice(0, slash);
           const branch = r.name.slice(slash + 1);
+          const sameRepo = sameRepoAfterPrompt();
           const ok = await dialogs.confirm({
             title: "Delete remote branch",
             message: `Delete "${r.name}" on the remote? This removes it for everyone with access to ${remote}.`,
             confirmLabel: "Delete",
             danger: true,
           });
-          if (ok) gitActions.deleteRemoteBranch(remote, branch);
+          if (ok && sameRepo()) gitActions.deleteRemoteBranch(remote, branch);
         },
       });
     } else {
@@ -221,13 +243,14 @@
         label: "Delete tag",
         danger: true,
         action: async () => {
+          const sameRepo = sameRepoAfterPrompt();
           const ok = await dialogs.confirm({
             title: "Delete tag",
             message: `Delete tag "${r.name}"?`,
             confirmLabel: "Delete",
             danger: true,
           });
-          if (ok) gitActions.deleteTag(r.name);
+          if (ok && sameRepo()) gitActions.deleteTag(r.name);
         },
       });
     }
@@ -264,8 +287,9 @@
       {
         label: "Create branch here…",
         action: async () => {
+          const sameRepo = sameRepoAfterPrompt();
           const n = await dialogs.prompt({ title: `New branch at ${sha.slice(0, 7)}`, label: "Branch name" });
-          if (n) gitActions.createBranch(n, sha).then((ok) => { if (ok) gitActions.checkout(n); });
+          if (n && sameRepo()) gitActions.createBranch(n, sha).then((ok) => { if (ok) gitActions.checkout(n); });
         },
       },
     ];

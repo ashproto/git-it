@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { resolveSection, type SectionPresence, type WorkingSection } from "./workingSection";
+import {
+  renderedPresence,
+  resolveSection,
+  type SectionPresence,
+  type WorkingSection,
+} from "./workingSection";
 
 const present = (p: Partial<SectionPresence> = {}): SectionPresence => ({
   staged: false,
@@ -70,5 +75,40 @@ describe("resolveSection", () => {
         }
       }
     }
+  });
+});
+
+describe("renderedPresence", () => {
+  const files = { staged: ["s.txt"], unstaged: ["u.txt"], untracked: ["n.txt"] };
+
+  it("reports nothing for no selection", () => {
+    expect(renderedPresence(null, files, false)).toEqual(present());
+  });
+
+  it("maps each file to its own section when the lists are separate", () => {
+    expect(renderedPresence("s.txt", files, false)).toEqual(present({ staged: true }));
+    expect(renderedPresence("u.txt", files, false)).toEqual(present({ unstaged: true }));
+    expect(renderedPresence("n.txt", files, false)).toEqual(present({ untracked: true }));
+  });
+
+  it("sees a partially-staged file in both lists at once", () => {
+    const both = { staged: ["p.txt"], unstaged: ["p.txt"], untracked: [] };
+    expect(renderedPresence("p.txt", both, false)).toEqual(present({ staged: true, unstaged: true }));
+  });
+
+  // The bug: with unifyUnstaged on there IS no Untracked list on screen — those rows are
+  // rendered in Unstaged and report "unstaged". Reporting untracked presence anyway let
+  // resolveSection keep a recorded "untracked" and resolve to a section with no rows, so
+  // nothing highlighted and the Unstaged header offered "Stage all" instead of "Stage".
+  it("moves untracked presence into Unstaged when the lists are merged", () => {
+    expect(renderedPresence("n.txt", files, true)).toEqual(present({ unstaged: true }));
+  });
+
+  it("resolves a recorded untracked selection to Unstaged once merging is enabled", () => {
+    const before = renderedPresence("n.txt", files, false);
+    expect(resolveSection("untracked", before)).toBe("untracked");
+
+    const after = renderedPresence("n.txt", files, true);
+    expect(resolveSection("untracked", after)).toBe("unstaged");
   });
 });
