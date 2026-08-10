@@ -518,6 +518,54 @@ async function runResolve(label: string, fn: () => Promise<unknown>): Promise<bo
   }
 }
 
+// Confirm copy for a partial discard. Discarding UNSTAGED lines reverse-applies against
+// the index, so when the same file also has staged content the lines fall back to the
+// staged version rather than vanishing — saying "permanently" there would overstate it.
+// With nothing staged, the index matches HEAD and the change really is gone for good.
+function discardMessage(n: number, unit: string, path: string, revertsToIndex: boolean): string {
+  const what = `${n} ${unit}${n === 1 ? "" : "s"} in ${path}`;
+  return revertsToIndex
+    ? `Discard ${what}. They revert to your staged version of this file. This cannot be undone.`
+    : `Permanently discard ${what}. This cannot be undone. (Stash instead to keep them.)`;
+}
+
+/**
+ * Settle a discard result. On failure, force the shown diff to re-fetch.
+ *
+ * A discard carries the patch the user was judging so git-core can refuse one picked against a
+ * diff that has since moved. But the fswatch refresh compares WorkingFile metadata, so an
+ * external edit to an already-modified file leaves the status list identical and the shown patch
+ * stale — every retry would then be refused with the same stale patch until the user happened to
+ * reselect the file or change the context depth. Re-fetching turns the refusal into something the
+ * next click can actually get past. Success needs nothing: `runWorktree` already reloads.
+ */
+function discarded(ok: boolean): boolean {
+  if (!ok) appState.invalidateWorkingDiff();
+  return ok;
+}
+
+/**
+ * Bind an action to the repository the user actually confirmed it against.
+ *
+ * Every confirmation here is awaited with no timeout, and the work that follows reads
+ * `appState.repo` when it runs — not when the dialog opened. Switch repositories mid-prompt and
+ * the confirmed action lands on the new one. The discard guards do not save us: `expected_diff`
+ * pins the DIFF, not the repository, so two clones or worktrees holding the same path with the
+ * same diff pass that check and the wrong copy is irreversibly discarded.
+ *
+ * Capture before the await, verify after it, refuse if it moved. Refusing rather than retargeting
+ * is deliberate: the user authorised an action against what they were looking at, and silently
+ * applying it somewhere else is not the same action.
+ */
+function sameRepoAfterPrompt(): () => boolean {
+  const opened = appState.repo;
+  return () => {
+    if (appState.repo === opened) return true;
+    appState.status = "Repository changed while that dialog was open — nothing was done.";
+    return false;
+  };
+}
+
 // Run a working-copy op (non-destructive): guard → run → refresh working changes + graph.
 async function runWorktree(label: string, fn: () => Promise<unknown>): Promise<boolean> {
   if (!isTauri()) {
@@ -562,13 +610,14 @@ async function runDestructive(
     appState.status = "Open a repository first.";
     return false;
   }
+  const sameRepo = sameRepoAfterPrompt();
   const { confirmed, backup } = await dialogs.confirmDestructive({
     title: label,
     consequence,
     confirmLabel: label,
     backupDefault: appState.autoBackupDestructive,
   });
-  if (!confirmed) return false;
+  if (!confirmed || !sameRepo()) return false;
   try {
     appState.status = `${label}…`;
     const res = await fn(backup);
@@ -604,13 +653,14 @@ async function runDestructiveRebase(
     appState.status = "Open a repository first.";
     return false;
   }
+  const sameRepo = sameRepoAfterPrompt();
   const { confirmed, backup } = await dialogs.confirmDestructive({
     title: label,
     consequence,
     confirmLabel: label,
     backupDefault: appState.autoBackupDestructive,
   });
-  if (!confirmed) return false;
+  if (!confirmed || !sameRepo()) return false;
   try {
     appState.status = `${label}…`;
     const res = await fn(backup);
@@ -655,15 +705,21 @@ async function runRemote(
     appState.status = "Open a repository first.";
     return false;
   }
+  // Capture before the FIRST attempt, not before the credentials prompt: a switch during
+  // that first await would otherwise be recorded as the "original" repo and the guard would
+  // wave the retry through.
+  const sameRepo = sameRepoAfterPrompt();
   appState.startRemoteProgress(label);
   try {
     // First attempt: no credentials (system helper / SSH agent / keychain).
     let outcome = await fn((l) => appState.pushRemoteLog(l));
 
     if (outcome.authFailed) {
-      // Auth failed — prompt for credentials and retry once.
+      // Auth failed — prompt for credentials and retry once. `fn` reads `appState.repo` when
+      // invoked, so a switch anywhere in this flow would retry against the NEW repository with
+      // the credentials just entered — pushing to a remote the user never chose.
       const creds = await dialogs.confirmCredentials({ title: `${label}: sign in` });
-      if (creds) {
+      if (creds && sameRepo()) {
         outcome = await fn((l) => appState.pushRemoteLog(l), creds);
       }
       // If user cancelled the credentials dialog, fall through with the original outcome.
@@ -870,6 +926,83 @@ export const gitActions = {
     runWorktree(`Stage ${selected.length} line(s) in ${path}`, () => api.stageLines(appState.repo, path, hunkIndex, selected, appState.effectiveDiffContext)),
   unstageLines: (path: string, hunkIndex: number, selected: number[]) =>
     runWorktree(`Unstage ${selected.length} line(s) in ${path}`, () => api.unstageLines(appState.repo, path, hunkIndex, selected, appState.effectiveDiffContext)),
+  // Hunk/line discard is DESTRUCTIVE and NOT undoable — same reasoning as the
+  // file-level `discard` below: uncommitted work is not in the reflog, so there is
+  // no backup bundle to take. Guard BEFORE confirming so the browser preview never
+  // shows a dialog it cannot honour.
+  // `expectedDiff` is captured at click time and carried across the confirmation await:
+  // it is what pins hunkIndex/selected to the diff the user actually judged, however long
+  // the dialog stays open. See ops_worktree::require_unchanged_diff.
+  discardHunk: async (
+    path: string,
+    hunkIndex: number,
+    changedLines: number,
+    expectedDiff: string,
+    revertsToIndex = false,
+  ): Promise<boolean> => {
+    if (!isTauri()) {
+      appState.status = "That action needs the desktop app (not the browser preview).";
+      return false;
+    }
+    if (!appState.repo) {
+      appState.status = "Open a repository first.";
+      return false;
+    }
+    // State the LINE COUNT, not "this hunk": in Whole-file mode git emits one hunk
+    // spanning the entire file, so a hunk discard can revert every unstaged change in
+    // it — a boundary the user cannot see from the dialog.
+    const n = changedLines;
+    const sameRepo = sameRepoAfterPrompt();
+    const confirmed = await dialogs.confirm({
+      title: "Discard hunk",
+      message: discardMessage(n, "changed line", path, revertsToIndex),
+      confirmLabel: "Discard",
+      danger: true,
+    });
+    if (!confirmed || !sameRepo()) return false;
+    return discarded(
+      await runWorktree(`Discard hunk in ${path}`, () =>
+        api.discardHunk(appState.repo, path, hunkIndex, expectedDiff, appState.effectiveDiffContext),
+      ),
+    );
+  },
+  discardLines: async (
+    path: string,
+    hunkIndex: number,
+    selected: number[],
+    expectedDiff: string,
+    revertsToIndex = false,
+  ): Promise<boolean> => {
+    if (!isTauri()) {
+      appState.status = "That action needs the desktop app (not the browser preview).";
+      return false;
+    }
+    if (!appState.repo) {
+      appState.status = "Open a repository first.";
+      return false;
+    }
+    const n = selected.length;
+    const sameRepo = sameRepoAfterPrompt();
+    const confirmed = await dialogs.confirm({
+      title: "Discard lines",
+      message: discardMessage(n, "line", path, revertsToIndex),
+      confirmLabel: "Discard",
+      danger: true,
+    });
+    if (!confirmed || !sameRepo()) return false;
+    return discarded(
+      await runWorktree(`Discard ${n} line(s) in ${path}`, () =>
+        api.discardLines(
+          appState.repo,
+          path,
+          hunkIndex,
+          selected,
+          expectedDiff,
+          appState.effectiveDiffContext,
+        ),
+      ),
+    );
+  },
   commitChanges: (message: string, signoff = false) =>
     runWorktree("Commit", () => api.commit(appState.repo, message, signoff)),
   // Seamless composer amend (Fork-style): folds the currently-staged changes into
@@ -939,13 +1072,14 @@ export const gitActions = {
       return false;
     }
     const n = paths.length;
+    const sameRepo = sameRepoAfterPrompt();
     const confirmed = await dialogs.confirm({
       title: "Discard changes",
       message: `Permanently discard changes to ${n} file${n === 1 ? "" : "s"}. This cannot be undone. (Stash instead to keep them.)`,
       confirmLabel: "Discard",
       danger: true,
     });
-    if (!confirmed) return false;
+    if (!confirmed || !sameRepo()) return false;
     return runWorktree(`Discard ${n} file(s)`, () => api.discard(appState.repo, paths));
   },
 
@@ -959,13 +1093,14 @@ export const gitActions = {
       return false;
     }
     const n = paths.length;
+    const sameRepo = sameRepoAfterPrompt();
     const confirmed = await dialogs.confirm({
       title: "Remove untracked files",
       message: `Permanently discard changes to ${n} file${n === 1 ? "" : "s"}. This cannot be undone. (Stash instead to keep them.)`,
       confirmLabel: "Discard",
       danger: true,
     });
-    if (!confirmed) return false;
+    if (!confirmed || !sameRepo()) return false;
     return runWorktree(`Clean ${n} file(s)`, () => api.clean(appState.repo, paths));
   },
 
@@ -1033,6 +1168,7 @@ export const gitActions = {
       return false;
     }
     if (forceWithLease) {
+      const sameRepo = sameRepoAfterPrompt();
       const ok = await dialogs.confirm({
         title: "Force push",
         message:
@@ -1040,7 +1176,7 @@ export const gitActions = {
         confirmLabel: "Force push",
         danger: true,
       });
-      if (!ok) return false;
+      if (!ok || !sameRepo()) return false;
     }
 
     // Determine the current branch + whether it already has an upstream tracking ref.
@@ -1119,13 +1255,17 @@ export const gitActions = {
         (n): n is string => !!n && others.includes(n),
       ) ?? null;
     const bases = preferred ? [preferred, ...others.filter((n) => n !== preferred)] : others;
+    // Capture before the first await: `branch` and `bases` were read from the CURRENT repo
+    // above, and a switch during the subjects lookup would otherwise be recorded as the
+    // original — creating a PR in the new repo from the old one's selections.
+    const sameRepo = sameRepoAfterPrompt();
     // Best-effort prefill from the commit subjects on base..HEAD.
     const subjects = await api
       .branchSubjects(appState.repo, bases[0], 20)
       .catch(() => [] as string[]);
     const prefill = prefillFromSubjects(subjects, branch);
     const v = await dialogs.openCreatePr(branch, bases, prefill.title, prefill.body);
-    if (!v) return;
+    if (!v || !sameRepo()) return;
     await run("Create pull request", async () => {
       const number = await api.githubPrCreate(appState.repo, v.title, v.body, v.base, v.draft);
       // The auto-push may have just created the branch's upstream.

@@ -8,6 +8,7 @@
   import CommitComposer from "./CommitComposer.svelte";
   import FileTree from "./FileTree.svelte";
   import { buildFileTree } from "../fileTree";
+  import { renderedPresence, resolveSection, type WorkingSection } from "../workingSection";
   import type { WorkingFile } from "../types";
   import { crossfade, fade } from "svelte/transition";
   import { flip } from "svelte/animate";
@@ -59,38 +60,67 @@
 
   const selectedFile = $derived(appState.selectedFile);
 
-  // Determine whether the selected file is in the staged section (governs which
-  // diff half to fetch and which hunk callbacks to wire).
-  const selectedIsStaged = $derived(
-    selectedFile !== null && stagedFiles.some((f) => f.path === selectedFile),
+  // Which RENDERED lists currently hold the selected path — sections are lists on screen,
+  // not file states. A partially-staged file is in two of them at once, which is precisely
+  // why the clicked section has to be recorded. The merged-list handling lives in
+  // `renderedPresence` rather than here: computing the three fields inline is how they came
+  // to disagree about what "rendered" means.
+  const presence = $derived(
+    renderedPresence(
+      selectedFile,
+      {
+        staged: stagedFiles.map((f) => f.path),
+        unstaged: unstagedFiles.map((f) => f.path),
+        untracked: untrackedFiles.map((f) => f.path),
+      },
+      appState.unifyUnstaged,
+    ),
   );
 
-  // Untracked files have no index entry, so the regular diff is empty — they need
-  // the `git diff --no-index` path (and hunk/line staging doesn't apply to them).
+  // The section the pane actually shows: the one the user clicked, or — if the file has
+  // since left it (they staged all of it, say) — wherever it went. See resolveSection().
+  const section = $derived(
+    selectedFile === null ? null : resolveSection(appState.selectedSection, presence),
+  );
+
+  // Governs which diff half to fetch and which hunk callbacks to wire. Deliberately
+  // section-based rather than "does this file have anything staged": the latter shows
+  // the staged diff for a partially-staged file even when the user clicked its Unstaged
+  // row, which hid Stage/Discard on the very half those actions exist for.
+  const selectedIsStaged = $derived(section === "staged");
+
+  // Untracked files have no index entry, so the regular diff is empty — they need the
+  // `git diff --no-index` path (and hunk/line staging doesn't apply to them). This is a
+  // property of the FILE, not of the section: with unifyUnstaged on, an untracked file
+  // is rendered in the Unstaged list but still needs --no-index. Read from the file list,
+  // NOT from `presence.untracked`, which answers the narrower "is the Untracked section
+  // showing this row" and is false while merging.
   const selectedIsUntracked = $derived(
     selectedFile !== null && untrackedFiles.some((f) => f.path === selectedFile),
   );
 
-  // Whether the selected file is a tracked, modified (non-untracked) unstaged file.
-  const selectedIsUnstaged = $derived(
-    selectedFile !== null && unstagedFiles.some((f) => f.path === selectedFile),
-  );
+  // Whether the selected file is displayed in the Unstaged section — including an
+  // untracked file that unifyUnstaged has merged into that list, which `presence.unstaged`
+  // accounts for. Drives the Unstaged header's Fork-style "Stage" vs "Stage all".
+  const selectedInUnstagedSection = $derived(section === "unstaged");
 
-  // Whether the selected file is displayed in the Unstaged section. In unified mode
-  // that section also lists untracked files, so a selected untracked file counts too.
-  // Drives the Unstaged header button's Fork-style "Stage" vs "Stage all".
-  const selectedInUnstagedSection = $derived(
-    selectedIsUnstaged || (appState.unifyUnstaged && selectedIsUntracked),
-  );
+  // The unstaged half of a partially-staged file. Discarding here reverts the lines to
+  // the STAGED version rather than to HEAD, and the confirm dialog says so.
+  const selectedHasStagedCounterpart = $derived(section !== "staged" && presence.staged);
 
   // Raw patch for the selected file. Re-fetches whenever selectedFile changes OR
   // workingChanges is refreshed (after every op, including hunk ops). We key on a
   // monotonic revision counter (workingChangesRev) instead of the file count so that
   // a hunk stage/unstage — which doesn't change the file count but does re-index
   // hunks on the backend — also triggers a re-fetch and prevents stale hunk indices.
+  // `section` is null once the path is in NO list — its last change was committed or
+  // discarded, so the file is no longer part of the working copy. Keying on `selectedFile`
+  // alone kept the key non-empty there and fetched an unstaged diff for a file with nothing
+  // to diff: no row could highlight (the row test already requires a matching section), while
+  // the pane showed an empty diff instead of the nothing-selected state.
   const diffKey = $derived(
-    selectedFile !== null
-      ? `${selectedFile}::${selectedIsStaged ? "staged" : selectedIsUntracked ? "untracked" : "unstaged"}::${appState.workingChangesRev}::${appState.effectiveDiffContext}`
+    selectedFile !== null && section !== null
+      ? `${selectedFile}::${section}::${selectedIsUntracked}::${appState.workingChangesRev}::${appState.effectiveDiffContext}`
       : "",
   );
 
@@ -157,8 +187,18 @@
 
   // ── Row click ───────────────────────────────────────────────────────────────
 
-  function selectFile(path: string) {
-    appState.setSelectedFile(path === selectedFile ? null : path);
+  // Clicking the already-selected row toggles the selection off. "Already-selected"
+  // means the same path IN THE SAME SECTION, so clicking a partially-staged file's
+  // other row switches sides rather than deselecting.
+  function selectFile(path: string, rowSection: WorkingSection) {
+    const same = selectedFile === path && section === rowSection;
+    appState.setSelectedFile(same ? null : { path, section: rowSection });
+  }
+
+  /** Does this row own the current selection? Compares the resolved section, so an
+   *  `MM` file highlights only the row that is actually being diffed. */
+  function isSelectedRow(path: string, rowSection: WorkingSection): boolean {
+    return selectedFile === path && section === rowSection;
   }
 
   // ── Right-click context menu (Fork-style) ────────────────────────────────────
@@ -177,8 +217,11 @@
     const seq = ++ctxSeq;
     const { clientX, clientY } = e;
     // Select the row so the diff pane follows the right-click. selectFile toggles
-    // off when re-clicking the selected row, so only set it if not already selected.
-    if (selectedFile !== f.path) appState.setSelectedFile(f.path);
+    // off when re-clicking the selected row, so only set it if not already selected —
+    // and re-select when the same path is right-clicked in its OTHER section.
+    if (!isSelectedRow(f.path, section)) {
+      appState.setSelectedFile({ path: f.path, section });
+    }
 
     // File actions (Tauri only). A deleted file has no on-disk target, so Open /
     // Open With are disabled and Show in Finder opens the containing folder instead
@@ -278,14 +321,14 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="file-row"
-    class:selected={selectedFile === f.path}
+    class:selected={isSelectedRow(f.path, "staged")}
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
-    onmousedown={() => selectFile(f.path)}
+    onmousedown={() => selectFile(f.path, "staged")}
     oncontextmenu={(e) => onRowContext(e, f, "staged")}
     onkeydown={(e) => {
-      if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+      if (e.key === "Enter" || e.key === " ") selectFile(f.path, "staged");
     }}
   >
     <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
@@ -297,14 +340,14 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="file-row"
-    class:selected={selectedFile === f.path}
+    class:selected={isSelectedRow(f.path, "unstaged")}
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
-    onmousedown={() => selectFile(f.path)}
+    onmousedown={() => selectFile(f.path, "unstaged")}
     oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
     onkeydown={(e) => {
-      if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+      if (e.key === "Enter" || e.key === " ") selectFile(f.path, "unstaged");
     }}
   >
     <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
@@ -316,14 +359,14 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="file-row"
-    class:selected={selectedFile === f.path}
+    class:selected={isSelectedRow(f.path, "untracked")}
     role="row"
     tabindex="0"
     style={`padding-left:${ind}px`}
-    onmousedown={() => selectFile(f.path)}
+    onmousedown={() => selectFile(f.path, "untracked")}
     oncontextmenu={(e) => onRowContext(e, f, "untracked")}
     onkeydown={(e) => {
-      if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+      if (e.key === "Enter" || e.key === " ") selectFile(f.path, "untracked");
     }}
   >
     <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
@@ -391,16 +434,16 @@
             {#each stagedFiles as f (f.path)}
               <li
                 class="file-row"
-                class:selected={selectedFile === f.path}
+                class:selected={isSelectedRow(f.path, "staged")}
                 role="row"
                 tabindex="0"
                 in:receive|global={{ key: f.path }}
                 out:send|global={{ key: f.path }}
                 animate:flip={FLIP}
-                onmousedown={() => selectFile(f.path)}
+                onmousedown={() => selectFile(f.path, "staged")}
                 oncontextmenu={(e) => onRowContext(e, f, "staged")}
                 onkeydown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+                  if (e.key === "Enter" || e.key === " ") selectFile(f.path, "staged");
                 }}
               >
                 <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
@@ -447,16 +490,16 @@
             {#each unstagedDisplay as f (f.path)}
               <li
                 class="file-row"
-                class:selected={selectedFile === f.path}
+                class:selected={isSelectedRow(f.path, "unstaged")}
                 role="row"
                 tabindex="0"
                 in:receive|global={{ key: f.path }}
                 out:send|global={{ key: f.path }}
                 animate:flip={FLIP}
-                onmousedown={() => selectFile(f.path)}
+                onmousedown={() => selectFile(f.path, "unstaged")}
                 oncontextmenu={(e) => onRowContext(e, f, "unstaged")}
                 onkeydown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+                  if (e.key === "Enter" || e.key === " ") selectFile(f.path, "unstaged");
                 }}
               >
                 <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
@@ -505,16 +548,16 @@
               {#each untrackedFiles as f (f.path)}
                 <li
                   class="file-row"
-                  class:selected={selectedFile === f.path}
+                  class:selected={isSelectedRow(f.path, "untracked")}
                   role="row"
                   tabindex="0"
                   in:receive|global={{ key: f.path }}
                   out:send|global={{ key: f.path }}
                   animate:flip={FLIP}
-                  onmousedown={() => selectFile(f.path)}
+                  onmousedown={() => selectFile(f.path, "untracked")}
                   oncontextmenu={(e) => onRowContext(e, f, "untracked")}
                   onkeydown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") selectFile(f.path);
+                    if (e.key === "Enter" || e.key === " ") selectFile(f.path, "untracked");
                   }}
                 >
                   <span class="glyph {glyphClass(f)}">{glyph(f)}</span>
@@ -541,7 +584,9 @@
 
       <!-- ── Diff pane (right column) ─────────────────────────────────────────── -->
       <div class="diff-pane">
-        {#if !selectedFile}
+        <!-- `section === null` means the selected path has left the working copy entirely, so
+             there is nothing to show and no row is highlighted — same state as no selection. -->
+        {#if !selectedFile || section === null}
           <p class="diff-loading">Select a file to view its diff.</p>
         {:else if diffLoading}
           <p class="diff-loading">Loading diff…</p>
@@ -561,6 +606,26 @@
             onUnstageLines={selectedIsStaged
               ? (hi, sel) => gitActions.unstageLines(selectedFile!, hi, sel)
               : undefined}
+            onDiscardHunk={selectedIsStaged || selectedIsUntracked
+              ? undefined
+              : (i, n) =>
+                  gitActions.discardHunk(
+                    selectedFile!,
+                    i,
+                    n,
+                    diffPatch,
+                    selectedHasStagedCounterpart,
+                  )}
+            onDiscardLines={selectedIsStaged || selectedIsUntracked
+              ? undefined
+              : (hi, sel) =>
+                  gitActions.discardLines(
+                    selectedFile!,
+                    hi,
+                    sel,
+                    diffPatch,
+                    selectedHasStagedCounterpart,
+                  )}
           />
         {/if}
       </div>

@@ -3,6 +3,7 @@
 // decisions use the app's modal dialog system.
 import { appState } from "./store.svelte";
 import { dialogs } from "./dialogs.svelte";
+import { anyOverlayOpen } from "./overlays";
 import { api } from "./api";
 import type { DownloadEvent, UpdateInfo } from "./types";
 
@@ -114,6 +115,14 @@ async function checkForUpdates(
   const manual = source === "manual";
   let available: UpdateInfo | null = null;
   if (manual) {
+    // A manual check replaces the backend's pending-update slot, so anything an automatic check
+    // queued for later is now superseded — whatever this check finds (or does not find) is the
+    // truth. Keeping the queue meant a prompt could resurface after the overlay closed naming a
+    // version the backend no longer had: Download then failed with "no pending update", or
+    // fetched something other than what the dialog said. Clearing it here covers the
+    // nothing-found and different-version cases that an exact version match missed. The retry
+    // timer needs no cancelling — it re-checks this variable and stops on its own.
+    pendingAutomaticUpdate = null;
     appState.setBusyOp("Checking for updates");
     appState.status = "Checking for updates…";
   }
@@ -129,7 +138,6 @@ async function checkForUpdates(
 
   if (!available) return;
   if (manual) {
-    if (pendingAutomaticUpdate?.version === available.version) pendingAutomaticUpdate = null;
     await presentUpdate(available);
   } else {
     queueAutomaticUpdate(available);
@@ -149,12 +157,12 @@ async function tryPresentPendingAutomaticUpdate(): Promise<void> {
     pendingAutomaticUpdate = null;
     return;
   }
-  if (
-    !pendingAutomaticUpdate ||
-    checking ||
-    presenting ||
-    dialogs.state.kind !== "none"
-  ) {
+  // `anyOverlayOpen()` rather than just `dialogs.state`: an automatic check that lands while
+  // Settings, Manage Repository, amend/rebase, branch-colour or a GitHub action is open would
+  // otherwise mount the update dialog — which sits at a higher z-index — straight over the
+  // workflow the user is in the middle of. overlays.ts is the one place that knows every
+  // overlay singleton, so asking it there keeps this from drifting as new ones are added.
+  if (!pendingAutomaticUpdate || checking || presenting || anyOverlayOpen()) {
     schedulePendingPromptRetry();
     return;
   }

@@ -70,7 +70,38 @@
     jumpToRefWithLoad(sha);
   }
 
+  // A repo switch deliberately KEEPS the previous repo's refs on screen until the reload lands —
+  // clearing them flashed the sidebar empty mid-switch. But `appState.repo` already points at the
+  // NEW repo, so a command fired from a row still showing the OLD one runs against the new
+  // repository. With a name both repos have — `main`, `develop` — "Delete branch" then deletes the
+  // wrong repo's branch. Keep the rows visible (that was the point) but refuse anything that
+  // touches the repository until the switch completes. Selection and scrolling stay live: they
+  // read nothing and write nothing.
+  function refActionsBlocked(): boolean {
+    if (!appState.repoLoading) return false;
+    appState.status = "Still opening the repository — try that again in a moment.";
+    return true;
+  }
+
+  // `refActionsBlocked()` only covers the instant of the click. Every ref action that asks
+  // first then waits on a prompt with no timeout, during which the repository can change —
+  // and `gitActions` targets `appState.repo`, not whatever was on screen when the dialog
+  // opened. Confirming afterwards would run the OLD repo's branch or tag name against the
+  // NEW repository; where both hold that name, "Delete" force-deletes the wrong one.
+  //
+  // Capture the repo before the await and re-check after it. Returns a predicate rather than
+  // taking a callback so each call site keeps its own control flow readable.
+  function sameRepoAfterPrompt(): () => boolean {
+    const opened = appState.repo;
+    return () => {
+      if (appState.repo === opened) return true;
+      appState.status = "Repository changed while that dialog was open — nothing was done.";
+      return false;
+    };
+  }
+
   function onRefCheckout(r: RefEntry, kind: "local" | "remote" | "tag") {
+    if (refActionsBlocked()) return;
     if (kind === "local") {
       gitActions.checkout(r.name);
     } else if (kind === "remote") {
@@ -84,6 +115,7 @@
   }
 
   async function confirmDeleteBranch(name: string) {
+    if (refActionsBlocked()) return;
     const detail = appState.refsDetailed.find((d) => d.kind === "local" && d.name === name);
     const tracking = detail?.upstream ?? null; // "origin/feature" | null (tracking CONFIG)
     // The tracking config outlives the remote branch ("gone" after a remote-side
@@ -93,8 +125,9 @@
     const upstream = remoteExists ? tracking : null;
     const remoteGone = tracking !== null && !remoteExists;
     const worktree = worktreeFor(name) ?? null;
+    const sameRepo = sameRepoAfterPrompt();
     const res = await dialogs.confirmBranchDelete({ branch: name, upstream, remoteGone, worktree });
-    if (!res.confirmed) return;
+    if (!res.confirmed || !sameRepo()) return;
     let remote: string | undefined;
     let remoteBranch: string | undefined;
     if (res.deleteRemote && upstream) {
@@ -114,6 +147,9 @@
 
   function onRefContext(event: MouseEvent, r: RefEntry, kind: "local" | "remote" | "tag") {
     event.preventDefault();
+    // Bail before building the menu, so Checkout / Fast-forward / Delete are not merely
+    // guarded but unreachable while the switch is in flight.
+    if (refActionsBlocked()) return;
     jumpTo(r.sha);
     selectRef(kind, r.name);
     const items: MenuItem[] = [];
@@ -157,15 +193,17 @@
       items.push({
         label: "Rename…",
         action: async () => {
+          const sameRepo = sameRepoAfterPrompt();
           const n = await dialogs.prompt({ title: "Rename branch", label: "New name", value: r.name });
-          if (n && n !== r.name) gitActions.renameBranch(r.name, n);
+          if (n && n !== r.name && sameRepo()) gitActions.renameBranch(r.name, n);
         },
       });
       items.push({
         label: "Create tag here…",
         action: async () => {
+          const sameRepo = sameRepoAfterPrompt();
           const n = await dialogs.prompt({ title: "New tag", label: "Tag name", placeholder: "v1.0.0" });
-          if (n) gitActions.createTag(n, r.sha);
+          if (n && sameRepo()) gitActions.createTag(n, r.sha);
         },
       });
       items.push({ separator: true });
@@ -175,8 +213,9 @@
       items.push({
         label: "Create local branch…",
         action: async () => {
+          const sameRepo = sameRepoAfterPrompt();
           const n = await dialogs.prompt({ title: `New branch from ${r.name}`, label: "Branch name" });
-          if (n) gitActions.createBranch(n, r.sha);
+          if (n && sameRepo()) gitActions.createBranch(n, r.sha);
         },
       });
       items.push({ separator: true });
@@ -187,13 +226,14 @@
           const slash = r.name.indexOf("/");
           const remote = r.name.slice(0, slash);
           const branch = r.name.slice(slash + 1);
+          const sameRepo = sameRepoAfterPrompt();
           const ok = await dialogs.confirm({
             title: "Delete remote branch",
             message: `Delete "${r.name}" on the remote? This removes it for everyone with access to ${remote}.`,
             confirmLabel: "Delete",
             danger: true,
           });
-          if (ok) gitActions.deleteRemoteBranch(remote, branch);
+          if (ok && sameRepo()) gitActions.deleteRemoteBranch(remote, branch);
         },
       });
     } else {
@@ -203,13 +243,14 @@
         label: "Delete tag",
         danger: true,
         action: async () => {
+          const sameRepo = sameRepoAfterPrompt();
           const ok = await dialogs.confirm({
             title: "Delete tag",
             message: `Delete tag "${r.name}"?`,
             confirmLabel: "Delete",
             danger: true,
           });
-          if (ok) gitActions.deleteTag(r.name);
+          if (ok && sameRepo()) gitActions.deleteTag(r.name);
         },
       });
     }
@@ -236,14 +277,19 @@
   // (saves any commits made here) or hop back to the default local branch.
   function onDetachedContext(event: MouseEvent) {
     event.preventDefault();
+    // Same staleness, worse failure mode: "Create branch here" would use the OLD repo's HEAD sha.
+    // Two clones of one project share commit ids, so this can quietly succeed in the wrong
+    // repository rather than erroring on an unknown sha.
+    if (refActionsBlocked()) return;
     const sha = refs.head[0]?.sha;
     if (!sha) return;
     const items: MenuItem[] = [
       {
         label: "Create branch here…",
         action: async () => {
+          const sameRepo = sameRepoAfterPrompt();
           const n = await dialogs.prompt({ title: `New branch at ${sha.slice(0, 7)}`, label: "Branch name" });
-          if (n) gitActions.createBranch(n, sha).then((ok) => { if (ok) gitActions.checkout(n); });
+          if (n && sameRepo()) gitActions.createBranch(n, sha).then((ok) => { if (ok) gitActions.checkout(n); });
         },
       },
     ];
