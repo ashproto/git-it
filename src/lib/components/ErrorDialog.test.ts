@@ -66,6 +66,39 @@ describe("ErrorDialog", () => {
     expect(target.querySelector(".disclosure")).toBeNull();
   });
 
+  it("offers no disclosure for a one-line prefixed error", async () => {
+    const target = render();
+    reportError("Push failed", "error: failed to push some refs to 'origin'");
+    await tick();
+    expect(target.querySelector(".disclosure")).toBeNull();
+  });
+
+  it("keeps keys inside the popup after a click on its text", async () => {
+    // WebKit gives focus to the nearest focusable ancestor of a clicked element. The dialog is
+    // that ancestor (tabindex -1), so Escape still starts inside the popup, not on <body>.
+    const target = render();
+    reportError("Pull failed", DIVERGENT);
+    await tick();
+    const dialog = target.querySelector<HTMLElement>("[role=alertdialog]");
+    dialog?.focus();
+    expect(document.activeElement).toBe(dialog);
+    dialog?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick();
+    expect(errors.current).toBeNull();
+  });
+
+  it("closes on a backdrop press but not on a press inside the dialog", async () => {
+    const target = render();
+    reportError("Pull failed", DIVERGENT);
+    await tick();
+    target.querySelector(".dialog")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await tick();
+    expect(errors.current).not.toBeNull();
+    target.querySelector(".overlay")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await tick();
+    expect(errors.current).toBeNull();
+  });
+
   it("focuses OK and advances to the next queued report", async () => {
     const target = render();
     reportError("Pull failed", DIVERGENT);

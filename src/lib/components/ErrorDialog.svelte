@@ -10,12 +10,13 @@
   let returnFocusTo: HTMLElement | null = null;
 
   const report = $derived(errors.current);
-  // A one-line error has nothing more to show than its headline.
+  // A one-line error has nothing more to show than its headline (which drops git's
+  // `fatal:`/`error:` prefix, so compare without it).
   const hasOutput = $derived(
     !!report &&
       report.kind === "error" &&
       report.output.trim() !== "" &&
-      report.output.trim() !== report.headline.trim(),
+      report.output.trim().replace(/^(?:fatal|error): ?/, "") !== report.headline.trim(),
   );
 
   // Reset the disclosure and copy state per report, focus OK once the button exists, and give
@@ -78,9 +79,12 @@
     }}
     onkeydown={onKeydown}
   >
+    <!-- tabindex -1: clicking the selectable text focuses the dialog rather than <body>, so
+         Escape still dismisses it and keys still stop at the overlay. -->
     <div
       class="dialog"
       class:notice={report.kind === "notice"}
+      tabindex="-1"
       role="alertdialog"
       aria-modal="true"
       aria-labelledby="error-dialog-title"
@@ -152,6 +156,9 @@
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
     backdrop-filter: blur(20px) saturate(140%);
     -webkit-backdrop-filter: blur(20px) saturate(140%);
+  }
+  .dialog:focus {
+    outline: none;
   }
   .title-row {
     display: flex;
