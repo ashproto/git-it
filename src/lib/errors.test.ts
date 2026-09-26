@@ -86,10 +86,28 @@ describe("reportError", () => {
     appState.status = "Fetch — done.";
     expect(appState.statusIsError).toBe(false);
   });
+
+  it("does nothing when asked to reopen before any error", () => {
+    errors.reopenLast();
+    expect(errors.current).toBeNull();
+  });
+
+  it("does not stack a reopened error on the same one still showing", () => {
+    reportError("Pull failed", DIVERGENT);
+    errors.reopenLast();
+    expect(errors.pending).toBe(1);
+  });
 });
 
 describe("reportNotice", () => {
-  it("queues an info popup without touching the error state", () => {
+  it("clears a red status but keeps the last error reopenable", () => {
+    reportError("Pull failed", DIVERGENT);
+    reportNotice("Can't pull yet", "Repository is still loading — try again in a moment.");
+    expect(appState.statusIsError).toBe(false);
+    expect(errors.last?.title).toBe("Pull failed");
+  });
+
+  it("queues an info popup without setting the error state", () => {
     reportNotice("Can't reword this commit", "Can't reword a merge commit here.");
     expect(errors.current).toMatchObject({
       kind: "notice",
