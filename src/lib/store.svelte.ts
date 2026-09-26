@@ -623,6 +623,9 @@ function makeState() {
   let newDates = $state<Map<string, Date>>(new Map());
   let logLines = $state<string[]>([]);
   let status = $state("Ready");
+  // True while `status` holds a failure: the status bar paints it red and makes it a button
+  // that reopens the error. Any ordinary `status` write clears it.
+  let statusIsError = $state(false);
   let isRewriting = $state(false);
   let dateFormat = $state<DateFormatPrefs>(loadSyncDateFormat());
   // Flips true once the user changes the format. The async hydrate below must not
@@ -1727,6 +1730,14 @@ function makeState() {
     },
     set status(v: string) {
       status = v;
+      statusIsError = false;
+    },
+    get statusIsError() {
+      return statusIsError;
+    },
+    setErrorStatus(v: string) {
+      status = v;
+      statusIsError = true;
     },
     get isRewriting() {
       return isRewriting;

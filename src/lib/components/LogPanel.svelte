@@ -25,7 +25,7 @@
   {/snippet}
   <div class="log" bind:this={logEl}>
     {#each appState.logLines as line, i (i)}
-      <div class="line" class:err={line.startsWith("[stderr]")}>{line}</div>
+      <div class="line" class:err={line.startsWith("[stderr]") || line.startsWith("[error]")}>{line}</div>
     {/each}
     {#if appState.logLines.length === 0}
       <div class="empty">No output yet.</div>
