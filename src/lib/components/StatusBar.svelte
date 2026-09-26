@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
+  import { errors } from "../errors.svelte";
 
   // ── Branch label ─────────────────────────────────────────────────────────────
   const branchLabel = $derived.by(() => {
@@ -76,7 +77,19 @@
       <span class="spinner" aria-label={opLabel} title={opLabel}></span>
     {/if}
     <span class="live-dot" class:busy={!!appState.busyOp} aria-hidden="true"></span>
-    <span class="status-text" title={appState.status}>{appState.status}</span>
+    {#if appState.statusIsError && errors.last}
+      <button
+        type="button"
+        class="status-error"
+        title="Show error details"
+        onclick={() => errors.reopenLast()}
+      >
+        <span class="status-glyph" aria-hidden="true">⚠</span>
+        <span class="status-text">{appState.status}</span>
+      </button>
+    {:else}
+      <span class="status-text" title={appState.status}>{appState.status}</span>
+    {/if}
   </span>
 </div>
 
@@ -162,6 +175,25 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+  }
+  /* A failure: red, and a button that reopens the full error in the popup. */
+  .status-error {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--danger);
+    font: inherit;
+    cursor: pointer;
+  }
+  .status-error:hover .status-text {
+    text-decoration: underline;
+  }
+  .status-glyph {
+    flex-shrink: 0;
   }
 
   /* Persistent "system alive" indicator — NERV-only (styled in nerv.css);
