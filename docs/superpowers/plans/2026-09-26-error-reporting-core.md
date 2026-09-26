@@ -73,6 +73,17 @@
   - `export function summarizeGitOutput(text: string): GitErrorSummary`
 
 > **Execution note (learning mode):** the continuation rule inside `pickHeadline`, i.e. which lines after the first `fatal:`/`error:` line still belong to the headline, is offered to the user to write (about 6 lines). The tests below are its contract. If the user declines, use the implementation in Step 3 as-is.
+>
+> **Deviation (after task review):** the user chose the reference rule. The Task 1 review then reproduced two wrong headlines on real git 2.54 output:
+> - A detached-HEAD push lost git's "To push the history…" advice to the `From`/`To` header filter.
+> - A pull with no upstream (unprefixed, multi-paragraph) led with its closing advice instead of the complaint.
+>
+> The shipped rule differs from Step 3 in three ways:
+> - Headers and ref-status lines are treated as noise only in the fallback.
+> - Blank and indented advice lines stay in the headline.
+> - Unprefixed multi-paragraph text leads with its first paragraph.
+>
+> See spec Part A1 and the `fix: keep git's advice in error headlines` commit, which adds four fixture tests.
 
 - [ ] **Step 1: Write the failing tests**
 

@@ -59,6 +59,38 @@ const REJECTED_PUSH = [
   "",
 ].join("\n");
 
+// git's die_no_merge_candidates advice: unprefixed and multi-paragraph, complaint first.
+const NO_UPSTREAM_PULL = [
+  "There is no tracking information for the current branch.",
+  "Please specify which branch you want to merge with.",
+  "See git-pull(1) for details.",
+  "",
+  "    git pull <remote> <branch>",
+  "",
+  "If you wish to set tracking information for this branch you can do so with:",
+  "",
+  "    git branch --set-upstream-to=origin/<branch> lonely",
+  "",
+].join("\n");
+
+const DETACHED_PULL = [
+  "You are not currently on a branch.",
+  "Please specify which branch you want to merge with.",
+  "See git-pull(1) for details.",
+  "",
+  "    git pull <remote> <branch>",
+  "",
+].join("\n");
+
+const DETACHED_PUSH = [
+  "fatal: You are not currently on a branch.",
+  "To push the history leading to the current (detached HEAD)",
+  "state now, use",
+  "",
+  "    git push origin HEAD:<name-of-remote-branch>",
+  "",
+].join("\n");
+
 const OVERWRITTEN_HEADLINE = [
   "Your local changes to the following files would be overwritten by merge:",
   "\tf",
@@ -122,6 +154,54 @@ describe("summarizeGitOutput", () => {
         "its remote counterpart. If you want to integrate the remote changes,",
         "use 'git pull' before pushing again.",
         "See the 'Note about fast-forwards' in 'git push --help' for details.",
+      ].join("\n"),
+    );
+  });
+
+  it("keeps git's advice after a fatal line, through a blank line to its command", () => {
+    expect(summarizeGitOutput(DETACHED_PUSH).headline).toBe(
+      [
+        "You are not currently on a branch.",
+        "To push the history leading to the current (detached HEAD)",
+        "state now, use",
+        "",
+        "    git push origin HEAD:<name-of-remote-branch>",
+      ].join("\n"),
+    );
+  });
+
+  it("skips merge stdout that interleaves after an error line", () => {
+    const summary = summarizeGitOutput(
+      [
+        "error: could not apply 8dc652a... c",
+        "Auto-merging f",
+        "CONFLICT (content): Merge conflict in f",
+        "hint: Resolve all conflicts manually.",
+      ].join("\n"),
+    );
+    expect(summary.headline).toBe("could not apply 8dc652a... c");
+    expect(summary.hints).toBe("Resolve all conflicts manually.");
+  });
+
+  it("splits a progress line ended by a lone carriage return", () => {
+    expect(
+      summarizeGitOutput("Rebasing (1/1)\rerror: could not apply 8dc652a... c\n").headline,
+    ).toBe("could not apply 8dc652a... c");
+  });
+
+  it("leads unprefixed multi-paragraph advice with its first paragraph", () => {
+    expect(summarizeGitOutput(NO_UPSTREAM_PULL).headline).toBe(
+      [
+        "There is no tracking information for the current branch.",
+        "Please specify which branch you want to merge with.",
+        "See git-pull(1) for details.",
+      ].join("\n"),
+    );
+    expect(summarizeGitOutput(DETACHED_PULL).headline).toBe(
+      [
+        "You are not currently on a branch.",
+        "Please specify which branch you want to merge with.",
+        "See git-pull(1) for details.",
       ].join("\n"),
     );
   });

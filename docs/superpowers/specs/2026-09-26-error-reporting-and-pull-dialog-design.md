@@ -96,20 +96,29 @@ Three parts, one PR each.
   - Anything else yields `String(e)`.
 - `summarizeGitOutput(text: string): { headline: string; hints: string; output: string }`
   - **headline:** the first `fatal:` or `error:` line with the prefix removed, plus the
-    continuation lines that follow it. Continuations are tab-indented file lists and unprefixed
-    sentences such as "Please commit your changes or stash them before you merge." They end at
-    the next prefixed line, and the following never count as continuation, wherever they appear:
-    - `Aborting`
-    - `Updating <sha>..<sha>`
-    - `From …` / `To …`
-    - space-indented ref-update lines
+    continuation lines that follow it, up to git's next prefixed line or its closing
+    `Aborting`.
+    - **What continues:** tab-indented file lists, unprefixed sentences such as "Please commit
+      your changes or stash them before you merge.", and blank and indented lines. git's advice
+      often reads "…, use", then a blank line, then an indented `git <command>`, as in the
+      detached-HEAD push message.
+    - **What's skipped:** merge stdout that can interleave anywhere, because stdout and stderr
+      are read on separate threads: `Updating <sha>..<sha>`, `Auto-merging …`, `CONFLICT (…)`.
+    - **Trimming:** trailing blank lines are dropped.
+    - **Other errors:** later `fatal:`/`error:` lines stay visible in the output only.
 
-    The ref-update lines matter because stdout and stderr are read on separate threads, so these
-    lines can interleave anywhere. Later `fatal:`/`error:` lines stay visible in the output only.
-    With no prefixed line (a non-git message, or git running under a translated locale), the
-    headline is the last non-empty line that is not fetch or ref-update noise. Blank input gives
-    "The operation failed without an error message." The text is kept exactly as git wrote it,
-    with no re-capitalisation.
+    Fetch/push headers (`From …`, `To …`) and space-indented ref-status lines go to stderr
+    *before* any error, so they are treated as noise only in the fallback. The fallback applies
+    when there is no prefixed line: a non-git message, git's unprefixed advice, or git under a
+    translated locale.
+    - Multi-paragraph text (paragraphs separated by blank lines) gives its first paragraph's
+      meaningful lines. git's `die_no_merge_candidates` advice for a pull with no upstream or in
+      detached HEAD leads with the complaint.
+    - Otherwise the headline is the last meaningful line, e.g. "nothing to commit, working tree
+      clean".
+    - Blank input gives "The operation failed without an error message."
+
+    The text is kept exactly as git wrote it, with no re-capitalisation.
   - **hints:** every `hint:` line, in order, with the prefix removed and indentation and blank
     lines kept. Lines starting "Disable this message with" are dropped; they are CLI advice that
     means nothing in a GUI. Leading and trailing blank lines are trimmed. Empty string when there
@@ -124,6 +133,8 @@ Acceptance cases (fixtures captured from git 2.54 with `LC_ALL=C`):
 | `git pull --ff-only` on a diverged branch | `Not possible to fast-forward, aborting.` | `Diverging branches can't be fast-forwarded, you need to either:` … `git rebase`, without the "Disable this message" line |
 | Merge pull over overlapping local edits | `Your local changes to the following files would be overwritten by merge:` / `\tf` / `Please commit your changes or stash them before you merge.` | (none) |
 | Rejected push | `failed to push some refs to '<url>'` | `Updates were rejected because the tip of your current branch is behind` … (4 lines) |
+| Push in detached HEAD | `You are not currently on a branch.` / `To push the history…` / `state now, use` / (blank) / `    git push origin HEAD:<name-of-remote-branch>` | (none) |
+| Pull with no upstream (unprefixed) | `There is no tracking information for the current branch.` / `Please specify which branch you want to merge with.` / `See git-pull(1) for details.` | (none) |
 | `A remote operation is already in progress.` | the same text | (none) |
 | Unprefixed multi-line text | its last meaningful line | (none) |
 | `""` | `The operation failed without an error message.` | (none) |
