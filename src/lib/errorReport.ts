@@ -29,6 +29,12 @@ const HEADLINE = /^(?:fatal|error): ?/;
 const PREFIXED = /^(?:fatal|error|warning|hint|remote):/;
 const HINT = /^hint:(?: |$)/;
 
+/** Whether the output adds anything beyond the headline, ignoring git's error prefix. */
+export function outputAddsToHeadline(summary: Pick<GitErrorSummary, "headline" | "output">): boolean {
+  const output = summary.output.trim();
+  return output !== "" && output.replace(HEADLINE, "") !== summary.headline.trim();
+}
+
 // Lines git writes to STDOUT while merging. Git It reads stdout and stderr on separate threads,
 // so these can land anywhere — even between an `error:` line and its file list.
 function isInterleavedStdout(line: string): boolean {

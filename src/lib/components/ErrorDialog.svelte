@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { outputAddsToHeadline } from "../errorReport";
   import { errors } from "../errors.svelte";
 
   let okEl = $state<HTMLButtonElement | undefined>();
@@ -10,13 +11,9 @@
   let returnFocusTo: HTMLElement | null = null;
 
   const report = $derived(errors.current);
-  // A one-line error has nothing more to show than its headline (which drops git's
-  // `fatal:`/`error:` prefix, so compare without it).
+  // Offer the full output only when it adds something beyond the headline.
   const hasOutput = $derived(
-    !!report &&
-      report.kind === "error" &&
-      report.output.trim() !== "" &&
-      report.output.trim().replace(/^(?:fatal|error): ?/, "") !== report.headline.trim(),
+    !!report && report.kind === "error" && outputAddsToHeadline(report),
   );
 
   // Reset the disclosure and copy state per report, focus OK once the button exists, and give
@@ -60,8 +57,9 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    // Keys pressed while the popup is up are its alone: window-level Escape handlers
-    // underneath (the GitHub action modal, a diff selection) must not fire too.
+    // Keys stop at the overlay so bubbling window-level handlers underneath (the GitHub
+    // action modal's Escape, a diff selection) don't also fire. Capture-phase window
+    // listeners still see them first.
     e.stopPropagation();
     if (e.key === "Escape") {
       e.preventDefault();
@@ -144,7 +142,7 @@
     justify-content: center;
   }
   .dialog {
-    width: min(560px, calc(100vw - 32px));
+    width: min(600px, calc(100vw - 32px));
     max-height: 80vh;
     box-sizing: border-box;
     display: flex;

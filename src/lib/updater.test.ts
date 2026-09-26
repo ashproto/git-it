@@ -37,7 +37,12 @@ vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocks.getVersion }));
 async function loadUpdater() {
   vi.stubEnv("DEV", false);
   vi.resetModules();
-  return import("./updater.svelte");
+  // Real timers let dependency optimizer rebundling settle during the dynamic import.
+  vi.useRealTimers();
+  const mod = await import("./updater.svelte");
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-07-17T16:00:00-07:00"));
+  return mod;
 }
 
 beforeEach(() => {

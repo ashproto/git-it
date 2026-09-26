@@ -706,17 +706,22 @@ async function runRemote(
   try {
     // First attempt: no credentials (system helper / SSH agent / keychain).
     let outcome = await fn((l) => appState.pushRemoteLog(l));
+    // A Cancel after git has finished (e.g. during the reload below) is too late to count.
+    let cancelled = remoteCancelRequested;
     let signInCancelled = false;
     let repoChanged = false;
 
-    if (outcome.authFailed && !remoteCancelRequested) {
+    if (outcome.authFailed && !cancelled) {
       // Auth failed — prompt for credentials and retry once. `fn` reads `appState.repo` when
       // invoked, so a switch anywhere in this flow would retry against the NEW repository with
       // the credentials just entered — pushing to a remote the user never chose.
       const creds = await dialogs.confirmCredentials({ title: `${label}: sign in` });
       if (!creds) signInCancelled = true;
       else if (!sameRepo()) repoChanged = true;
-      else outcome = await fn((l) => appState.pushRemoteLog(l), creds);
+      else {
+        outcome = await fn((l) => appState.pushRemoteLog(l), creds);
+        cancelled = remoteCancelRequested;
+      }
     }
 
     // Refresh graph/status so ConflictView, UndoBar, ahead/behind etc. are current.
@@ -730,7 +735,7 @@ async function runRemote(
       appState.status = `${label}: conflicts to resolve.`;
     } else if (outcome.ok) {
       appState.status = `${label} — done.`;
-    } else if (remoteCancelRequested) {
+    } else if (cancelled) {
       appState.status = `${label} cancelled.`;
     } else if (signInCancelled) {
       appState.status = `${label}: sign-in cancelled.`;
@@ -741,10 +746,11 @@ async function runRemote(
 
     return outcome.ok;
   } catch (e) {
+    const cancelled = remoteCancelRequested;
     try {
       await reloadGraph();
     } catch {}
-    if (remoteCancelRequested) appState.status = `${label} cancelled.`;
+    if (cancelled) appState.status = `${label} cancelled.`;
     else reportError(`${label} failed`, e);
     return false;
   } finally {

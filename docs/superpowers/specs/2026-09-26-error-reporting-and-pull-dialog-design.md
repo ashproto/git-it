@@ -180,7 +180,7 @@ type ErrorReport = {
 
 - Mounted once in `+page.svelte` after `<Modal />`. Its overlay sits at z-index 4100, one step
   above the dialog layer (4000), so it covers any open dialog without closing it.
-- Layout: `.dialog` (so the NERV corner brackets apply), width `min(560px, 100vw - 32px)`,
+- Layout: `.dialog` (so the NERV corner brackets apply), width `min(600px, 100vw - 32px)` (wide enough for git's ~76-column hint lines),
   `max-height: 80vh`. The content between the title row and the buttons scrolls.
   - **Title row:** the title, plus "1 of N" when more reports are queued.
   - **Headline:** ⚠ in `--danger` (red) for errors, ⓘ in `--accent` for notices. Keeps line

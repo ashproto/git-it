@@ -533,7 +533,9 @@
     /* This generic dialog layer (prompt / confirm / create-repo / credentials …) is
        opened FROM other modals — e.g. the Manage Repository modal (z 3000) launches
        the Add-remote / Create-on-GitHub dialogs — so it must sit ABOVE them, not tie
-       and lose on DOM order. Keep this the highest modal z-index in the app. */
+       and lose on DOM order. Keep this above every other modal except ErrorDialog
+       (z-index 4100), which sits one step above by design so an error covers an open
+       prompt without closing it. */
     z-index: 4000;
     background: rgba(0, 0, 0, 0.4);
     display: flex;

@@ -7,6 +7,7 @@ import { SAMPLE_GRAPH } from "./graph/sample";
 import { appState } from "./store.svelte";
 import type { RemoteOutcome, RepoStatus } from "./types";
 
+// Setting appState.repo under the stubbed Tauri window persists lastActiveRepo via the real plugin, which rejects and warns in Node; this stand-in keeps output clean.
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: vi.fn(async () => ({ get: vi.fn(), set: vi.fn(), save: vi.fn() })),
 }));
@@ -49,6 +50,7 @@ beforeEach(() => {
 afterEach(() => {
   errors.reset();
   appState.repo = "";
+  appState.status = "Ready";
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -155,6 +157,13 @@ describe("wrapper failures open the error popup", () => {
 });
 
 describe("runRemote reports only failures the user didn't choose", () => {
+  it("finishes a successful pull without an error popup", async () => {
+    vi.spyOn(api, "pull").mockResolvedValue(outcome({ ok: true }));
+    expect(await gitActions.pull()).toBe(true);
+    expect(errors.current).toBeNull();
+    expect(appState.status).toBe("Pull — done.");
+  });
+
   it("reports a failed pull with git's real error", async () => {
     vi.spyOn(api, "pull").mockResolvedValue(outcome({ message: DIVERGENT }));
     expect(await gitActions.pull()).toBe(false);
@@ -163,6 +172,17 @@ describe("runRemote reports only failures the user didn't choose", () => {
       headline: "Need to specify how to reconcile divergent branches.",
     });
     expect(appState.status).toBe("Pull failed: Need to specify how to reconcile divergent branches.");
+  });
+
+  it("reports a failed pull when Cancel is pressed during the refresh after git finished", async () => {
+    vi.spyOn(api, "pull").mockResolvedValue(outcome({ message: DIVERGENT }));
+    vi.spyOn(api, "cancelRemote").mockResolvedValue(undefined);
+    vi.mocked(api.loadGraph).mockImplementation(async () => {
+      void gitActions.cancelRemote();
+      return SAMPLE_GRAPH;
+    });
+    expect(await gitActions.pull()).toBe(false);
+    expect(errors.current?.title).toBe("Pull failed");
   });
 
   it("reports a thrown error", async () => {
@@ -186,10 +206,32 @@ describe("runRemote reports only failures the user didn't choose", () => {
     vi.spyOn(api, "cancelRemote").mockResolvedValue(undefined);
     const pulling = gitActions.pull();
     void gitActions.cancelRemote();
-    finish(outcome({ message: "Cancelled." }));
+    finish(outcome({ message: "error: RPC failed; curl 56 Recv failure" }));
     expect(await pulling).toBe(false);
     expect(errors.current).toBeNull();
     expect(appState.status).toBe("Pull cancelled.");
+  });
+
+  it("treats a rejected pull the user cancelled as cancelled", async () => {
+    let fail: (error: Error) => void = () => {};
+    vi.spyOn(api, "pull").mockImplementation(
+      () => new Promise<RemoteOutcome>((_resolve, reject) => (fail = reject)),
+    );
+    vi.spyOn(api, "cancelRemote").mockResolvedValue(undefined);
+    const pulling = gitActions.pull();
+    void gitActions.cancelRemote();
+    fail(new Error("killed"));
+    expect(await pulling).toBe(false);
+    expect(errors.current).toBeNull();
+    expect(appState.status).toBe("Pull cancelled.");
+  });
+
+  it("does not let a stray Cancel hide the next pull's failure", async () => {
+    vi.spyOn(api, "cancelRemote").mockResolvedValue(undefined);
+    await gitActions.cancelRemote();
+    vi.spyOn(api, "pull").mockResolvedValue(outcome({ message: DIVERGENT }));
+    expect(await gitActions.pull()).toBe(false);
+    expect(errors.current?.title).toBe("Pull failed");
   });
 
   it("does not report a dismissed sign-in", async () => {

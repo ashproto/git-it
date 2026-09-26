@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorText, summarizeGitOutput } from "./errorReport";
+import { errorText, outputAddsToHeadline, summarizeGitOutput } from "./errorReport";
 
 // Real git 2.54 output (LC_ALL=C) captured from scratch repositories; paths shortened.
 const DIVERGENT_PULL = [
@@ -323,6 +323,22 @@ describe("summarizeGitOutput", () => {
 
   it("handles Windows line endings", () => {
     expect(summarizeGitOutput("From x\r\nfatal: boom\r\n").headline).toBe("boom");
+  });
+});
+
+describe("outputAddsToHeadline", () => {
+  it("returns false when the output only repeats the headline with git's prefix", () => {
+    expect(
+      outputAddsToHeadline(summarizeGitOutput("error: failed to push some refs to 'origin'")),
+    ).toBe(false);
+  });
+
+  it("returns true when a divergent pull includes more than its headline", () => {
+    expect(outputAddsToHeadline(summarizeGitOutput(DIVERGENT_PULL))).toBe(true);
+  });
+
+  it("returns false for empty output", () => {
+    expect(outputAddsToHeadline(summarizeGitOutput(""))).toBe(false);
   });
 });
 

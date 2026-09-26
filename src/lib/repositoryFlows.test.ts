@@ -109,6 +109,17 @@ describe("repository creation flow", () => {
     expect(mocks.githubCreateRepo).not.toHaveBeenCalled();
   });
 
+  it("reports the original error when local repository initialization fails", async () => {
+    const error = new Error("disk full");
+    mocks.initializeRepository.mockRejectedValue(error);
+    const { createRepositoryFlow } = await loadFlows();
+
+    await createRepositoryFlow();
+
+    expect(mocks.reportError).toHaveBeenCalledWith("Create repository failed", error);
+    expect(mocks.reportError.mock.calls[0][1]).toBe(error);
+  });
+
   it("requires confirmation before initializing a non-empty folder", async () => {
     mocks.initializeRepository
       .mockResolvedValueOnce({ path: "/projects/app", initialized: false, existingEntries: 3 })
