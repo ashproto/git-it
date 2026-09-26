@@ -1,5 +1,6 @@
 import { api, pickRepoFolder } from "./api";
 import { dialogs } from "./dialogs.svelte";
+import { reportError } from "./errors.svelte";
 import { refreshRefs } from "./gitActions";
 import { appState } from "./store.svelte";
 
@@ -118,17 +119,10 @@ export async function createRepositoryFlow(initial?: string): Promise<void> {
       if (appState.repo === initialized.path) await refreshRefs();
       appState.status = "Created the local repository and connected its GitHub remote.";
     } catch (error) {
-      const message = githubErrorMessage(error);
-      appState.status = `Local repository created; GitHub setup failed: ${message}`;
-      await dialogs.alert({
-        title: "Local repository created",
-        message: `The local repository is ready at ${initialized.path}, but GitHub setup failed:\n\n${message}`,
-      });
+      reportError("Local repository created, but GitHub setup failed", githubErrorMessage(error));
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    appState.status = `Create repository failed: ${message}`;
-    await dialogs.alert({ title: "Create repository failed", message });
+    reportError("Create repository failed", error);
   } finally {
     creating = false;
     appState.setBusyOp(null);

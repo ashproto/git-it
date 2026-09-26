@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   githubCreateRepo: vi.fn(),
   newRepository: vi.fn(),
   confirm: vi.fn(),
-  alert: vi.fn(),
+  reportError: vi.fn(),
   refreshRefs: vi.fn(),
   openRepo: vi.fn(),
   setBusyOp: vi.fn(),
@@ -29,9 +29,9 @@ vi.mock("./dialogs.svelte", () => ({
   dialogs: {
     newRepository: mocks.newRepository,
     confirm: mocks.confirm,
-    alert: mocks.alert,
   },
 }));
+vi.mock("./errors.svelte", () => ({ reportError: mocks.reportError }));
 vi.mock("./gitActions", () => ({ refreshRefs: mocks.refreshRefs }));
 vi.mock("./store.svelte", () => ({
   appState: {
@@ -69,7 +69,7 @@ beforeEach(() => {
     description: "",
   });
   mocks.confirm.mockReset().mockResolvedValue(true);
-  mocks.alert.mockReset().mockResolvedValue(undefined);
+  mocks.reportError.mockReset();
   mocks.refreshRefs.mockReset().mockResolvedValue(undefined);
   mocks.openRepo.mockReset().mockImplementation((path: string) => {
     mocks.appState.repo = path;
@@ -163,10 +163,10 @@ describe("repository creation flow", () => {
     await createRepositoryFlow();
 
     expect(mocks.openRepo).toHaveBeenCalledWith("/projects/app");
-    expect(mocks.alert).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Local repository created",
-      message: expect.stringContaining("name already exists"),
-    }));
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "Local repository created, but GitHub setup failed",
+      "name already exists",
+    );
     expect(mocks.refreshRefs).not.toHaveBeenCalled();
   });
 });

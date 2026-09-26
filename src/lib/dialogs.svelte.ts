@@ -22,14 +22,6 @@ export type NewRepositoryResult = {
 type DialogState =
   | { kind: "none" }
   | {
-      // A message-only error dialog: single "OK" button, nothing to confirm. Surfaces a
-      // failed op unmissably instead of only in the easy-to-miss status bar.
-      kind: "alert";
-      title: string;
-      message: string;
-      resolve: () => void;
-    }
-  | {
       kind: "prompt";
       title: string;
       label: string;
@@ -119,7 +111,6 @@ function makeDialogs() {
     else if (state.kind === "newRepository") state.resolve(null);
     else if (state.kind === "createRepo") state.resolve({ confirmed: false, name: "", isPrivate: true, description: "" });
     else if (state.kind === "createPr") state.resolve(null);
-    else if (state.kind === "alert") state.resolve();
   }
 
   return {
@@ -205,21 +196,6 @@ function makeDialogs() {
     resolveConfirm(v: boolean) {
       if (state.kind === "confirm") {
         state.resolve(v);
-        state = { kind: "none" };
-      }
-    },
-    // ── Alert dialog ──────────────────────────────────────────────────────────
-    // Message-only "something failed" modal. The returned promise resolves when the
-    // dialog is dismissed; callers can fire-and-forget (nothing waits on it).
-    alert(opts: { title: string; message: string }): Promise<void> {
-      settlePending();
-      return new Promise((resolve) => {
-        state = { kind: "alert", title: opts.title, message: opts.message, resolve };
-      });
-    },
-    resolveAlert() {
-      if (state.kind === "alert") {
-        state.resolve();
         state = { kind: "none" };
       }
     },
