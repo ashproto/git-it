@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./api";
 import { dialogs } from "./dialogs.svelte";
+import { errors } from "./errors.svelte";
 import {
   gitActions,
   loadMoreGraph,
@@ -70,6 +71,7 @@ beforeEach(() => {
 
 afterEach(() => {
   dialogs.resolveAlert();
+  errors.reset();
   appState.repo = "";
   vi.restoreAllMocks();
   vi.unstubAllGlobals();

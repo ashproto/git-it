@@ -9,6 +9,8 @@ import { dialogs } from "./dialogs.svelte";
 import { graphView } from "./graphView.svelte";
 import { githubState } from "./githubState.svelte";
 import { prefillFromSubjects } from "./github/prCreate";
+import { errorText } from "./errorReport";
+import { reportError } from "./errors.svelte";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -300,7 +302,9 @@ export async function reloadGraph(): Promise<void> {
           appState.setRefsDetailed([]);
           appState.setWorktrees([]);
           appState.setWorkingChanges([]);
-          appState.status = `Could not open ${target}: ${e}`;
+          // The panels just went blank; say why. The full path goes in the output.
+          const name = target.split("/").filter(Boolean).pop() ?? target;
+          reportError(`Couldn't open ${name}`, `${target}\n${errorText(e)}`);
         }
         return;
       }
@@ -443,30 +447,12 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
     } catch (err) {
       console.warn("[gte] preserving graph refresh after failed op", err);
     }
-    appState.status = `${label} failed: ${firstLine(e)}`;
-    // The status bar alone is too easy to miss for a discrete action the user just took
-    // (user-reported "no feedback for if something went wrong") — surface it as a dialog.
-    void dialogs.alert({ title: `${label} failed`, message: errorText(e) });
+    reportError(`${label} failed`, e);
     return false;
   } finally {
     appState.setNavBusy(false);
     appState.setBusyOp(null);
   }
-}
-
-// Full error text. GitHub commands reject with a serialized GithubError OBJECT
-// ({kind, message?}) — String() on that yields "[object Object]", so unwrap it first
-// (mirrors errText in githubActions). Used verbatim in the error dialog.
-function errorText(e: unknown): string {
-  if (e && typeof e === "object" && "kind" in e) {
-    const g = e as { kind: string; message?: string };
-    return String(g.kind === "Other" ? (g.message ?? g.kind) : g.kind);
-  }
-  return String(e);
-}
-// First line only — git output is often multiline; the compact status bar gets one line.
-function firstLine(e: unknown): string {
-  return errorText(e).split("\n")[0];
 }
 
 // Run an OpOutcome-returning op. Always refreshes graph+status (even on error) so
@@ -499,7 +485,7 @@ async function runOp(label: string, fn: () => Promise<OpOutcome>): Promise<OpOut
     } catch (re) {
       console.warn("[gte] graph refresh after failed op failed", re);
     }
-    appState.status = `${label} failed: ${firstLine(e)}`;
+    reportError(`${label} failed`, e);
     return null;
   }
 }
@@ -513,7 +499,7 @@ async function runResolve(label: string, fn: () => Promise<unknown>): Promise<bo
     await refreshStatus();
     return true;
   } catch (e) {
-    appState.status = `${label} failed: ${firstLine(e)}`;
+    reportError(`${label} failed`, e);
     return false;
   }
 }
@@ -591,7 +577,7 @@ async function runWorktree(label: string, fn: () => Promise<unknown>): Promise<b
     appState.status = `${label} — done.`;
     return true;
   } catch (e) {
-    appState.status = `${label} failed: ${firstLine(e)}`;
+    reportError(`${label} failed`, e);
     return false;
   }
 }
@@ -634,7 +620,7 @@ async function runDestructive(
     try {
       await reloadGraph();
     } catch {}
-    appState.status = `${label} failed: ${firstLine(e)}`;
+    reportError(`${label} failed`, e);
     return false;
   }
 }
@@ -681,10 +667,14 @@ async function runDestructiveRebase(
     try {
       await reloadGraph();
     } catch {}
-    appState.status = `${label} failed: ${firstLine(e)}`;
+    reportError(`${label} failed`, e);
     return false;
   }
 }
+
+// Set by gitActions.cancelRemote, read by runRemote: a pull/push that ends after the user pressed
+// Cancel was cancelled, not failed — whatever git printed on its way out.
+let remoteCancelRequested = false;
 
 // ── Remote operation helper (Phase 6) ────────────────────────────────────────
 // Runs a streamed pull/push op with:
@@ -692,6 +682,8 @@ async function runDestructiveRebase(
 //   2. First attempt WITHOUT credentials (relies on system credential helper / SSH agent)
 //   3. On authFailed: prompt for credentials and retry
 //   4. Graph reload + status update (conflicted → ConflictView; ok → done)
+//   5. The error popup, but only for failures the user didn't choose (not Cancel, not a
+//      dismissed sign-in, not a repository switch during the prompt)
 async function runRemote(
   label: string,
   fn: (onLine: (l: string) => void, creds?: { username: string; password: string }) => Promise<RemoteOutcome>,
@@ -709,20 +701,22 @@ async function runRemote(
   // that first await would otherwise be recorded as the "original" repo and the guard would
   // wave the retry through.
   const sameRepo = sameRepoAfterPrompt();
+  remoteCancelRequested = false;
   appState.startRemoteProgress(label);
   try {
     // First attempt: no credentials (system helper / SSH agent / keychain).
     let outcome = await fn((l) => appState.pushRemoteLog(l));
+    let signInCancelled = false;
+    let repoChanged = false;
 
-    if (outcome.authFailed) {
+    if (outcome.authFailed && !remoteCancelRequested) {
       // Auth failed — prompt for credentials and retry once. `fn` reads `appState.repo` when
       // invoked, so a switch anywhere in this flow would retry against the NEW repository with
       // the credentials just entered — pushing to a remote the user never chose.
       const creds = await dialogs.confirmCredentials({ title: `${label}: sign in` });
-      if (creds && sameRepo()) {
-        outcome = await fn((l) => appState.pushRemoteLog(l), creds);
-      }
-      // If user cancelled the credentials dialog, fall through with the original outcome.
+      if (!creds) signInCancelled = true;
+      else if (!sameRepo()) repoChanged = true;
+      else outcome = await fn((l) => appState.pushRemoteLog(l), creds);
     }
 
     // Refresh graph/status so ConflictView, UndoBar, ahead/behind etc. are current.
@@ -736,8 +730,13 @@ async function runRemote(
       appState.status = `${label}: conflicts to resolve.`;
     } else if (outcome.ok) {
       appState.status = `${label} — done.`;
-    } else {
-      appState.status = `${label} failed: ${firstLine(outcome.message)}`;
+    } else if (remoteCancelRequested) {
+      appState.status = `${label} cancelled.`;
+    } else if (signInCancelled) {
+      appState.status = `${label}: sign-in cancelled.`;
+    } else if (!repoChanged) {
+      // (When the repository changed, sameRepo() has already said why nothing happened.)
+      reportError(`${label} failed`, outcome.message);
     }
 
     return outcome.ok;
@@ -745,9 +744,11 @@ async function runRemote(
     try {
       await reloadGraph();
     } catch {}
-    appState.status = `${label} failed: ${firstLine(e)}`;
+    if (remoteCancelRequested) appState.status = `${label} cancelled.`;
+    else reportError(`${label} failed`, e);
     return false;
   } finally {
+    remoteCancelRequested = false;
     appState.endRemoteProgress();
   }
 }
@@ -1045,7 +1046,7 @@ export const gitActions = {
       appState.status = "Amend commit — done.";
       return true;
     } catch (e) {
-      appState.status = `Amend commit failed: ${firstLine(e)}`;
+      reportError("Amend commit failed", e);
       return false;
     }
   },
@@ -1144,7 +1145,7 @@ export const gitActions = {
         ? `Squash merge of ${reference} has conflicts — resolve the files below, then commit.`
         : `Squashed ${reference} — review the staged changes and commit.`;
     } catch (e) {
-      appState.status = `Squash merge failed: ${firstLine(e)}`;
+      reportError("Squash merge failed", e);
     }
   },
 
@@ -1194,7 +1195,10 @@ export const gitActions = {
     );
   },
 
-  cancelRemote: () => api.cancelRemote(),
+  cancelRemote: () => {
+    remoteCancelRequested = true;
+    return api.cancelRemote();
+  },
 
   remoteAdd: (name: string, url: string) =>
     run(`Add remote ${name}`, () => api.remoteAdd(appState.repo, name, url)),
