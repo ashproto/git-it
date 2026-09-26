@@ -35,17 +35,20 @@ function isInterleavedStdout(line: string): boolean {
   return /^(?:Updating [0-9a-f]+\.\.[0-9a-f]+|Auto-merging .+|CONFLICT \(.+)$/.test(line);
 }
 
-// Fetch/push headers and ref-status lines ("   a1b2..c3d4  main -> origin/main",
-// " ! [rejected] …"). git prints these to stderr BEFORE any error, so they only get in the way
-// when nothing is prefixed.
-function isTransportNoise(line: string): boolean {
-  return /^(?:From|To) \S/.test(line) || line.startsWith(" ");
+// git's transport report: a `From <url>` / `To <url>` header or a ref-status line
+// ("   a1b2..c3d4  main -> origin/main", " ! [rejected] …"). Not part of any complaint — it
+// ends an error block, and it is never a headline. Advice such as "To push the history…"
+// has more than one word after "To", so it never matches.
+function isTransportLine(line: string): boolean {
+  return /^(?:From|To) \S+$/.test(line) || /^ [ !*+=t-] .+ -> /.test(line);
 }
 
 function isMeaningful(line: string): boolean {
   return (
     line.trim() !== "" &&
-    !isTransportNoise(line) &&
+    !line.startsWith(" ") && // indented commands and ref-status lines
+    !line.startsWith("> ") && // the npm/pnpm script banner that leads hook output
+    !isTransportLine(line) &&
     !isInterleavedStdout(line) &&
     !HINT.test(line) &&
     !line.startsWith("remote:") &&
@@ -58,19 +61,19 @@ function pickHeadline(lines: string[]): string | null {
   if (start >= 0) {
     const block = [lines[start].replace(HEADLINE, "")];
     for (const line of lines.slice(start + 1)) {
-      // The complaint runs to git's next prefixed line or its closing "Aborting". Blank and
-      // indented lines stay: git's advice often reads "…, use\n\n    git <command>".
-      if (PREFIXED.test(line) || line === "Aborting") break;
+      // The complaint runs to git's next prefixed line, its closing "Aborting", or its
+      // transport report. Blank and indented lines stay: git's advice often reads
+      // "…, use\n\n    git <command>".
+      if (PREFIXED.test(line) || line === "Aborting" || isTransportLine(line)) break;
       if (isInterleavedStdout(line)) continue;
       block.push(line);
     }
     while (block.length > 1 && block[block.length - 1].trim() === "") block.pop();
     return block.join("\n");
   }
-  // Nothing prefixed: a non-git message, git's unprefixed advice, or git under a translated
-  // locale. Multi-paragraph advice (a pull with no upstream, or in detached HEAD) leads with
-  // the complaint, so take its first paragraph; otherwise the last line that says something
-  // is the best guess ("On branch main" / "nothing to commit, working tree clean").
+  // Nothing prefixed: a non-git message, git's unprefixed advice, hook output, or git under a
+  // translated locale. Multi-paragraph advice (a pull with no upstream, or in detached HEAD)
+  // leads with the complaint, so take its first paragraph that says something.
   const paragraphs: string[][] = [[]];
   for (const line of lines) {
     if (line.trim() !== "") paragraphs[paragraphs.length - 1].push(line);
@@ -80,8 +83,14 @@ function pickHeadline(lines: string[]): string | null {
     const first = paragraphs.find((p) => p.some(isMeaningful));
     if (first) return first.filter(isMeaningful).map((line) => line.trim()).join("\n");
   }
+  // Otherwise the last line that says something — extended back while it starts lowercase,
+  // because git wraps one sentence across lines ("…merge with the ref 'refs/heads/gone'\n
+  // from the remote, but no such ref was fetched.").
   const meaningful = lines.filter(isMeaningful);
-  return meaningful.length ? meaningful[meaningful.length - 1].trim() : null;
+  if (!meaningful.length) return null;
+  let from = meaningful.length - 1;
+  while (from > 0 && /^[a-z]/.test(meaningful[from])) from--;
+  return meaningful.slice(from).map((line) => line.trim()).join("\n");
 }
 
 function collectHints(lines: string[]): string {

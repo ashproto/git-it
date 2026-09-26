@@ -91,6 +91,35 @@ const DETACHED_PUSH = [
   "",
 ].join("\n");
 
+// A pull whose upstream was deleted on the remote: one sentence, wrapped by git.
+const UPSTREAM_GONE_PULL = [
+  "Your configuration specifies to merge with the ref 'refs/heads/gone'",
+  "from the remote, but no such ref was fetched.",
+  "",
+].join("\n");
+
+// A pre-commit hook running `npm test` (npm 11): git relays the hook's output on stderr.
+const NPM_HOOK_COMMIT = [
+  "",
+  "> scratch@1.0.0 test",
+  '> node -e "…"',
+  "",
+  "FAIL src/a.test.ts > adds",
+  "AssertionError: expected 3 to be 4",
+  "",
+  " Tests  1 failed | 3 passed (4)",
+  "",
+].join("\n");
+
+// A pull whose fetch can't update a stale local ref: the error precedes the transport report.
+const REF_LOCK_PULL = [
+  "error: some local refs could not be updated; try running",
+  " 'git remote prune origin' to remove any old, conflicting branches",
+  "From /tmp/origin",
+  " ! [new branch]      foo/bar    -> origin/foo/bar  (unable to update local ref)",
+  "",
+].join("\n");
+
 const OVERWRITTEN_HEADLINE = [
   "Your local changes to the following files would be overwritten by merge:",
   "\tf",
@@ -220,10 +249,36 @@ describe("summarizeGitOutput", () => {
   });
 
   it("falls back to the last meaningful line when nothing is prefixed", () => {
-    expect(summarizeGitOutput("first line\nsecond line\n").headline).toBe("second line");
     expect(
       summarizeGitOutput("From /tmp/origin\nmerge: nope - not something we can merge\n").headline,
     ).toBe("merge: nope - not something we can merge");
+    expect(
+      summarizeGitOutput("/tmp/repo\nFailed to spawn command: No such file or directory\n").headline,
+    ).toBe("Failed to spawn command: No such file or directory");
+  });
+
+  it("keeps a sentence git wrapped across lines whole", () => {
+    expect(summarizeGitOutput(UPSTREAM_GONE_PULL).headline).toBe(
+      [
+        "Your configuration specifies to merge with the ref 'refs/heads/gone'",
+        "from the remote, but no such ref was fetched.",
+      ].join("\n"),
+    );
+  });
+
+  it("skips the npm script banner that leads failing hook output", () => {
+    expect(summarizeGitOutput(NPM_HOOK_COMMIT).headline).toBe(
+      "FAIL src/a.test.ts > adds\nAssertionError: expected 3 to be 4",
+    );
+  });
+
+  it("ends an error block at git's transport report", () => {
+    expect(summarizeGitOutput(REF_LOCK_PULL).headline).toBe(
+      [
+        "some local refs could not be updated; try running",
+        " 'git remote prune origin' to remove any old, conflicting branches",
+      ].join("\n"),
+    );
   });
 
   it("says so when there is no message at all", () => {

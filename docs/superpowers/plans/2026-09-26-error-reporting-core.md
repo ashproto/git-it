@@ -84,6 +84,16 @@
 > - Unprefixed multi-paragraph text leads with its first paragraph.
 >
 > See spec Part A1 and the `fix: keep git's advice in error headlines` commit, which adds four fixture tests.
+>
+> A second review round added three more real captures, fixed by a follow-up commit (`fix: end error headlines at git's transport report`):
+> - an npm pre-commit hook banner
+> - a pull whose deleted upstream wraps one sentence across two lines
+> - a ref-lock fetch whose `From` header was glued into the headline
+>
+> The follow-up changes the rule in three ways:
+> - A transport line ends a prefixed block.
+> - `> ` banner lines are not meaningful.
+> - A lowercase last line is extended back to where its sentence starts.
 
 - [ ] **Step 1: Write the failing tests**
 
