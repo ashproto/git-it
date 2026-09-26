@@ -40,7 +40,7 @@ function isInterleavedStdout(line: string): boolean {
 // ends an error block, and it is never a headline. Advice such as "To push the history…"
 // has more than one word after "To", so it never matches.
 function isTransportLine(line: string): boolean {
-  return /^(?:From|To) \S+$/.test(line) || /^ [ !*+=t-] .+ -> /.test(line);
+  return /^(?:From|To) (?:\S+|\/.*)$/.test(line) || /^ [ !*+=t-] .+ -> /.test(line);
 }
 
 function isMeaningful(line: string): boolean {
@@ -83,13 +83,19 @@ function pickHeadline(lines: string[]): string | null {
     const first = paragraphs.find((p) => p.some(isMeaningful));
     if (first) return first.filter(isMeaningful).map((line) => line.trim()).join("\n");
   }
-  // Otherwise the last line that says something — extended back while it starts lowercase,
-  // because git wraps one sentence across lines ("…merge with the ref 'refs/heads/gone'\n
-  // from the remote, but no such ref was fetched.").
+  // Otherwise the last line that says something — extended back over one sentence git wrapped
+  // across lines ("…merge with the ref 'refs/heads/gone'\nfrom the remote, but no such ref was
+  // fetched."): a lowercase line continues the one above unless that one ended a sentence.
   const meaningful = lines.filter(isMeaningful);
   if (!meaningful.length) return null;
   let from = meaningful.length - 1;
-  while (from > 0 && /^[a-z]/.test(meaningful[from])) from--;
+  while (
+    from > 0 &&
+    /^[a-z]/.test(meaningful[from]) &&
+    !/[.!?]$/.test(meaningful[from - 1].trimEnd())
+  ) {
+    from--;
+  }
   return meaningful.slice(from).map((line) => line.trim()).join("\n");
 }
 

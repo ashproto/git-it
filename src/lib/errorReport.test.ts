@@ -266,6 +266,39 @@ describe("summarizeGitOutput", () => {
     );
   });
 
+  it("stops joining lines at a sentence boundary", () => {
+    // A pre-commit hook running `tsc --noEmit`: one finished sentence per line.
+    const tscHook = [
+      "src/a.ts(1,14): error TS2322: Type 'number' is not assignable to type 'string'.",
+      "src/a.ts(2,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+      "src/b.ts(3,1): error TS2304: Cannot find name 'foo'.",
+      "",
+    ].join("\n");
+    expect(summarizeGitOutput(tscHook).headline).toBe(
+      "src/b.ts(3,1): error TS2304: Cannot find name 'foo'.",
+    );
+  });
+
+  it("recognises a fetch header for a local remote whose path has a space", () => {
+    const pull = [
+      "From /tmp/my repos/origin",
+      "   d728e86..b362e35  main       -> origin/main",
+      "There is no tracking information for the current branch.",
+      "Please specify which branch you want to merge with.",
+      "See git-pull(1) for details.",
+      "",
+      "    git pull <remote> <branch>",
+      "",
+    ].join("\n");
+    expect(summarizeGitOutput(pull).headline).toBe(
+      [
+        "There is no tracking information for the current branch.",
+        "Please specify which branch you want to merge with.",
+        "See git-pull(1) for details.",
+      ].join("\n"),
+    );
+  });
+
   it("skips the npm script banner that leads failing hook output", () => {
     expect(summarizeGitOutput(NPM_HOOK_COMMIT).headline).toBe(
       "FAIL src/a.test.ts > adds\nAssertionError: expected 3 to be 4",

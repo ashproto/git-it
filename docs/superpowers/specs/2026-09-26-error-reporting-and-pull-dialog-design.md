@@ -116,8 +116,9 @@ Three parts, one PR each.
       of its first paragraph that has any. git's `die_no_merge_candidates` advice for a pull
       with no upstream, or in detached HEAD, leads with the complaint.
     - **Otherwise** the headline is the last meaningful line, extended back while it starts
-      lowercase, because git wraps one sentence across lines, as in a pull whose upstream was
-      deleted.
+      lowercase and the line above doesn't end a sentence (`.`, `!`, `?`). This handles one
+      sentence git wrapped across lines, as in a pull whose upstream was deleted, without
+      joining a list of finished sentences such as a `tsc` hook's errors.
     - **Blank input** gives "The operation failed without an error message."
 
     The text is kept exactly as git wrote it, with no re-capitalisation.
@@ -141,7 +142,7 @@ Acceptance cases (fixtures captured from git 2.54 with `LC_ALL=C`):
 | Pre-commit hook running `npm test` | `FAIL src/a.test.ts > adds` / `AssertionError: expected 3 to be 4` (not npm's `> pkg test` banner) | (none) |
 | Pull whose fetch can't update a stale local ref | `some local refs could not be updated; try running` / ` 'git remote prune origin' to remove any old, conflicting branches` (not the `From` header or ref-status line) | (none) |
 | `A remote operation is already in progress.` | the same text | (none) |
-| Unprefixed multi-line text | its last meaningful line | (none) |
+| Unprefixed single-paragraph text | its last meaningful line, joined with the line above when git wrapped one sentence | (none) |
 | `""` | `The operation failed without an error message.` | (none) |
 
 #### A2. `src/lib/errors.svelte.ts` (runes store)
