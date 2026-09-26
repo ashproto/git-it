@@ -91,6 +91,8 @@ Three parts, one PR each.
   - A GitHub error object `{kind, message?}` yields `message` for `kind: "Other"` and `kind`
     otherwise, as today.
   - An `Error` yields its `message`.
+  - `null` and `undefined` yield `""`, so they fall through to the "failed without an error
+    message" headline instead of reading "undefined".
   - Anything else yields `String(e)`.
 - `summarizeGitOutput(text: string): { headline: string; hints: string; output: string }`
   - **headline:** the first `fatal:` or `error:` line with the prefix removed, plus the
@@ -164,7 +166,9 @@ type ErrorReport = {
 - Layout: `.dialog` (so the NERV corner brackets apply), width `min(560px, 100vw - 32px)`,
   `max-height: 80vh`. The content between the title row and the buttons scrolls.
   - **Title row:** the title, plus "1 of N" when more reports are queued.
-  - **Headline:** ⚠ in `--err` for errors, ⓘ for notices. Keeps line breaks, wraps long lines.
+  - **Headline:** ⚠ in `--danger` (red) for errors, ⓘ in `--accent` for notices. Keeps line
+    breaks, wraps long lines. `--err` is not used: in this codebase it is the amber *warning*
+    token.
   - **Hints block:** muted, preformatted. Only when `hints` is non-empty.
   - **"Show git output" disclosure** (collapsed by default): a monospace `<pre>`, max-height
     about 260px, scrolls both ways. Shown only for errors whose trimmed output differs from the
@@ -186,7 +190,7 @@ type ErrorReport = {
 - The store gains `statusIsError`. `setErrorStatus(text)` sets the text and the flag.
 - The existing `status` setter clears the flag, so the next ordinary message clears the red.
 - While the flag is set, the right-hand status text renders as a button: ⚠ and the text in
-  `--err`, tooltip "Show error details". Clicking it calls `errors.reopenLast()`.
+  `--danger` (red), tooltip "Show error details". Clicking it calls `errors.reopenLast()`.
 
 #### A5. Wrapper and direct-path changes
 
