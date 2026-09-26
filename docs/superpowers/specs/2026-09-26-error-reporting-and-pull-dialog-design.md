@@ -361,7 +361,7 @@ The toolbar Pull button passes `showOptions: e.altKey`. When asking is off, its 
   - Fast-forward only refuses.
   - A dirty edit that would block a pull survives with autostash.
 - **Gates for every PR:** `npm run check` (0 errors), `npm test`, `cargo test`,
-  `cargo clippy --all-targets -- -D warnings` (CI runs clippy).
+  `cargo clippy -p git-core -p git-it -- -D warnings` (CI's exact clippy command).
 - **Real app:** a debug `.app` driven against scratch repositories, with the installed Git It quit
   for the run:
   - A diverged pull with Fast-forward only shows the popup; Merge and Rebase then succeed.
