@@ -40,6 +40,7 @@ describe("StatusBar error state", () => {
     expect(button?.textContent).toContain(
       "Pull failed: Need to specify how to reconcile divergent branches.",
     );
+    expect(button?.title).toBe("Show error details");
     button?.click();
     expect(errors.current?.title).toBe("Pull failed");
   });
@@ -47,8 +48,11 @@ describe("StatusBar error state", () => {
   it("drops the error state on the next ordinary message", async () => {
     const target = render();
     reportError("Pull failed", "fatal: boom");
+    await tick();
+    expect(target.querySelector("button.status-error")).not.toBeNull();
     appState.status = "Fetch — done.";
     await tick();
     expect(target.querySelector("button.status-error")).toBeNull();
+    expect(target.querySelector(".status-text")?.textContent).toBe("Fetch — done.");
   });
 });

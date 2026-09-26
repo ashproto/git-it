@@ -187,10 +187,18 @@
     background: none;
     color: var(--danger);
     font: inherit;
+    /* WebKit's button defaults reset these; NERV's bar is an uppercase, tracked readout. */
+    text-transform: inherit;
+    letter-spacing: inherit;
     cursor: pointer;
   }
   .status-error:hover .status-text {
     text-decoration: underline;
+  }
+  /* The bar clips overflow, so draw the keyboard ring inside the button. */
+  .status-error:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   .status-glyph {
     flex-shrink: 0;
