@@ -8,6 +8,7 @@ import { amendDialog } from "./amendDialog.svelte";
 import { branchColorDialog } from "./branchColorDialog.svelte";
 import { rebaseEditor } from "./rebaseEditor.svelte";
 import { githubActions } from "./githubActions.svelte";
+import { errors } from "./errors.svelte";
 
 export function anyOverlayOpen(): boolean {
   return (
@@ -17,6 +18,7 @@ export function anyOverlayOpen(): boolean {
     amendDialog.open ||
     branchColorDialog.open ||
     rebaseEditor.open ||
-    githubActions.pending !== null
+    githubActions.pending !== null ||
+    errors.current !== null
   );
 }

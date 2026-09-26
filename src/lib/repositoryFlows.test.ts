@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   githubCreateRepo: vi.fn(),
   newRepository: vi.fn(),
   confirm: vi.fn(),
-  alert: vi.fn(),
+  reportError: vi.fn(),
   refreshRefs: vi.fn(),
   openRepo: vi.fn(),
   setBusyOp: vi.fn(),
@@ -29,9 +29,9 @@ vi.mock("./dialogs.svelte", () => ({
   dialogs: {
     newRepository: mocks.newRepository,
     confirm: mocks.confirm,
-    alert: mocks.alert,
   },
 }));
+vi.mock("./errors.svelte", () => ({ reportError: mocks.reportError }));
 vi.mock("./gitActions", () => ({ refreshRefs: mocks.refreshRefs }));
 vi.mock("./store.svelte", () => ({
   appState: {
@@ -69,7 +69,7 @@ beforeEach(() => {
     description: "",
   });
   mocks.confirm.mockReset().mockResolvedValue(true);
-  mocks.alert.mockReset().mockResolvedValue(undefined);
+  mocks.reportError.mockReset();
   mocks.refreshRefs.mockReset().mockResolvedValue(undefined);
   mocks.openRepo.mockReset().mockImplementation((path: string) => {
     mocks.appState.repo = path;
@@ -107,6 +107,17 @@ describe("repository creation flow", () => {
     expect(mocks.openRepo).toHaveBeenCalledWith("/projects/app");
     expect(mocks.githubCurrentLogin).not.toHaveBeenCalled();
     expect(mocks.githubCreateRepo).not.toHaveBeenCalled();
+  });
+
+  it("reports the original error when local repository initialization fails", async () => {
+    const error = new Error("disk full");
+    mocks.initializeRepository.mockRejectedValue(error);
+    const { createRepositoryFlow } = await loadFlows();
+
+    await createRepositoryFlow();
+
+    expect(mocks.reportError).toHaveBeenCalledWith("Create repository failed", error);
+    expect(mocks.reportError.mock.calls[0][1]).toBe(error);
   });
 
   it("requires confirmation before initializing a non-empty folder", async () => {
@@ -163,10 +174,10 @@ describe("repository creation flow", () => {
     await createRepositoryFlow();
 
     expect(mocks.openRepo).toHaveBeenCalledWith("/projects/app");
-    expect(mocks.alert).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Local repository created",
-      message: expect.stringContaining("name already exists"),
-    }));
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "Local repository created, but GitHub setup failed",
+      "name already exists",
+    );
     expect(mocks.refreshRefs).not.toHaveBeenCalled();
   });
 });

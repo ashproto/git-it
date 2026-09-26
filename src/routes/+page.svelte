@@ -19,6 +19,7 @@
   import BranchColorDialog from "$lib/components/BranchColorDialog.svelte";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import ErrorDialog from "$lib/components/ErrorDialog.svelte";
   import UndoBar from "$lib/components/UndoBar.svelte";
   import AmendDialog from "$lib/components/AmendDialog.svelte";
   import RebaseTodo from "$lib/components/RebaseTodo.svelte";
@@ -641,6 +642,7 @@
 
   <ContextMenu />
   <Modal />
+  <ErrorDialog />
   <AmendDialog />
   <RebaseTodo />
   <SettingsPanel />
