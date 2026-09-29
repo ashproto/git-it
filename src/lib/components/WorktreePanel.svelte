@@ -8,6 +8,7 @@
     worktreeTrackingDetail,
   } from "../worktrees";
   import { appState } from "../store.svelte";
+  import { reportError } from "../errors.svelte";
   import { contextMenu, type MenuItem } from "../contextMenu.svelte";
   import { dialogs } from "../dialogs.svelte";
   import { gitActions } from "../gitActions";
@@ -77,7 +78,10 @@
       { separator: true },
       { label: "Open Worktree in Git It", action: () => openInGitIt(worktree) },
       { label: "View Local Changes", action: () => openInGitIt(worktree, true) },
-      { label: "Open Worktree Folder", action: () => void openPath(worktree.path) },
+      {
+        label: "Open Worktree Folder",
+        action: () => void openPath(worktree.path).catch((e) => reportError("Couldn't open the worktree folder", e)),
+      },
       { separator: true },
     );
     if (blocker) items.push({ label: blocker, detail: true });

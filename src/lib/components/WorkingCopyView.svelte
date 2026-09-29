@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
+  import { reportError } from "../errors.svelte";
   import { gitActions } from "../gitActions";
   import { api } from "../api";
   import { contextMenu, type MenuItem } from "../contextMenu.svelte";
@@ -231,7 +232,11 @@
       const abs = absPath(f.path);
       const gone = f.status === "deleted";
       const parent = abs.slice(0, abs.lastIndexOf("/"));
-      fileItems.push({ label: "Open", disabled: gone, action: () => void openPath(abs) });
+      fileItems.push({
+        label: "Open",
+        disabled: gone,
+        action: () => void openPath(abs).catch((e) => reportError("Couldn't open the file", e)),
+      });
       if (!gone) {
         let apps: { name: string; path: string }[] = [];
         try {
@@ -242,13 +247,17 @@
         if (apps.length > 0) {
           fileItems.push({
             label: "Open With",
-            submenu: apps.map((a) => ({ label: a.name, action: () => void openPath(abs, a.path) })),
+            submenu: apps.map((a) => ({
+              label: a.name,
+              action: () => void openPath(abs, a.path).catch((e) => reportError("Couldn't open the file", e)),
+            })),
           });
         }
       }
       fileItems.push({
         label: "Show in Finder",
-        action: () => void (gone ? openPath(parent) : revealItemInDir(abs)),
+        action: () => void (gone ? openPath(parent) : revealItemInDir(abs))
+          .catch((e) => reportError("Couldn't show in Finder", e)),
       });
       fileItems.push({ separator: true });
     }
