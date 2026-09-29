@@ -248,7 +248,7 @@ export async function startWatchingRepo(): Promise<void> {
   try {
     await api.startWatch(appState.repo, onWatchEvent);
   } catch (e) {
-    console.warn("[gte] start watch failed", e);
+    reportError("Couldn't watch the repository", e, { quiet: true });
   }
 }
 
@@ -1236,7 +1236,7 @@ export const gitActions = {
 
   cancelRemote: () => {
     remoteCancelRequested = true;
-    return api.cancelRemote();
+    return api.cancelRemote().catch((e) => reportError("Couldn't cancel the remote operation", e));
   },
 
   remoteAdd: (name: string, url: string) =>
