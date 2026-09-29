@@ -6,11 +6,12 @@ import { api } from "./api";
 import { SAMPLE_GRAPH } from "./graph/sample";
 import type { GraphCommit, OpOutcome, RemoteOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot, WorkingFile } from "./types";
 import { dialogs } from "./dialogs.svelte";
+import { pullLabel } from "./pullOptions";
 import { graphView } from "./graphView.svelte";
 import { githubState } from "./githubState.svelte";
 import { prefillFromSubjects } from "./github/prCreate";
 import { errorText } from "./errorReport";
-import { reportError } from "./errors.svelte";
+import { reportError, reportNotice } from "./errors.svelte";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -1158,12 +1159,15 @@ export const gitActions = {
   // ── Remote actions (Phase 6) ───────────────────────────────────────────────
   pull: () => {
     if (appState.repoLoading) {
-      appState.status = "Repository is still loading — try again in a moment.";
+      reportNotice("Can't pull yet", "Repository is still loading — try again in a moment.");
       return Promise.resolve(false);
     }
-    const label = appState.pullRebase ? "Pull (rebase)" : "Pull";
-    return runRemote(label, (onLine, creds) =>
-      api.pull(appState.repo, appState.pullRebase, onLine, creds),
+    // Read once, up front, so a settings change mid-pull cannot split the label from
+    // the flags actually sent.
+    const strategy = appState.pullStrategy;
+    const autostash = appState.pullAutostash;
+    return runRemote(pullLabel(strategy), (onLine, creds) =>
+      api.pull(appState.repo, strategy, autostash, onLine, creds),
     );
   },
 

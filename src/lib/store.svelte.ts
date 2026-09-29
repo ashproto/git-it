@@ -1,6 +1,6 @@
 // Centralized reactive app state using Svelte 5 runes.
 // Components import this module and read/write fields directly.
-import type { Commit, GraphCommit, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile, WorktreeInfo } from "./types";
+import type { Commit, GraphCommit, PullStrategy, Ref, RefEntry, RemoteInfo, RepoStatus, UndoSnapshot, WorkingFile, WorktreeInfo } from "./types";
 import type { DateFormatPrefs } from "./dates";
 import type { WorkingSection } from "./workingSection";
 import type { Store } from "@tauri-apps/plugin-store";
@@ -15,6 +15,7 @@ import {
   type Scheme,
 } from "./graph";
 import { reorder } from "./reorder";
+import { resolvePullStrategy } from "./pullOptions";
 import { tick } from "svelte";
 
 // Preferences persist via the Tauri Store plugin (a JSON file written by Rust) so
@@ -114,8 +115,15 @@ const RELDATES_STORE_KEY = "relativeDates";
 const PRTIMELINE_KEY = "gitit.prTimelineNewestFirst.v1";
 const PRTIMELINE_STORE_KEY = "prTimelineNewestFirst";
 
+// Legacy pre-dialog flag: read once to migrate it into pullStrategy, never written.
 const PULLREBASE_KEY = "gitit.pullRebase.v1";
 const PULLREBASE_STORE_KEY = "pullRebase";
+const PULLSTRATEGY_KEY = "gitit.pullStrategy.v1";
+const PULLSTRATEGY_STORE_KEY = "pullStrategy";
+const PULLAUTOSTASH_KEY = "gitit.pullAutostash.v1";
+const PULLAUTOSTASH_STORE_KEY = "pullAutostash";
+const PULLASK_KEY = "gitit.pullAskEveryTime.v1";
+const PULLASK_STORE_KEY = "pullAskEveryTime";
 
 const UPDATE_CHANNEL_KEY = "gitit.updateChannel.v1";
 const UPDATE_CHANNEL_STORE_KEY = "updateChannel";
@@ -400,14 +408,37 @@ function loadSyncRelativeDates(): boolean {
   }
 }
 
-function loadSyncPullRebase(): boolean {
+function loadSyncPullStrategy(): PullStrategy {
+  if (isTauri()) return "merge";
+  try {
+    if (typeof localStorage === "undefined") return "merge";
+    return resolvePullStrategy(
+      localStorage.getItem(PULLSTRATEGY_KEY),
+      localStorage.getItem(PULLREBASE_KEY),
+    );
+  } catch {
+    return "merge";
+  }
+}
+
+function loadSyncPullAutostash(): boolean {
   if (isTauri()) return false;
   try {
     if (typeof localStorage === "undefined") return false;
-    const raw = localStorage.getItem(PULLREBASE_KEY);
-    return raw === "true";
+    return localStorage.getItem(PULLAUTOSTASH_KEY) === "true";
   } catch {
     return false;
+  }
+}
+
+function loadSyncPullAskEveryTime(): boolean {
+  if (isTauri()) return true;
+  try {
+    if (typeof localStorage === "undefined") return true;
+    const raw = localStorage.getItem(PULLASK_KEY);
+    return raw === null ? true : raw !== "false";
+  } catch {
+    return true;
   }
 }
 
@@ -1371,45 +1402,120 @@ function makeState() {
     }
   }
 
-  // ── pullRebase persisted setting (Phase 6) ────────────────────────────────
-  // Whether `git pull` should use --rebase (true) or --no-edit merge (false, default).
-  // Mirrors the diffSplit pattern exactly.
-  let pullRebase = $state<boolean>(loadSyncPullRebase());
-  let pullRebaseTouched = false;
+  // ── Pull settings: pullStrategy / pullAutostash / pullAskEveryTime ────────
+  // How `git pull` reconciles a diverged branch, whether it stashes and reapplies
+  // local changes, and whether the Pull dialog opens before every pull. Each mirrors
+  // the diffSplit pattern exactly. pullStrategy also migrates the pre-dialog
+  // `pullRebase` flag (read here, never written again) via resolvePullStrategy.
+  let pullStrategy = $state<PullStrategy>(loadSyncPullStrategy());
+  let pullStrategyTouched = false;
 
-  const prHydrate = getStore();
-  if (prHydrate) {
-    prHydrate
-      .then((store) => store.get<boolean>(PULLREBASE_STORE_KEY))
-      .then((saved) => {
-        if (saved !== null && saved !== undefined && !pullRebaseTouched) {
-          pullRebase = !!saved;
-        }
+  // Each hydrate is a Promise<void> (resolved immediately outside Tauri) so the pull
+  // flow can wait for all three — mirrors updateSettingsHydration below.
+  const psHydrate = getStore();
+  const pullStrategyHydration: Promise<void> = psHydrate
+    ? psHydrate
+      .then(async (store) => ({
+        saved: await store.get<string>(PULLSTRATEGY_STORE_KEY),
+        legacyRebase: await store.get<boolean>(PULLREBASE_STORE_KEY),
+      }))
+      .then(({ saved, legacyRebase }) => {
+        if (!pullStrategyTouched) pullStrategy = resolvePullStrategy(saved, legacyRebase);
       })
-      .catch((e) => console.warn("[gte] could not load pullRebase setting", e));
-  }
+      .catch((e) => console.warn("[gte] could not load pullStrategy setting", e))
+    : Promise.resolve();
 
-  function persistPullRebase() {
-    const snapshot = pullRebase;
+  function persistPullStrategy() {
+    const snapshot = pullStrategy;
     const sp = getStore();
     if (sp) {
       sp.then(async (store) => {
-        await store.set(PULLREBASE_STORE_KEY, snapshot);
+        await store.set(PULLSTRATEGY_STORE_KEY, snapshot);
         await store.save();
-      }).catch((e) => console.warn("[gte] could not persist pullRebase setting", e));
+      }).catch((e) => console.warn("[gte] could not persist pullStrategy setting", e));
       return;
     }
     try {
-      if (typeof localStorage !== "undefined") localStorage.setItem(PULLREBASE_KEY, String(snapshot));
+      if (typeof localStorage !== "undefined") localStorage.setItem(PULLSTRATEGY_KEY, snapshot);
     } catch (e) {
-      console.warn("[gte] could not persist pullRebase setting", e);
+      console.warn("[gte] could not persist pullStrategy setting", e);
+    }
+  }
+
+  let pullAutostash = $state<boolean>(loadSyncPullAutostash());
+  let pullAutostashTouched = false;
+
+  const paHydrate = getStore();
+  const pullAutostashHydration: Promise<void> = paHydrate
+    ? paHydrate
+      .then((store) => store.get<boolean>(PULLAUTOSTASH_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !pullAutostashTouched) {
+          pullAutostash = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load pullAutostash setting", e))
+    : Promise.resolve();
+
+  function persistPullAutostash() {
+    const snapshot = pullAutostash;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(PULLAUTOSTASH_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist pullAutostash setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(PULLAUTOSTASH_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist pullAutostash setting", e);
+    }
+  }
+
+  let pullAskEveryTime = $state<boolean>(loadSyncPullAskEveryTime());
+  let pullAskEveryTimeTouched = false;
+
+  const pkHydrate = getStore();
+  const pullAskEveryTimeHydration: Promise<void> = pkHydrate
+    ? pkHydrate
+      .then((store) => store.get<boolean>(PULLASK_STORE_KEY))
+      .then((saved) => {
+        if (saved !== null && saved !== undefined && !pullAskEveryTimeTouched) {
+          pullAskEveryTime = !!saved;
+        }
+      })
+      .catch((e) => console.warn("[gte] could not load pullAskEveryTime setting", e))
+    : Promise.resolve();
+
+  const pullSettingsHydration = Promise.all([
+    pullStrategyHydration,
+    pullAutostashHydration,
+    pullAskEveryTimeHydration,
+  ]).then(() => undefined);
+
+  function persistPullAskEveryTime() {
+    const snapshot = pullAskEveryTime;
+    const sp = getStore();
+    if (sp) {
+      sp.then(async (store) => {
+        await store.set(PULLASK_STORE_KEY, snapshot);
+        await store.save();
+      }).catch((e) => console.warn("[gte] could not persist pullAskEveryTime setting", e));
+      return;
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(PULLASK_KEY, String(snapshot));
+    } catch (e) {
+      console.warn("[gte] could not persist pullAskEveryTime setting", e);
     }
   }
 
   // ── update settings (updater) ─────────────────────────────────────────────
   // Release channel the in-app updater tracks: "stable" (default) or "beta".
   // autoUpdateCheck gates the launch + background update checks (default on).
-  // Both mirror the pullRebase persist pattern exactly.
+  // Both mirror the diffSplit persist pattern exactly.
   let updateChannel = $state<"stable" | "beta">(loadSyncUpdateChannel());
   let updateChannelTouched = false;
   let autoUpdateCheck = $state<boolean>(loadSyncAutoUpdateCheck());
@@ -1480,7 +1586,7 @@ function makeState() {
 
   // ── prTimelineNewestFirst persisted setting ───────────────────────────────
   // Default sort direction for the PR activity timeline: oldest-first (false,
-  // default) or newest-first (true). Mirrors the pullRebase pattern exactly.
+  // default) or newest-first (true). Mirrors the diffSplit pattern exactly.
   let prTimelineNewestFirst = $state<boolean>(loadSyncPrTimelineNewestFirst());
   let prTimelineNewestFirstTouched = false;
 
@@ -2208,14 +2314,37 @@ function makeState() {
       graphCommits = [...graphCommits, ...fresh];
       commits = [...commits, ...fresh.map(graphToCommit)];
     },
-    // ── pullRebase persisted setting (Phase 6) ────────────────────────────────
-    get pullRebase() {
-      return pullRebase;
+    // ── Pull settings ─────────────────────────────────────────────────────────
+    get pullStrategy() {
+      return pullStrategy;
     },
-    setPullRebase(v: boolean) {
-      pullRebaseTouched = true;
-      pullRebase = v;
-      persistPullRebase();
+    setPullStrategy(v: PullStrategy) {
+      pullStrategyTouched = true;
+      pullStrategy = v;
+      persistPullStrategy();
+    },
+    get pullAutostash() {
+      return pullAutostash;
+    },
+    setPullAutostash(v: boolean) {
+      pullAutostashTouched = true;
+      pullAutostash = v;
+      persistPullAutostash();
+    },
+    get pullAskEveryTime() {
+      return pullAskEveryTime;
+    },
+    setPullAskEveryTime(v: boolean) {
+      pullAskEveryTimeTouched = true;
+      pullAskEveryTime = v;
+      persistPullAskEveryTime();
+    },
+    /** A pull must read the *persisted* preferences. Before this barrier resolves the
+     * three values above are startup defaults, and confirming the dialog would persist
+     * those defaults over the saved ones (the touched guards then keep hydration from
+     * correcting them). Resolves immediately outside Tauri. */
+    waitForPullSettingsHydration(): Promise<void> {
+      return pullSettingsHydration;
     },
     // ── update settings (updater) ─────────────────────────────────────────────
     get updateChannel() {

@@ -26,6 +26,7 @@ import type {
   GraphCommit,
   OpOutcome,
   PrerequisiteCheck,
+  PullStrategy,
   RebaseOutcome,
   RebaseStep,
   Ref,
@@ -276,7 +277,8 @@ export const api = {
     invoke<void>("remote_set_url", { repo, name, url }),
   pull: (
     repo: string,
-    rebase: boolean,
+    strategy: PullStrategy,
+    autostash: boolean,
     onEvent: (line: string) => void,
     creds?: { username: string; password: string },
   ) => {
@@ -284,9 +286,8 @@ export const api = {
     channel.onmessage = onEvent;
     return invoke<RemoteOutcome>("pull", {
       repo,
-      // Bridge until the pull settings land (Task 3): the command takes a strategy now.
-      strategy: rebase ? "rebase" : "merge",
-      autostash: false,
+      strategy,
+      autostash,
       username: creds?.username ?? null,
       password: creds?.password ?? null,
       onEvent: channel,

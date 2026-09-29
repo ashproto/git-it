@@ -358,13 +358,43 @@
             />
             <span>Create a backup before destructive operations</span>
           </label>
+          <fieldset class="radio-group">
+            <legend>Pull strategy</legend>
+            <label class="opt">
+              <input
+                type="radio"
+                name="settings-pull-strategy"
+                checked={appState.pullStrategy === "merge"}
+                onchange={() => appState.setPullStrategy("merge")}
+              />
+              <span>Merge (fast-forward when possible)</span>
+            </label>
+            <label class="opt">
+              <input
+                type="radio"
+                name="settings-pull-strategy"
+                checked={appState.pullStrategy === "rebase"}
+                onchange={() => appState.setPullStrategy("rebase")}
+              />
+              <span>Rebase</span>
+            </label>
+            <label class="opt">
+              <input
+                type="radio"
+                name="settings-pull-strategy"
+                checked={appState.pullStrategy === "ffOnly"}
+                onchange={() => appState.setPullStrategy("ffOnly")}
+              />
+              <span>Fast-forward only</span>
+            </label>
+          </fieldset>
           <label class="opt">
             <input
               type="checkbox"
-              checked={appState.pullRebase}
-              onchange={() => appState.setPullRebase(!appState.pullRebase)}
+              checked={appState.pullAutostash}
+              onchange={() => appState.setPullAutostash(!appState.pullAutostash)}
             />
-            <span>Pull with rebase (instead of merge)</span>
+            <span>Stash &amp; reapply local changes when pulling</span>
           </label>
           <label class="opt">
             <input
@@ -651,6 +681,21 @@
   .opt input:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
+  }
+
+  /* Exclusive-choice rows: a fieldset so the caption is announced with its radios,
+     with the default fieldset chrome reset so it reads like the .opt rows around it. */
+  .radio-group {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+
+  .radio-group legend {
+    padding: 6px 4px 2px;
+    font-size: 12.5px;
+    color: var(--text-muted);
   }
 
   .check-updates-btn {
