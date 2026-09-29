@@ -17,7 +17,7 @@
   }
 
   let entries = $state<ReflogEntry[]>([]);
-  // Set when the last load failed, so the panel says so instead of "No reflog entries.".
+  // Set when the last load failed, so the panel says so instead of "No reflog entries yet.".
   // Wrapped so that a null/undefined rejection is still truthy.
   let loadError = $state<{ error: unknown } | null>(null);
   // True once a load has succeeded. Never reset by a refresh, so the current list stays on
@@ -86,11 +86,11 @@
   {:else if !appState.repo}
     <p class="note">Open a repository to see history.</p>
   {:else if loadError}
-    <LoadError what="the reflog" error={loadError.error} onRetry={() => void loadReflog()} />
+    <LoadError what="the reflog" error={loadError.error} onRetry={loadReflog} />
   {:else if !loaded}
     <p class="note">Loading reflog entries…</p>
   {:else if entries.length === 0}
-    <p class="note">No reflog entries. Open a repository to see history.</p>
+    <p class="note">No reflog entries yet.</p>
   {:else}
     <ul class="list">
       {#each entries as entry (entry.selector)}

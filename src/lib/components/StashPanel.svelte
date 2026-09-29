@@ -15,7 +15,7 @@
   // Set when the last load failed, so the panel says so instead of "No stashes.".
   // Wrapped so that a null/undefined rejection is still truthy.
   let loadError = $state<{ error: unknown } | null>(null);
-  // True once a load has succeeded. Never reset by a refresh: the effect above re-runs on
+  // True once a load has succeeded. Never reset by a refresh: the effect below re-runs on
   // every working-copy refresh, and the current list stays on screen until the new one lands.
   let loaded = $state(false);
   // Bumped per request; a response from a superseded request is dropped.
@@ -93,7 +93,7 @@
     {#if !appState.repo}
       <p class="note">Open a repository to see stashes.</p>
     {:else if loadError}
-      <LoadError what="the stashes" error={loadError.error} onRetry={() => void loadStash()} />
+      <LoadError what="the stashes" error={loadError.error} onRetry={loadStash} />
     {:else if !loaded}
       <p class="note">Loading stashes…</p>
     {:else if entries.length === 0}
