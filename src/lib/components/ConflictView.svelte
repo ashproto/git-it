@@ -16,16 +16,17 @@
 
   let details = $state<ConflictEntry[]>([]);
   // Set when the file list failed to load, so the panel says so instead of listing nothing.
-  // Wrapped so that a null/undefined rejection is still truthy.
+  // Wrapped so that a null/undefined rejection is still truthy. Kept while a refresh runs,
+  // since the effect below re-runs on every status refresh.
   let detailsError = $state<{ error: unknown } | null>(null);
   // Bumped per request; a response from a superseded request (or an ended op) is dropped.
   let detailsSequence = 0;
 
   async function refreshDetails() {
     const sequence = ++detailsSequence;
-    detailsError = null;
     if (!inTauri() || !appState.repo || !op) {
       details = [];
+      detailsError = null;
       return;
     }
     const repo = appState.repo;
@@ -33,6 +34,7 @@
       const result = await api.conflictDetails(repo);
       if (sequence !== detailsSequence || repo !== appState.repo) return;
       details = result;
+      detailsError = null;
     } catch (e) {
       if (sequence !== detailsSequence || repo !== appState.repo) return;
       details = [];
@@ -68,8 +70,8 @@
       </span>
     </header>
 
-    {#if detailsError}
-      <LoadError what="the conflict details" error={detailsError.error} onRetry={() => void refreshDetails()} />
+    {#if detailsError && conflicted > 0}
+      <LoadError what="the conflict details" error={detailsError.error} onRetry={refreshDetails} />
     {:else if details.length}
       <ul class="files">
         {#each details as f (f.path)}
