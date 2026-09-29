@@ -31,6 +31,8 @@ afterEach(async () => {
   await dispose?.();
   dispose = undefined;
   errors.reset();
+  // errors.reset() leaves the red status; only the status setter clears statusIsError.
+  appState.status = "";
   appState.repo = "";
   document.body.replaceChildren();
   vi.restoreAllMocks();
@@ -107,6 +109,23 @@ it.each([
   expect(errors.pending).toBe(1);
   expect(appState.statusIsError).toBe(true);
 });
+it("clears the ref selection after Delete all", async () => {
+  vi.spyOn(api, "deleteRefs").mockResolvedValue(undefined);
+  const panel = mount(BackupsPanel, { target, props: { bare: true } });
+  dispose = () => unmount(panel);
+  await tick();
+  button("Safety refs").click();
+  await vi.waitFor(() => expect(target.textContent).toContain("refs/original/main"));
+  target.querySelector<HTMLButtonElement>(".row-btn")!.click();
+  await tick();
+  expect(button("Delete selected").disabled).toBe(false);
+  vi.mocked(api.listSafetyRefs).mockResolvedValue([]);
+  button("Delete all").click();
+  await vi.waitFor(() => expect(target.textContent).toContain("No safety refs"));
+  expect(api.deleteRefs).toHaveBeenCalledWith("/tmp/backups", ["refs/original/main"]);
+  // The selected ref is gone, so Delete selected has nothing left to delete.
+  expect(button("Delete selected").disabled).toBe(true);
+});
 it("keeps a post-create list failure inline rather than reporting creation twice", async () => {
   vi.spyOn(api, "createBundle").mockResolvedValue("/tmp/new.bundle");
   const panel = mount(BackupsPanel, { target, props: { bare: true } });
@@ -143,4 +162,28 @@ it("loads the active safety list again after a repository switch", async () => {
   await vi.waitFor(() => expect(api.listSafetyRefs).toHaveBeenLastCalledWith("/tmp/other-backups"));
   await vi.waitFor(() => expect(target.textContent).toContain("No safety refs"));
   expect(target.textContent).not.toContain("refs/original/main");
+});
+it("clears both selections on a repository switch", async () => {
+  const panel = mount(BackupsPanel, { target, props: { bare: true } });
+  dispose = () => unmount(panel);
+  await vi.waitFor(() => expect(target.querySelector(".row-btn")).not.toBeNull());
+  target.querySelector<HTMLButtonElement>(".row-btn")!.click();
+  await tick();
+  expect(button("Fetch refs").disabled).toBe(false);
+  expect(button("Delete").disabled).toBe(false);
+  button("Safety refs").click();
+  await vi.waitFor(() => expect(target.textContent).toContain("refs/original/main"));
+  target.querySelector<HTMLButtonElement>(".row-btn")!.click();
+  await tick();
+  expect(button("Delete selected").disabled).toBe(false);
+  // The new repository lists a same-named ref. A carried-over selection would delete it, or
+  // (the bundle selection being a path) the previous repository's bundle.
+  appState.repo = "/tmp/other-backups";
+  await vi.waitFor(() => expect(api.listSafetyRefs).toHaveBeenLastCalledWith("/tmp/other-backups"));
+  await vi.waitFor(() => expect(target.textContent).toContain("refs/original/main"));
+  expect(button("Delete selected").disabled).toBe(true);
+  button("Bundles").click();
+  await tick();
+  expect(button("Fetch refs").disabled).toBe(true);
+  expect(button("Delete").disabled).toBe(true);
 });

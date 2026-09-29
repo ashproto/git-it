@@ -30,9 +30,10 @@
   let selectedBundle = $state<string | null>(null);
   let selectedRefs = $state<Set<string>>(new Set());
 
-  // Reset selections on repo switch — `selectedBundle` is a bare path and `deleteRefs` takes
-  // names, so a selection carried over would delete the PREVIOUS repo's bundle or refs —
-  // and refresh the active safety list too.
+  // Reset the lists and both selections on repo switch, then reload (the safety refs only if
+  // that tab is showing). `selectedBundle` is a path, so a carried-over one would delete the
+  // PREVIOUS repo's bundle; `deleteRefs` targets `appState.repo`, so carried-over ref names
+  // would delete same-named refs (`refs/original/…`, `backup/…`) in the NEW repo.
   $effect(() => {
     const repo = appState.repo;
     selectedBundle = null;
@@ -140,6 +141,7 @@
         appState.repo,
         safetyRefs.map((r) => r.name),
       );
+      selectedRefs = new Set();
       await refreshSafetyRefs();
     } catch (e) {
       reportError("Couldn't delete all safety refs", e);
@@ -272,6 +274,7 @@
     align-items: center;
     gap: 6px;
     margin-top: 6px;
+    margin-bottom: 8px;
   }
   .row:first-of-type {
     margin-top: 0;
