@@ -329,10 +329,10 @@ pub fn pull(
 
     let (ok, msg) = result?;
     // git exits 0 even when re-applying the autostash conflicted (from `--autostash` or the
-    // user's merge.autoStash / rebase.autoStash): the files are left unmerged and the local
-    // changes stay in the stash. git won't start a pull over unmerged files, so any now came
-    // from that re-apply. No merge or rebase is in progress for the conflict view to finish,
-    // so this is a plain failure, not `conflicted`.
+    // user's pull.autoStash / merge.autoStash / rebase.autoStash): the files are left
+    // unmerged and the local changes stay in the stash. git won't start a pull over unmerged
+    // files, so any now came from that re-apply. No merge or rebase is in progress for the
+    // conflict view to finish, so this is a plain failure, not `conflicted`.
     let unmerged = ok
         && crate::ops_merge::conflicted_files(repo)
             .map(|f| !f.is_empty())
@@ -980,6 +980,8 @@ mod tests {
         let b = TempRepo::new_clone(bare.to_str().unwrap(), bare_path(&format!("b-{tag}")));
         // Pin, in B's LOCAL config, what a GLOBAL config could change about its pulls.
         // Tests that exercise such config override these per test.
+        // pull.autoStash outranks merge.autoStash / rebase.autoStash, whatever their scope.
+        b.git(&["config", "pull.autoStash", "false"]);
         b.git(&["config", "merge.autoStash", "false"]);
         b.git(&["config", "rebase.autoStash", "false"]);
         b.git(&["config", "merge.ff", "true"]);
@@ -1011,11 +1013,13 @@ mod tests {
 
     #[test]
     fn pull_merge_reconciles_a_diverged_branch_without_pull_config() {
-        // The user's original failure: with no pull.* keys, a pull that names no strategy
-        // refuses a diverged branch ("Need to specify how to reconcile divergent branches").
+        // The user's original failure: with no pull.rebase / pull.ff, a pull that names no
+        // strategy refuses a diverged branch ("Need to specify how to reconcile divergent
+        // branches"). The fixture's pull.autoStash pin picks no strategy, so it may stay.
         let (bare, _a, b) = diverged_clones("merge-no-pull-cfg");
-        let (has_pull_keys, _) = b.git_may_fail(&["config", "--local", "--get-regexp", r"^pull\."]);
-        assert!(!has_pull_keys, "this test needs a repo config with no pull.* keys");
+        let (has_strategy_keys, _) =
+            b.git_may_fail(&["config", "--local", "--get-regexp", r"^pull\.(rebase|ff)$"]);
+        assert!(!has_strategy_keys, "this test needs a repo config with no pull.rebase / pull.ff");
         let st = RemoteState::default();
         let r = pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
         assert!(r.ok, "merge pull should succeed; msg={}", r.message);
@@ -1200,10 +1204,11 @@ mod tests {
     }
 
     #[test]
-    fn pull_reports_a_conflicted_reapply_from_the_merge_autostash_config() {
+    fn pull_reports_a_conflicted_reapply_from_the_pull_autostash_config() {
         let (bare, _a, b) = diverged_clones("autostash-conflict-config");
-        // Git It asks for no autostash here; the repo's own config does.
-        b.git(&["config", "merge.autoStash", "true"]);
+        // Git It asks for no autostash here; the repo's own config does. pull.autoStash
+        // (not merge.autoStash) because it outranks the others, so no global value undoes it.
+        b.git(&["config", "pull.autoStash", "true"]);
         // Dirty edit on line 1, the line the remote's commit rewrote.
         b.write_file("f.txt", "line1-local\nline2\nline3\n");
         let st = RemoteState::default();
