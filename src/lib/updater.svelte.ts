@@ -5,6 +5,8 @@ import { appState } from "./store.svelte";
 import { dialogs } from "./dialogs.svelte";
 import { anyOverlayOpen } from "./overlays";
 import { api } from "./api";
+import { errorText } from "./errorReport";
+import { reportError, reportNotice } from "./errors.svelte";
 import type { DownloadEvent, UpdateInfo } from "./types";
 
 function isTauri(): boolean {
@@ -107,7 +109,7 @@ async function checkForUpdates(
 ): Promise<void> {
   if (!isTauri() || isDev) return;
   if (checking || presenting) {
-    if (source === "manual") appState.status = "Already checking for updates…";
+    if (source === "manual") reportNotice("Can't check for updates yet", "Already checking for updates…");
     return;
   }
 
@@ -130,7 +132,7 @@ async function checkForUpdates(
     available = await api.checkUpdateOnChannel(appState.updateChannel);
     if (!available && manual) appState.status = "You are on the latest version.";
   } catch (err) {
-    reportUpdaterError(err);
+    reportUpdaterError("Couldn't check for updates", err, { quiet: !manual });
   } finally {
     checking = false;
     if (manual) appState.setBusyOp(null);
@@ -183,6 +185,8 @@ async function presentUpdate(update: UpdateInfo): Promise<void> {
   if (presenting) return;
   presenting = true;
   lastPromptedVersion = update.version;
+  let failureTitle = "Couldn't download or install the update";
+  let installReported = false;
   try {
     const notes = (update.notes ?? "").trim();
     const proceed = await dialogs.confirm({
@@ -214,6 +218,7 @@ async function presentUpdate(update: UpdateInfo): Promise<void> {
       }
     });
 
+    failureTitle = "Couldn't restart to install the update";
     const restart = await dialogs.confirm({
       title: "Update ready",
       message: `Git It ${update.version} has been downloaded. Restart now to apply it?`,
@@ -227,8 +232,11 @@ async function presentUpdate(update: UpdateInfo): Promise<void> {
     // 10s watchdog: if the relaunch-into-installer step never starts, surface a
     // signing/notarization hint instead of hanging silently.
     const guard = setTimeout(() => {
-      appState.status =
-        "Update install did not start. Verify the app is properly signed/notarized.";
+      installReported = true;
+      reportError(
+        "Couldn't restart to install the update",
+        "Update install did not start. Verify the app is properly signed/notarized.",
+      );
     }, 10000);
     try {
       const { relaunch } = await import("@tauri-apps/plugin-process");
@@ -237,7 +245,7 @@ async function presentUpdate(update: UpdateInfo): Promise<void> {
       clearTimeout(guard);
     }
   } catch (err) {
-    reportUpdaterError(err);
+    if (!installReported) reportUpdaterError(failureTitle, err);
   } finally {
     presenting = false;
     appState.setBusyOp(null);
@@ -245,10 +253,18 @@ async function presentUpdate(update: UpdateInfo): Promise<void> {
   }
 }
 
-function reportUpdaterError(err: unknown): void {
-  const raw = err instanceof Error ? err.message : String(err);
+function reportUpdaterError(title: string, err: unknown, opts?: { quiet?: boolean }): void {
+  const raw = errorText(err);
   const sig = /signature|verify|verification|invalid/i.test(raw);
-  appState.status = sig
-    ? "Updater rejected the update (signature verification failed). The artifact may be unsigned or corrupted."
-    : `Updater error: ${raw}`;
+  // The `error:` prefix makes the explanation the headline; the raw text follows it as a
+  // continuation line and stays in the output.
+  reportError(
+    title,
+    sig
+      ? "error: Updater rejected the update (signature verification failed). " +
+          "The artifact may be unsigned or corrupted.\n" +
+          raw
+      : err,
+    opts,
+  );
 }
