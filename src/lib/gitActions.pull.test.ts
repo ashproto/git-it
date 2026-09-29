@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./api";
+import { dialogs } from "./dialogs.svelte";
 import { errors } from "./errors.svelte";
 import { gitActions } from "./gitActions";
 import { SAMPLE_GRAPH } from "./graph/sample";
@@ -57,6 +58,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  if (dialogs.state.kind === "pull") dialogs.resolvePull(false);
   errors.reset();
   appState.repo = "";
   vi.restoreAllMocks();

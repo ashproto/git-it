@@ -1,8 +1,9 @@
 // Promise-based modal dialogs so callers can `await dialogs.prompt(...)` /
 // `await dialogs.confirm(...)` inline. A single <Modal/> mounted once renders
 // whichever dialog is active.
-import type { WorktreeInfo } from "./types";
+import type { PullStrategy, WorktreeInfo } from "./types";
 import { worktreeRemovalBlocker } from "./worktrees";
+import { canPull } from "./pullOptions";
 
 type BranchDeleteResult = {
   confirmed: boolean;
@@ -17,6 +18,12 @@ export type NewRepositoryResult = {
   createRemote: boolean;
   isPrivate: boolean;
   description: string;
+};
+
+export type PullDialogResult = {
+  strategy: PullStrategy;
+  autostash: boolean;
+  dontAsk: boolean;
 };
 
 type DialogState =
@@ -95,6 +102,18 @@ type DialogState =
       branch: string;
       bases: string[];
       resolve: (v: { title: string; body: string; base: string; draft: boolean } | null) => void;
+    }
+  | {
+      kind: "pull";
+      branch: string | null; // null when HEAD is detached
+      upstream: string | null; // e.g. "origin/main"; null when the branch has no upstream
+      upstreamGone: boolean; // the upstream is still configured, but its ref no longer exists
+      ahead: number;
+      behind: number;
+      strategy: PullStrategy;
+      autostash: boolean;
+      dontAsk: boolean;
+      resolve: (v: PullDialogResult | null) => void;
     };
 
 function makeDialogs() {
@@ -111,6 +130,7 @@ function makeDialogs() {
     else if (state.kind === "newRepository") state.resolve(null);
     else if (state.kind === "createRepo") state.resolve({ confirmed: false, name: "", isPrivate: true, description: "" });
     else if (state.kind === "createPr") state.resolve(null);
+    else if (state.kind === "pull") state.resolve(null);
   }
 
   return {
@@ -323,6 +343,46 @@ function makeDialogs() {
       if (state.kind === "createPr") {
         const { title, body, base, draft } = state;
         state.resolve(accepted ? { title, body, base, draft } : null);
+        state = { kind: "none" };
+      }
+    },
+    // ── Pull options dialog ────────────────────────────────────────────────────
+    // Strategy + autostash preselected from the saved settings; resolves the edited
+    // choice (plus "don't ask again"), or null on cancel / replacement.
+    confirmPull(opts: {
+      branch: string | null;
+      upstream: string | null;
+      upstreamGone: boolean;
+      ahead: number;
+      behind: number;
+      strategy: PullStrategy;
+      autostash: boolean;
+    }): Promise<PullDialogResult | null> {
+      settlePending();
+      return new Promise((resolve) => {
+        state = {
+          kind: "pull",
+          branch: opts.branch,
+          upstream: opts.upstream,
+          upstreamGone: opts.upstreamGone,
+          ahead: opts.ahead,
+          behind: opts.behind,
+          strategy: opts.strategy,
+          autostash: opts.autostash,
+          dontAsk: false,
+          resolve,
+        };
+      });
+    },
+    setPullStrategy(v: PullStrategy) { if (state.kind === "pull") state = { ...state, strategy: v }; },
+    setPullAutostash(v: boolean) { if (state.kind === "pull") state = { ...state, autostash: v }; },
+    setPullDontAsk(v: boolean) { if (state.kind === "pull") state = { ...state, dontAsk: v }; },
+    resolvePull(accepted: boolean) {
+      if (state.kind === "pull") {
+        const { branch, upstream, upstreamGone, strategy, autostash, dontAsk } = state;
+        // Defense in depth: Enter or a future caller cannot pull with nowhere to pull from.
+        if (accepted && !canPull(branch, upstream, upstreamGone)) return;
+        state.resolve(accepted ? { strategy, autostash, dontAsk } : null);
         state = { kind: "none" };
       }
     },
