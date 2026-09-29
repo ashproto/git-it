@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
+  import { reportNotice } from "../errors.svelte";
   import { parseISO, buildLocalDate, formatCommitDate } from "../dates";
   import type { EditMode } from "../types";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
@@ -61,7 +62,7 @@
   function needsSelection(): string[] | null {
     const shas = Array.from(appState.selected);
     if (shas.length === 0) {
-      appState.status = "Select one or more commits first.";
+      reportNotice("Can't preview date changes", "Select one or more commits first.");
       return null;
     }
     return shas;
@@ -93,7 +94,7 @@
     if (!shas) return;
     const d = buildLocalDate(year, month, day, hour, minute, second);
     if (!d) {
-      appState.status = "Enter a complete, valid date.";
+      reportNotice("Can't preview date changes", "Enter a complete, valid date.");
       return;
     }
     for (const sha of shas) appState.setNewDate(sha, d);
@@ -104,17 +105,17 @@
     const shas = needsSelection();
     if (!shas) return;
     if (shas.length < 2) {
-      appState.status = "Compress needs at least 2 selected commits.";
+      reportNotice("Can't preview date changes", "Compress needs at least 2 selected commits.");
       return;
     }
     const start = buildLocalDate(sYear, sMonth, sDay, sHour, sMinute, sSecond);
     const end = buildLocalDate(eYear, eMonth, eDay, eHour, eMinute, eSecond);
     if (!start || !end) {
-      appState.status = "Enter a complete, valid date.";
+      reportNotice("Can't preview date changes", "Enter a complete, valid date.");
       return;
     }
     if (end.getTime() <= start.getTime()) {
-      appState.status = "Compress: end must be after start.";
+      reportNotice("Can't preview date changes", "Compress: end must be after start.");
       return;
     }
 
@@ -130,7 +131,7 @@
       .sort((a, b) => a.t - b.t);
 
     if (items.length < 2) {
-      appState.status = "Compress: couldn't read dates for the selected commits.";
+      reportNotice("Can't preview date changes", "Compress: couldn't read dates for the selected commits.");
       return;
     }
 

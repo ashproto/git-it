@@ -1,6 +1,7 @@
 <script lang="ts">
   import { rebaseEditor } from "../rebaseEditor.svelte";
   import { appState } from "../store.svelte";
+  import { reportNotice } from "../errors.svelte";
   import { api } from "../api";
   import { gitActions } from "../gitActions";
   import type { ReflogEntry, RebaseStep } from "../types";
@@ -81,7 +82,7 @@
   async function startRebase() {
     const nonDrop = rows.filter((r) => r.action !== "drop");
     if (nonDrop.length === 0) {
-      appState.status = "Interactive rebase: at least one non-drop step is required.";
+      reportNotice("Can't start the interactive rebase", "Interactive rebase: at least one non-drop step is required.");
       return;
     }
     const steps: RebaseStep[] = rows.map((r) => ({

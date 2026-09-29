@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { appState } from "../store.svelte";
+  import { reportError, reportNotice } from "../errors.svelte";
+  import { errorText } from "../errorReport";
   import { api } from "../api";
   import { prerequisites } from "../prerequisites.svelte";
   import { toEpochTz } from "../dates";
@@ -17,6 +19,9 @@
 
   let busy = $state(false);
 
+  // How the backend (git-core's rewrite.rs) marks each git-filter-repo stderr line it streams.
+  const STDERR_PREFIX = "[stderr] ";
+
   onMount(() => {
     void prerequisites.load();
   });
@@ -25,12 +30,11 @@
     // Defense in depth: the button is already disabled when the probe failed, but never
     // start a destructive history rewrite we know will fail for lack of git-filter-repo.
     if (!prerequisites.canEditHistory) {
-      appState.status =
-        "Commit-time editing is unavailable — the bundled git-filter-repo couldn't run.";
+      reportNotice("Can't rewrite history", "Commit-time editing is unavailable — the bundled git-filter-repo couldn't run.");
       return;
     }
     if (appState.newDates.size === 0) {
-      appState.status = "No new dates queued. Use an edit mode to preview changes first.";
+      reportNotice("Can't rewrite history", "No new dates queued. Use an edit mode to preview changes first.");
       return;
     }
     const mappings: DateMapping[] = [];
@@ -56,9 +60,13 @@
     busy = true;
     appState.isRewriting = true;
     appState.status = "Rewriting…";
+    // When git-filter-repo fails, the rewrite rejects with just its exit code; the reason
+    // streams in earlier on stderr, so report this run's stderr lines instead.
+    const stderr: string[] = [];
     try {
       await api.rewriteHistory(appState.repo, mappings, options, (line) => {
         appState.appendLog(line);
+        if (line.startsWith(STDERR_PREFIX)) stderr.push(line.slice(STDERR_PREFIX.length));
       });
       appState.status = "Rewrite finished.";
       appState.appendLog("[rewrite] done.");
@@ -69,8 +77,13 @@
         appState.commits = fresh;
       } catch {}
     } catch (e) {
-      appState.status = `Rewrite failed: ${e}`;
-      appState.appendLog(`[rewrite] ERROR: ${e}`);
+      if (stderr.length) {
+        appState.appendLog(`[rewrite] stopped: ${errorText(e)}`);
+        reportError("Rewrite failed", stderr.join("\n"));
+      } else {
+        appState.appendLog("[rewrite] stopped.");
+        reportError("Rewrite failed", e);
+      }
     } finally {
       busy = false;
       appState.isRewriting = false;
