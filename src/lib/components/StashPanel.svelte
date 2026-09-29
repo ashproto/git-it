@@ -5,12 +5,21 @@
   import { dialogs } from "../dialogs.svelte";
   import type { StashEntry } from "../types";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
+  import LoadError from "./LoadError.svelte";
 
   function isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   }
 
   let entries = $state<StashEntry[]>([]);
+  // Set when the last load failed, so the panel says so instead of "No stashes.".
+  // Wrapped so that a null/undefined rejection is still truthy.
+  let loadError = $state<{ error: unknown } | null>(null);
+  // True once a load has succeeded. Never reset by a refresh: the effect above re-runs on
+  // every working-copy refresh, and the current list stays on screen until the new one lands.
+  let loaded = $state(false);
+  // Bumped per request; a response from a superseded request is dropped.
+  let loadSequence = 0;
   let collapsed = $state(true);
 
   // Reload stash list when expanded and whenever working changes identity changes
@@ -26,11 +35,17 @@
 
   async function loadStash() {
     if (!isTauri() || !appState.repo) return;
+    const repo = appState.repo;
+    const sequence = ++loadSequence;
     try {
-      entries = await api.stashList(appState.repo);
+      const result = await api.stashList(repo);
+      if (sequence !== loadSequence || repo !== appState.repo) return;
+      entries = result;
+      loaded = true;
+      loadError = null;
     } catch (e) {
-      console.warn("[gte] stash list failed", e);
-      entries = [];
+      if (sequence !== loadSequence || repo !== appState.repo) return;
+      loadError = { error: e };
     }
   }
 
@@ -75,7 +90,13 @@
     <div class="actions-row">
       <button type="button" class="primary" onclick={doStashPush}>Stash changes…</button>
     </div>
-    {#if entries.length === 0}
+    {#if !appState.repo}
+      <p class="note">Open a repository to see stashes.</p>
+    {:else if loadError}
+      <LoadError what="the stashes" error={loadError.error} onRetry={() => void loadStash()} />
+    {:else if !loaded}
+      <p class="note">Loading stashes…</p>
+    {:else if entries.length === 0}
       <p class="note">No stashes. Stash changes to save them temporarily.</p>
     {:else}
       <ul class="list">

@@ -4,6 +4,7 @@
   import { gitActions } from "../gitActions";
   import type { ReflogEntry } from "../types";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
+  import LoadError from "./LoadError.svelte";
 
   let { bare = false } = $props();
 
@@ -16,6 +17,14 @@
   }
 
   let entries = $state<ReflogEntry[]>([]);
+  // Set when the last load failed, so the panel says so instead of "No reflog entries.".
+  // Wrapped so that a null/undefined rejection is still truthy.
+  let loadError = $state<{ error: unknown } | null>(null);
+  // True once a load has succeeded. Never reset by a refresh, so the current list stays on
+  // screen until the new one lands.
+  let loaded = $state(false);
+  // Bumped per request; a response from a superseded request is dropped.
+  let loadSequence = 0;
   let collapsed = $state(true);
 
   // Load reflog when expanded and whenever a destructive op completes (lastUndo changes).
@@ -31,11 +40,17 @@
 
   async function loadReflog() {
     if (!isTauri() || !appState.repo) return;
+    const repo = appState.repo;
+    const sequence = ++loadSequence;
     try {
-      entries = await api.reflog(appState.repo, 50);
+      const result = await api.reflog(repo, 50);
+      if (sequence !== loadSequence || repo !== appState.repo) return;
+      entries = result;
+      loaded = true;
+      loadError = null;
     } catch (e) {
-      console.warn("[gte] reflog load failed", e);
-      entries = [];
+      if (sequence !== loadSequence || repo !== appState.repo) return;
+      loadError = { error: e };
     }
   }
 
@@ -68,6 +83,12 @@
 <CollapsiblePanel title="History (reflog)" bind:collapsed {bare}>
   {#if !isTauri()}
     <p class="note">Desktop app only — reflog is not available in the browser preview.</p>
+  {:else if !appState.repo}
+    <p class="note">Open a repository to see history.</p>
+  {:else if loadError}
+    <LoadError what="the reflog" error={loadError.error} onRetry={() => void loadReflog()} />
+  {:else if !loaded}
+    <p class="note">Loading reflog entries…</p>
   {:else if entries.length === 0}
     <p class="note">No reflog entries. Open a repository to see history.</p>
   {:else}
