@@ -3,6 +3,14 @@
   import { worktreeRemovalBlocker } from "../worktrees";
   import Markdown from "./github/Markdown.svelte";
   import WorktreeIcon from "./WorktreeIcon.svelte";
+  import {
+    PULL_STRATEGIES,
+    PULL_STRATEGY_DESCRIPTIONS,
+    PULL_STRATEGY_LABELS,
+    canPull,
+    pullDialogTitle,
+    pullStatusLine,
+  } from "../pullOptions";
 
   let inputValue = $state("");
   let inputEl = $state<HTMLInputElement | undefined>();
@@ -10,6 +18,8 @@
   let prTitleEl = $state<HTMLInputElement | undefined>();
   let newRepositoryNameEl = $state<HTMLInputElement | undefined>();
   let branchDeleteCancelEl = $state<HTMLButtonElement | undefined>();
+  let pullPrimaryEl = $state<HTMLButtonElement | undefined>();
+  let pullCancelEl = $state<HTMLButtonElement | undefined>();
   let lastFocusedDialogResolve: unknown;
 
   // When a prompt opens, seed + focus the field.
@@ -39,6 +49,9 @@
       newRepositoryNameEl?.focus();
     } else if (s.kind === "branchDelete") {
       branchDeleteCancelEl?.focus();
+    } else if (s.kind === "pull") {
+      // Enter = Pull, so the primary takes focus — unless there is nothing to pull from.
+      (canPull(s.branch, s.upstream, s.upstreamGone) ? pullPrimaryEl : pullCancelEl)?.focus();
     }
   });
 
@@ -125,6 +138,18 @@
     } else if (e.key === "Escape") {
       e.preventDefault();
       cancelCredentials();
+    }
+  }
+
+  // Pull dialog: Enter pulls (the resolver refuses when there is nothing to pull from),
+  // Escape cancels. Enter never toggles a radio or checkbox, so the two can't collide.
+  function handlePullKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      dialogs.resolvePull(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      dialogs.resolvePull(false);
     }
   }
 </script>
@@ -486,6 +511,74 @@
       </div>
     </div>
   </div>
+{:else if dialogs.state.kind === "pull"}
+  {@const allowed = canPull(dialogs.state.branch, dialogs.state.upstream, dialogs.state.upstreamGone)}
+  {@const title = pullDialogTitle(dialogs.state.branch, dialogs.state.upstream)}
+  {@const statusLine = pullStatusLine(
+    dialogs.state.branch,
+    dialogs.state.upstream,
+    dialogs.state.ahead,
+    dialogs.state.behind,
+    dialogs.state.upstreamGone,
+  )}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="overlay"
+    onpointerdown={(e) => {
+      if (e.target === e.currentTarget) dialogs.resolvePull(false);
+    }}
+    onkeydown={handlePullKey}
+  >
+    <div class="dialog pull" role="dialog" aria-modal="true" aria-label={title}>
+      <h3>{title}</h3>
+      <p class="msg pull-status" class:blocked={!allowed}>{statusLine}</p>
+      <div class="strategy-list" role="radiogroup" aria-label="Pull strategy">
+        {#each PULL_STRATEGIES as s (s)}
+          <label class="strategy-opt">
+            <input
+              type="radio"
+              name="pull-dialog-strategy"
+              value={s}
+              checked={dialogs.state.strategy === s}
+              onchange={() => dialogs.setPullStrategy(s)}
+            />
+            <span class="strategy-copy">
+              <span class="strategy-name">{PULL_STRATEGY_LABELS[s]}</span>
+              <span class="strategy-desc">{PULL_STRATEGY_DESCRIPTIONS[s]}</span>
+            </span>
+          </label>
+        {/each}
+      </div>
+      <label class="backup-row pull-autostash">
+        <input
+          type="checkbox"
+          checked={dialogs.state.autostash}
+          onchange={(e) => dialogs.setPullAutostash((e.currentTarget as HTMLInputElement).checked)}
+        />
+        Stash &amp; reapply local changes
+      </label>
+      <label class="backup-row pull-dont-ask">
+        <input
+          type="checkbox"
+          checked={dialogs.state.dontAsk}
+          onchange={(e) => dialogs.setPullDontAsk((e.currentTarget as HTMLInputElement).checked)}
+        />
+        <span>Don't ask again <span class="dont-ask-note">Change this in Settings</span></span>
+      </label>
+      <div class="actions">
+        <button bind:this={pullCancelEl} type="button" onclick={() => dialogs.resolvePull(false)}>Cancel</button>
+        <button
+          bind:this={pullPrimaryEl}
+          type="button"
+          class="primary"
+          disabled={!allowed}
+          onclick={() => dialogs.resolvePull(true)}
+        >
+          Pull
+        </button>
+      </div>
+    </div>
+  </div>
 {:else if dialogs.state.kind === "credentials"}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -788,5 +881,60 @@
     color: var(--text);
     font-size: 13px;
     font-family: inherit;
+  }
+  /* Pull dialog: three strategy cards need more room than the 360px default. */
+  .dialog.pull {
+    width: 440px;
+  }
+  .pull-status {
+    color: var(--text-muted);
+  }
+  /* When there is nothing to pull from, the status line IS the message. */
+  .pull-status.blocked {
+    color: var(--text);
+  }
+  .strategy-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .strategy-opt {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    user-select: none;
+  }
+  .strategy-opt:has(input:checked) {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 7%, var(--input-bg));
+  }
+  .strategy-opt input[type="radio"] {
+    width: auto;
+    margin: 2px 0 0;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+  }
+  .strategy-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 13px;
+  }
+  .strategy-desc {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+  .dont-ask-note {
+    margin-left: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
   }
 </style>
