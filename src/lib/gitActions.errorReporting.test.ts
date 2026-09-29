@@ -271,7 +271,13 @@ describe("runRemote reports only failures the user didn't choose", () => {
     });
     expect(await gitActions.pull()).toBe(false);
     expect(pull).toHaveBeenCalledTimes(1);
-    expect(errors.current).toBeNull();
+    expect(errors.pending).toBe(1);
+    expect(errors.current).toMatchObject({
+      kind: "notice",
+      title: "Repository changed",
+      headline: "Repository changed while that dialog was open — nothing was done.",
+    });
+    expect(errors.last).toBeNull();
     expect(appState.status).toBe("Repository changed while that dialog was open — nothing was done.");
   });
 });

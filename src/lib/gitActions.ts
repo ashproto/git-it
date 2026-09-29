@@ -10,7 +10,7 @@ import { graphView } from "./graphView.svelte";
 import { githubState } from "./githubState.svelte";
 import { prefillFromSubjects } from "./github/prCreate";
 import { errorText } from "./errorReport";
-import { reportError } from "./errors.svelte";
+import { reportError, reportNotice } from "./errors.svelte";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -419,6 +419,12 @@ export async function jumpToRefWithLoad(targetSha: string): Promise<void> {
   }
 }
 
+// Title for a refusal notice ("Can't checkout Feature/ABC"). Only the label's first character
+// is lowercased: the rest carries ref and remote names exactly as the user typed them.
+function cantTitle(label: string): string {
+  return `Can't ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+}
+
 // Run an op with uniform guard / status / refresh / error handling.
 async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> {
   if (!isTauri()) {
@@ -426,7 +432,7 @@ async function run(label: string, fn: () => Promise<unknown>): Promise<boolean> 
     return false;
   }
   if (!appState.repo) {
-    appState.status = "Open a repository first.";
+    reportNotice(cantTitle(label), "Open a repository first.");
     return false;
   }
   appState.setNavBusy(true);
@@ -463,7 +469,7 @@ async function runOp(label: string, fn: () => Promise<OpOutcome>): Promise<OpOut
     return null;
   }
   if (!appState.repo) {
-    appState.status = "Open a repository first.";
+    reportNotice(cantTitle(label), "Open a repository first.");
     return null;
   }
   appState.status = `${label}…`;
@@ -493,7 +499,14 @@ async function runOp(label: string, fn: () => Promise<OpOutcome>): Promise<OpOut
 // Resolving a single file changes neither the commit graph nor selection/edits, so
 // refresh only status (which drives the conflict list) — never reloadGraph here.
 async function runResolve(label: string, fn: () => Promise<unknown>): Promise<boolean> {
-  if (!isTauri() || !appState.repo) return false;
+  if (!isTauri()) {
+    appState.status = "That action needs the desktop app (not the browser preview).";
+    return false;
+  }
+  if (!appState.repo) {
+    reportNotice(cantTitle(label), "Open a repository first.");
+    return false;
+  }
   try {
     await fn();
     await refreshStatus();
@@ -547,7 +560,7 @@ function sameRepoAfterPrompt(): () => boolean {
   const opened = appState.repo;
   return () => {
     if (appState.repo === opened) return true;
-    appState.status = "Repository changed while that dialog was open — nothing was done.";
+    reportNotice("Repository changed", "Repository changed while that dialog was open — nothing was done.");
     return false;
   };
 }
@@ -559,7 +572,7 @@ async function runWorktree(label: string, fn: () => Promise<unknown>): Promise<b
     return false;
   }
   if (!appState.repo) {
-    appState.status = "Open a repository first.";
+    reportNotice(cantTitle(label), "Open a repository first.");
     return false;
   }
   try {
@@ -593,7 +606,7 @@ async function runDestructive(
     return false;
   }
   if (!appState.repo) {
-    appState.status = "Open a repository first.";
+    reportNotice(cantTitle(label), "Open a repository first.");
     return false;
   }
   const sameRepo = sameRepoAfterPrompt();
@@ -636,7 +649,7 @@ async function runDestructiveRebase(
     return false;
   }
   if (!appState.repo) {
-    appState.status = "Open a repository first.";
+    reportNotice(cantTitle(label), "Open a repository first.");
     return false;
   }
   const sameRepo = sameRepoAfterPrompt();
@@ -688,13 +701,16 @@ async function runRemote(
   label: string,
   fn: (onLine: (l: string) => void, creds?: { username: string; password: string }) => Promise<RemoteOutcome>,
 ): Promise<boolean> {
-  if (appState.remoteOpActive) { appState.status = "A remote operation is already in progress."; return false; }
+  if (appState.remoteOpActive) {
+    reportNotice(`${cantTitle(label)} yet`, "A remote operation is already in progress.");
+    return false;
+  }
   if (!isTauri()) {
     appState.status = "That action needs the desktop app (not the browser preview).";
     return false;
   }
   if (!appState.repo) {
-    appState.status = "Open a repository first.";
+    reportNotice(cantTitle(label), "Open a repository first.");
     return false;
   }
   // Capture before the FIRST attempt, not before the credentials prompt: a switch during
@@ -820,7 +836,7 @@ export const gitActions = {
     run(`Delete tag ${name}`, () => api.deleteTag(appState.repo, name)),
   fetch: () => {
     if (appState.repoLoading) {
-      appState.status = "Repository is still loading — try again in a moment.";
+      reportNotice("Can't fetch yet", "Repository is still loading — try again in a moment.");
       return Promise.resolve(false);
     }
     return run("Fetch", () => api.fetch(appState.repo));
@@ -952,7 +968,7 @@ export const gitActions = {
       return false;
     }
     if (!appState.repo) {
-      appState.status = "Open a repository first.";
+      reportNotice("Can't discard the hunk", "Open a repository first.");
       return false;
     }
     // State the LINE COUNT, not "this hunk": in Whole-file mode git emits one hunk
@@ -985,7 +1001,7 @@ export const gitActions = {
       return false;
     }
     if (!appState.repo) {
-      appState.status = "Open a repository first.";
+      reportNotice("Can't discard the lines", "Open a repository first.");
       return false;
     }
     const n = selected.length;
@@ -1023,7 +1039,7 @@ export const gitActions = {
       return false;
     }
     if (!appState.repo) {
-      appState.status = "Open a repository first.";
+      reportNotice("Can't amend the commit", "Open a repository first.");
       return false;
     }
     try {
@@ -1075,7 +1091,7 @@ export const gitActions = {
       return false;
     }
     if (!appState.repo) {
-      appState.status = "Open a repository first.";
+      reportNotice("Can't discard changes", "Open a repository first.");
       return false;
     }
     const n = paths.length;
@@ -1096,7 +1112,7 @@ export const gitActions = {
       return false;
     }
     if (!appState.repo) {
-      appState.status = "Open a repository first.";
+      reportNotice("Can't remove untracked files", "Open a repository first.");
       return false;
     }
     const n = paths.length;
@@ -1120,7 +1136,7 @@ export const gitActions = {
     // rather than reset the wrong branch.
     const current = appState.refsByKind.local.find((r) => r.isHead)?.name ?? null;
     if (u.branch !== current) {
-      appState.status = "Undo unavailable — the checked-out branch changed.";
+      reportNotice("Can't undo", "Undo unavailable — the checked-out branch changed.");
       appState.setLastUndo(null);
       return Promise.resolve(false);
     }
@@ -1140,7 +1156,10 @@ export const gitActions = {
       appState.status = "Squash merge needs the desktop app and an open repository.";
       return;
     }
-    if (appState.remoteOpActive || appState.isRewriting) return;
+    if (appState.remoteOpActive || appState.isRewriting) {
+      reportNotice("Can't squash merge yet", "Wait for the current remote operation or history rewrite to finish.");
+      return;
+    }
     appState.status = `Squash-merging ${reference}…`;
     try {
       const outcome = await api.merge(appState.repo, reference, false, true);
@@ -1171,7 +1190,7 @@ export const gitActions = {
     // Don't act on a stale remote/branch during the brief repo-switch load window
     // (remotesState/refsDetailed are kept from the previous repo until reload).
     if (appState.repoLoading) {
-      appState.status = "Repository is still loading — try again in a moment.";
+      reportNotice("Can't push yet", "Repository is still loading — try again in a moment.");
       return false;
     }
     if (forceWithLease) {
@@ -1245,7 +1264,7 @@ export const gitActions = {
   createPullRequest: async () => {
     const branch = appState.refsByKind.local.find((r) => r.isHead)?.name ?? null;
     if (!branch) {
-      appState.status = "No branch checked out — check out a branch to create a pull request.";
+      reportNotice("Can't create a pull request", "No branch checked out — check out a branch to create a pull request.");
       return;
     }
     // Candidate base branches: every local branch except the current one, with
@@ -1253,7 +1272,7 @@ export const gitActions = {
     // main/master by convention).
     const others = appState.refsByKind.local.map((r) => r.name).filter((n) => n !== branch);
     if (others.length === 0) {
-      appState.status = "No other local branch to use as the PR base.";
+      reportNotice("Can't create a pull request", "No other local branch to use as the PR base.");
       return;
     }
     // Only trust stats' default branch when it was loaded for THIS repo — the
