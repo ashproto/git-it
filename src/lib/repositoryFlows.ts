@@ -46,6 +46,7 @@ export async function openRepositoryAt(path: string): Promise<boolean> {
 }
 
 export async function openRepositoryFlow(initial?: string): Promise<void> {
+  // Before the picker: its Tauri call would throw in the browser preview and pop an error.
   if (!isTauri()) {
     appState.status = "Opening a repo needs the desktop app.";
     return;

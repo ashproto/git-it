@@ -76,6 +76,7 @@ it("notices overlapping creation without opening another picker", async () => {
 it("keeps desktop-preview guards status-only", async () => {
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   await openRepositoryFlow();
+  expect(mocks.pick).not.toHaveBeenCalled();
   expect(appState.status).toBe("Opening a repo needs the desktop app.");
   await createRepositoryFlow();
   expect(appState.status).toBe("Creating a repo needs the desktop app.");

@@ -39,5 +39,6 @@ it("reports a rejected write once, under the caller's title", async () => {
 it("reports a missing clipboard as a failure", async () => {
   vi.stubGlobal("navigator", {});
   await expect(copyText("abc123", TITLE)).resolves.toBe(false);
+  expect(mocks.reportError).toHaveBeenCalledOnce();
   expect(mocks.reportError).toHaveBeenCalledWith(TITLE, "Clipboard is unavailable.");
 });
