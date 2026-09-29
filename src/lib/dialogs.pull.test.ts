@@ -10,6 +10,7 @@ function openPull(upstream: string | null) {
     behind: 3,
     strategy: "merge",
     autostash: false,
+    offerDontAsk: true,
   });
 }
 
@@ -25,6 +26,7 @@ describe("pull options dialog", () => {
     expect(dialogs.state.behind).toBe(3);
     expect(dialogs.state.strategy).toBe("merge");
     expect(dialogs.state.autostash).toBe(false);
+    expect(dialogs.state.offerDontAsk).toBe(true);
     expect(dialogs.state.dontAsk).toBe(false);
 
     dialogs.setPullStrategy("rebase");
@@ -61,6 +63,7 @@ describe("pull options dialog", () => {
       behind: 0,
       strategy: "merge",
       autostash: false,
+      offerDontAsk: true,
     });
     dialogs.resolvePull(true);
     expect(dialogs.state.kind).toBe("pull"); // still open — the upstream no longer exists
@@ -77,6 +80,7 @@ describe("pull options dialog", () => {
       behind: 0,
       strategy: "merge",
       autostash: false,
+      offerDontAsk: true,
     });
     dialogs.resolvePull(true);
     expect(dialogs.state.kind).toBe("pull");

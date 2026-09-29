@@ -24,6 +24,7 @@ function openPull(upstream: string | null) {
     behind: 3,
     strategy: "rebase",
     autostash: true,
+    offerDontAsk: true,
   });
 }
 
@@ -57,6 +58,31 @@ describe("pull dialog", () => {
     pull?.click();
 
     await expect(pending).resolves.toEqual({ strategy: "ffOnly", autostash: true, dontAsk: true });
+    await unmount(modal);
+  });
+
+  it("offers no 'Don't ask again' when asking is already off", async () => {
+    // An ⌥-click with asking off still opens the options, but ticking it would change nothing.
+    const { target, modal } = mountModal();
+    const pending = dialogs.confirmPull({
+      branch: "main",
+      upstream: "origin/main",
+      upstreamGone: false,
+      ahead: 2,
+      behind: 3,
+      strategy: "rebase",
+      autostash: true,
+      offerDontAsk: false,
+    });
+    await tick();
+
+    expect(target.querySelector(".pull-autostash")).not.toBeNull();
+    expect(target.querySelector(".pull-dont-ask")).toBeNull();
+    expect(target.textContent).not.toContain("Don't ask again");
+    expect(target.textContent).not.toContain("Change this in Settings");
+
+    target.querySelector<HTMLButtonElement>(".actions button.primary")?.click();
+    await expect(pending).resolves.toEqual({ strategy: "rebase", autostash: true, dontAsk: false });
     await unmount(modal);
   });
 
@@ -135,6 +161,7 @@ describe("pull dialog", () => {
       behind: 0,
       strategy: "rebase",
       autostash: true,
+      offerDontAsk: true,
     });
     await tick();
 
@@ -171,6 +198,7 @@ describe("pull dialog", () => {
       behind: 0,
       strategy: "rebase",
       autostash: true,
+      offerDontAsk: true,
     });
     await tick();
 

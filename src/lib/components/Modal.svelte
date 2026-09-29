@@ -568,15 +568,19 @@
         />
         Stash &amp; reapply local changes
       </label>
-      <label class="backup-row pull-dont-ask">
-        <input
-          type="checkbox"
-          checked={dialogs.state.dontAsk}
-          disabled={!allowed}
-          onchange={(e) => dialogs.setPullDontAsk((e.currentTarget as HTMLInputElement).checked)}
-        />
-        <span>Don't ask again <span class="dont-ask-note">Change this in Settings</span></span>
-      </label>
+      <!-- Only while asking is on: after an ⌥-click with it off, ticking this would change
+           nothing. -->
+      {#if dialogs.state.offerDontAsk}
+        <label class="backup-row pull-dont-ask">
+          <input
+            type="checkbox"
+            checked={dialogs.state.dontAsk}
+            disabled={!allowed}
+            onchange={(e) => dialogs.setPullDontAsk((e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Don't ask again <span class="dont-ask-note">Change this in Settings</span></span>
+        </label>
+      {/if}
       <div class="actions">
         <button bind:this={pullCancelEl} type="button" onclick={() => dialogs.resolvePull(false)}>Cancel</button>
         <button

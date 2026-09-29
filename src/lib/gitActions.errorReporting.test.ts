@@ -5,7 +5,7 @@ import { errors } from "./errors.svelte";
 import { gitActions, reloadGraph } from "./gitActions";
 import { SAMPLE_GRAPH } from "./graph/sample";
 import { appState } from "./store.svelte";
-import type { RemoteOutcome, RepoStatus } from "./types";
+import type { Ref, RemoteOutcome, RepoStatus } from "./types";
 
 // Setting appState.repo under the stubbed Tauri window persists lastActiveRepo via the real plugin, which rejects and warns in Node; this stand-in keeps output clean.
 vi.mock("@tauri-apps/plugin-store", () => ({
@@ -22,6 +22,14 @@ const repoStatus: RepoStatus = {
   conflicted: 0,
   operation: null,
 };
+
+// The checked-out main tracks an upstream that exists. Pull's pre-retry check only lets a
+// sign-in retry through on such a branch, and every reload must keep it that way.
+const sha = SAMPLE_GRAPH[0].sha;
+const refs: Ref[] = [
+  { name: "main", kind: "local", target_sha: sha, upstream: "origin/main", ahead: 0, behind: 0 },
+  { name: "origin/main", kind: "remote", target_sha: sha, upstream: null, ahead: 0, behind: 0 },
+];
 
 const DIVERGENT = [
   "From /tmp/origin",
@@ -43,18 +51,12 @@ beforeEach(() => {
   appState.setPullStrategy("merge");
   appState.setPullAutostash(false);
   appState.setPullAskEveryTime(false);
-  // And pull's pre-retry check only lets a sign-in retry through for a checked-out branch
-  // whose upstream exists, so give main one.
   appState.setRepoStatus(repoStatus);
-  const sha = SAMPLE_GRAPH[0].sha;
-  appState.setRefsDetailed([
-    { name: "main", kind: "local", target_sha: sha, upstream: "origin/main", ahead: 0, behind: 0 },
-    { name: "origin/main", kind: "remote", target_sha: sha, upstream: null, ahead: 0, behind: 0 },
-  ]);
+  appState.setRefsDetailed(refs);
   vi.spyOn(api, "loadGraph").mockResolvedValue(SAMPLE_GRAPH);
   vi.spyOn(api, "repoStatus").mockResolvedValue(repoStatus);
   vi.spyOn(api, "workingChanges").mockResolvedValue([]);
-  vi.spyOn(api, "listRefs").mockResolvedValue([]);
+  vi.spyOn(api, "listRefs").mockResolvedValue(refs);
   vi.spyOn(api, "remotes").mockResolvedValue([]);
   vi.spyOn(api, "listWorktrees").mockResolvedValue([]);
 });

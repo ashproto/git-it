@@ -47,6 +47,43 @@ const originMainRef: Ref = {
   behind: 0,
 };
 
+// Each of these changes exactly one thing a pull is bound to, so a test can only pass
+// through the guard for that one thing.
+
+// Checks out `feature`, which tracks the same upstream as main: only the branch differs.
+function checkOutFeature() {
+  appState.setRefsDetailed([mainRef, { ...mainRef, name: "feature" }, originMainRef]);
+  appState.setRepoStatus({ ...repoStatus, head: { ...repoStatus.head, branch: "feature" } });
+}
+
+// Points main at upstream/main, which exists too: only the upstream's name differs.
+function retrackMainToUpstream() {
+  appState.setRefsDetailed([
+    { ...mainRef, upstream: "upstream/main" },
+    originMainRef,
+    { ...originMainRef, name: "upstream/main" },
+  ]);
+}
+
+// Switches to another repository that has finished loading, with the same main → origin/main
+// names: only the repository differs.
+function switchToLoadedOtherRepo() {
+  appState.repo = "/tmp/git-it-pull-flow-other";
+  appState.setRepoLoading(false);
+  appState.setRepoStatus(repoStatus);
+  appState.setRefsDetailed([mainRef, originMainRef]);
+}
+
+// Holds the settings-hydration barrier until the returned function is called.
+function holdHydration(): () => void {
+  let release: () => void = () => {};
+  const hydration = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.spyOn(appState, "waitForPullSettingsHydration").mockReturnValue(hydration);
+  return () => release();
+}
+
 beforeEach(() => {
   vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
   appState.repo = REPO;
@@ -117,6 +154,7 @@ describe("gitActions.pull", () => {
     expect(dialogs.state.behind).toBe(3);
     expect(dialogs.state.strategy).toBe("merge");
     expect(dialogs.state.autostash).toBe(false);
+    expect(dialogs.state.offerDontAsk).toBe(true);
     expect(api.pull).not.toHaveBeenCalled();
 
     dialogs.setPullStrategy("rebase");
@@ -134,6 +172,9 @@ describe("gitActions.pull", () => {
   it("shows the options on alt-click even when asking is off", async () => {
     const pulling = gitActions.pull({ showOptions: true });
     await vi.waitFor(() => expect(dialogs.state.kind).toBe("pull"));
+    if (dialogs.state.kind !== "pull") throw new Error("pull dialog did not open");
+    // Asking is already off, so "Don't ask again" would change nothing: it isn't offered.
+    expect(dialogs.state.offerDontAsk).toBe(false);
     dialogs.resolvePull(true);
 
     await expect(pulling).resolves.toBe(true);
@@ -183,11 +224,7 @@ describe("gitActions.pull", () => {
   });
 
   it("reads preferences only after the store has hydrated", async () => {
-    let release: () => void = () => {};
-    const hydration = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    vi.spyOn(appState, "waitForPullSettingsHydration").mockReturnValue(hydration);
+    const release = holdHydration();
 
     const pulling = gitActions.pull();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -200,9 +237,37 @@ describe("gitActions.pull", () => {
     await expect(pulling).resolves.toBe(true);
     expect(api.pull).toHaveBeenCalledWith(REPO, "ffOnly", false, expect.any(Function), undefined);
   });
+
+  it("refuses when the repository changed while the settings were loading", async () => {
+    const release = holdHydration();
+
+    const pulling = gitActions.pull();
+    switchToLoadedOtherRepo();
+    release();
+
+    await expect(pulling).resolves.toBe(false);
+    expect(api.pull).not.toHaveBeenCalled();
+    expect(appState.status).toBe("Repository changed while that dialog was open — nothing was done.");
+  });
+
+  it("refuses when the repository is loading again once the settings have loaded", async () => {
+    const release = holdHydration();
+
+    const pulling = gitActions.pull();
+    appState.repo = "/tmp/git-it-pull-flow-other";
+    appState.repo = REPO; // same identity as when Pull was clicked, but loading again
+    release();
+
+    await expect(pulling).resolves.toBe(false);
+    expect(api.pull).not.toHaveBeenCalled();
+    expect(errors.current).toMatchObject({ kind: "notice", title: "Can't pull yet" });
+  });
 });
 
 describe("a confirmed pull is bound to what the dialog showed", () => {
+  const CHANGED_WHILE_OPEN =
+    "The checked-out branch or its upstream changed while that dialog was open — nothing was done.";
+
   // Opens the dialog, then watches every preference setter. The returned assertion
   // proves the refusal wrote nothing and pulled nothing.
   async function openDialog() {
@@ -228,12 +293,13 @@ describe("a confirmed pull is bound to what the dialog showed", () => {
   it("refuses when the repository changed while the dialog was open", async () => {
     const { pulling, expectNothingHappened } = await openDialog();
 
-    appState.repo = "/tmp/git-it-pull-flow-other";
+    switchToLoadedOtherRepo();
     dialogs.setPullStrategy("ffOnly");
     dialogs.resolvePull(true);
 
     await expect(pulling).resolves.toBe(false);
     expectNothingHappened();
+    expect(appState.status).toBe("Repository changed while that dialog was open — nothing was done.");
   });
 
   it("refuses when the repository is loading again after an A → B → A switch", async () => {
@@ -252,7 +318,7 @@ describe("a confirmed pull is bound to what the dialog showed", () => {
   it("refuses when the checked-out branch changed while the dialog was open", async () => {
     const { pulling, expectNothingHappened } = await openDialog();
 
-    appState.setRepoStatus({ ...repoStatus, head: { ...repoStatus.head, branch: "feature" } });
+    checkOutFeature();
     dialogs.resolvePull(true);
 
     await expect(pulling).resolves.toBe(false);
@@ -260,19 +326,23 @@ describe("a confirmed pull is bound to what the dialog showed", () => {
     expect(errors.current).toMatchObject({
       kind: "notice",
       title: "Can't pull",
-      headline: "The checked-out branch changed while that dialog was open — nothing was done.",
+      headline: CHANGED_WHILE_OPEN,
     });
   });
 
   it("refuses when the branch's upstream changed while the dialog was open", async () => {
     const { pulling, expectNothingHappened } = await openDialog();
 
-    appState.setRefsDetailed([{ ...mainRef, upstream: "upstream/main" }]);
+    retrackMainToUpstream();
     dialogs.resolvePull(true);
 
     await expect(pulling).resolves.toBe(false);
     expectNothingHappened();
-    expect(errors.current).toMatchObject({ kind: "notice", title: "Can't pull" });
+    expect(errors.current).toMatchObject({
+      kind: "notice",
+      title: "Can't pull",
+      headline: CHANGED_WHILE_OPEN,
+    });
   });
 
   it("refuses when the upstream was pruned while the dialog was open", async () => {
@@ -294,6 +364,8 @@ describe("a confirmed pull is bound to what the dialog showed", () => {
 
 describe("a sign-in retry is bound to the same branch and upstream", () => {
   const creds = { username: "u", password: "p" };
+  const CHANGED_DURING_SIGN_IN =
+    "The checked-out branch or its upstream changed while you were signing in — nothing was pulled.";
 
   // Clicks Pull (confirming Rebase + autostash when the dialog asks), fails the first
   // attempt on authentication, and waits for the sign-in prompt.
@@ -329,7 +401,7 @@ describe("a sign-in retry is bound to the same branch and upstream", () => {
 
   it("refuses to retry when the checked-out branch changed during sign-in", async () => {
     const { pulling } = await untilSignIn({ ask: true });
-    appState.setRepoStatus({ ...repoStatus, head: { ...repoStatus.head, branch: "feature" } });
+    checkOutFeature();
     dialogs.resolveCredentials(creds);
 
     await expect(pulling).resolves.toBe(false);
@@ -337,14 +409,27 @@ describe("a sign-in retry is bound to the same branch and upstream", () => {
     expect(errors.current).toMatchObject({
       kind: "notice",
       title: "Can't pull",
-      headline: "The checked-out branch changed while you were signing in — nothing was pulled.",
+      headline: CHANGED_DURING_SIGN_IN,
     });
     // The stale authentication failure is not reported on top.
     expect(errors.pending).toBe(1);
     expect(errors.last).toBeNull();
-    expect(appState.status).toBe(
-      "The checked-out branch changed while you were signing in — nothing was pulled.",
-    );
+    expect(appState.status).toBe(CHANGED_DURING_SIGN_IN);
+  });
+
+  it("refuses to retry when only the upstream changed during sign-in", async () => {
+    const { pulling } = await untilSignIn({ ask: true });
+    retrackMainToUpstream();
+    dialogs.resolveCredentials(creds);
+
+    await expect(pulling).resolves.toBe(false);
+    expect(api.pull).toHaveBeenCalledTimes(1);
+    expect(errors.current).toMatchObject({
+      kind: "notice",
+      title: "Can't pull",
+      headline: CHANGED_DURING_SIGN_IN,
+    });
+    expect(errors.last).toBeNull();
   });
 
   it("refuses to retry when the repository is loading again after sign-in", async () => {
@@ -361,7 +446,7 @@ describe("a sign-in retry is bound to the same branch and upstream", () => {
 
   it("refuses to retry after a branch change when asking is off, too", async () => {
     const { pulling } = await untilSignIn({ ask: false });
-    appState.setRepoStatus({ ...repoStatus, head: { ...repoStatus.head, branch: "feature" } });
+    checkOutFeature();
     dialogs.resolveCredentials(creds);
 
     await expect(pulling).resolves.toBe(false);
@@ -369,7 +454,25 @@ describe("a sign-in retry is bound to the same branch and upstream", () => {
     expect(errors.current).toMatchObject({
       kind: "notice",
       title: "Can't pull",
-      headline: "The checked-out branch changed while you were signing in — nothing was pulled.",
+      headline: CHANGED_DURING_SIGN_IN,
+    });
+    expect(errors.last).toBeNull();
+  });
+
+  it("gives the real reason when a branch that never had an upstream needs a sign-in", async () => {
+    // Asking is off, so no dialog stopped the first attempt, and git fetches (and fails
+    // authentication) before it would notice there is nothing to merge. Nothing changed:
+    // the refusal must not say it did.
+    appState.setRefsDetailed([{ ...mainRef, upstream: null, ahead: 0, behind: 0 }, originMainRef]);
+    const { pulling } = await untilSignIn({ ask: false });
+    dialogs.resolveCredentials(creds);
+
+    await expect(pulling).resolves.toBe(false);
+    expect(api.pull).toHaveBeenCalledTimes(1);
+    expect(errors.current).toMatchObject({
+      kind: "notice",
+      title: "Can't pull",
+      headline: "main has no upstream branch — push it first to set one.",
     });
     expect(errors.last).toBeNull();
   });

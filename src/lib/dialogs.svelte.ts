@@ -112,6 +112,8 @@ type DialogState =
       behind: number;
       strategy: PullStrategy;
       autostash: boolean;
+      // false when asking is already off (an ⌥-click): "Don't ask again" would change nothing
+      offerDontAsk: boolean;
       dontAsk: boolean;
       resolve: (v: PullDialogResult | null) => void;
     };
@@ -357,6 +359,7 @@ function makeDialogs() {
       behind: number;
       strategy: PullStrategy;
       autostash: boolean;
+      offerDontAsk: boolean;
     }): Promise<PullDialogResult | null> {
       settlePending();
       return new Promise((resolve) => {
@@ -369,6 +372,7 @@ function makeDialogs() {
           behind: opts.behind,
           strategy: opts.strategy,
           autostash: opts.autostash,
+          offerDontAsk: opts.offerDontAsk,
           dontAsk: false,
           resolve,
         };

@@ -1191,25 +1191,44 @@ export const gitActions = {
     // The branch and upstream this pull is for. The dialog shows them; a confirmed pull and
     // a sign-in retry each refuse if they have moved on since.
     const bound = pullContext(appState.repoStatus, appState.refsDetailed);
-    if (appState.pullAskEveryTime || opts?.showOptions) {
-      const choice = await dialogs.confirmPull({ ...bound, strategy, autostash });
-      // Bind the confirmed pull to what the dialog showed: same repository, not loading
-      // again, same branch and upstream — all before any preference write or pull.
-      if (!choice || !sameRepo() || pullStillLoading()) return false;
+    // Re-checked after each later await (the dialog, a sign-in prompt): the same branch must
+    // still track the same upstream, and that upstream must still exist. Otherwise it says
+    // why — `changed` when the branch or its upstream moved — and returns false.
+    const stillBound = (changed: string): boolean => {
       const now = pullContext(appState.repoStatus, appState.refsDetailed);
       if (now.branch !== bound.branch || now.upstream !== bound.upstream) {
-        reportNotice(
-          "Can't pull",
-          "The checked-out branch changed while that dialog was open — nothing was done.",
-        );
+        reportNotice("Can't pull", changed);
         return false;
       }
-      // Same names, but a fetch may have pruned the upstream while the dialog was open.
+      // Same names, but a fetch may have pruned the upstream meanwhile — or, when no dialog
+      // ran, there may never have been one to pull from.
       if (!canPull(now.branch, now.upstream, now.upstreamGone)) {
         reportNotice(
           "Can't pull",
           pullStatusLine(now.branch, now.upstream, now.ahead, now.behind, now.upstreamGone),
         );
+        return false;
+      }
+      return true;
+    };
+    if (appState.pullAskEveryTime || opts?.showOptions) {
+      const choice = await dialogs.confirmPull({
+        ...bound,
+        strategy,
+        autostash,
+        // With asking already off (an ⌥-click), "Don't ask again" would change nothing.
+        offerDontAsk: appState.pullAskEveryTime,
+      });
+      // Bind the confirmed pull to what the dialog showed: same repository, not loading
+      // again, still bound — all before any preference write or pull.
+      if (
+        !choice ||
+        !sameRepo() ||
+        pullStillLoading() ||
+        !stillBound(
+          "The checked-out branch or its upstream changed while that dialog was open — nothing was done.",
+        )
+      ) {
         return false;
       }
       strategy = choice.strategy;
@@ -1222,24 +1241,14 @@ export const gitActions = {
       pullLabel(strategy),
       (onLine, creds) => api.pull(appState.repo, strategy, autostash, onLine, creds),
       {
-        // The sign-in prompt is one more await: retry with the credentials just entered
-        // only while the branch and upstream are still the ones this pull was for.
-        beforeRetry: () => {
-          if (pullStillLoading()) return false;
-          const now = pullContext(appState.repoStatus, appState.refsDetailed);
-          if (
-            now.branch !== bound.branch ||
-            now.upstream !== bound.upstream ||
-            !canPull(now.branch, now.upstream, now.upstreamGone)
-          ) {
-            reportNotice(
-              "Can't pull",
-              "The checked-out branch changed while you were signing in — nothing was pulled.",
-            );
-            return false;
-          }
-          return true;
-        },
+        // The sign-in prompt is one more await: retry with the credentials just entered only
+        // if the repository isn't loading again and the pull is still bound (same branch and
+        // upstream, and that upstream still exists).
+        beforeRetry: () =>
+          !pullStillLoading() &&
+          stillBound(
+            "The checked-out branch or its upstream changed while you were signing in — nothing was pulled.",
+          ),
       },
     );
   },
