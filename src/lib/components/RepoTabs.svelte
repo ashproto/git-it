@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
   import { api } from "../api";
+  import { reportError, reportNotice } from "../errors.svelte";
   import { createRepositoryFlow, openRepositoryFlow } from "../repositoryFlows";
   import { reorder, insertionIndex } from "../reorder";
   import { flip } from "svelte/animate";
@@ -205,11 +206,15 @@
       appState.status = "Opening a repo needs the desktop app.";
       return;
     }
-    if (!(await api.isGitRepo(path))) {
-      appState.status = `${path} is not a git repo.`;
-      return;
+    try {
+      if (!(await api.isGitRepo(path))) {
+        reportNotice("Not a git repository", `${path} is not a git repo.`);
+        return;
+      }
+      appState.openRepo(path);
+    } catch (e) {
+      reportError("Couldn't open the repository", e);
     }
-    appState.openRepo(path);
   }
 </script>
 

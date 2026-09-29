@@ -1,6 +1,6 @@
 import { api, pickRepoFolder } from "./api";
 import { dialogs } from "./dialogs.svelte";
-import { reportError } from "./errors.svelte";
+import { reportError, reportNotice } from "./errors.svelte";
 import { refreshRefs } from "./gitActions";
 import { appState } from "./store.svelte";
 
@@ -28,13 +28,17 @@ export async function openRepositoryFlow(initial?: string): Promise<void> {
     appState.status = "Opening a repo needs the desktop app.";
     return;
   }
-  const path = await pickRepoFolder(initial);
-  if (!path) return;
-  if (!(await api.isGitRepo(path))) {
-    appState.status = `${path} is not a git repo.`;
-    return;
+  try {
+    const path = await pickRepoFolder(initial);
+    if (!path) return;
+    if (!(await api.isGitRepo(path))) {
+      reportNotice("Not a git repository", `${path} is not a git repo.`);
+      return;
+    }
+    appState.openRepo(path);
+  } catch (e) {
+    reportError("Couldn't open the repository", e);
   }
-  appState.openRepo(path);
 }
 
 export async function createRepositoryFlow(initial?: string): Promise<void> {
@@ -43,7 +47,7 @@ export async function createRepositoryFlow(initial?: string): Promise<void> {
     return;
   }
   if (creating) {
-    appState.status = "A repository is already being created.";
+    reportNotice("Can't create a repository yet", "A repository is already being created.");
     return;
   }
   creating = true;

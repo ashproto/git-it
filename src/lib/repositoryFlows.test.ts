@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   newRepository: vi.fn(),
   confirm: vi.fn(),
   reportError: vi.fn(),
+  reportNotice: vi.fn(),
   refreshRefs: vi.fn(),
   openRepo: vi.fn(),
   setBusyOp: vi.fn(),
@@ -31,7 +32,10 @@ vi.mock("./dialogs.svelte", () => ({
     confirm: mocks.confirm,
   },
 }));
-vi.mock("./errors.svelte", () => ({ reportError: mocks.reportError }));
+vi.mock("./errors.svelte", () => ({
+  reportError: mocks.reportError,
+  reportNotice: mocks.reportNotice,
+}));
 vi.mock("./gitActions", () => ({ refreshRefs: mocks.refreshRefs }));
 vi.mock("./store.svelte", () => ({
   appState: {
@@ -70,6 +74,7 @@ beforeEach(() => {
   });
   mocks.confirm.mockReset().mockResolvedValue(true);
   mocks.reportError.mockReset();
+  mocks.reportNotice.mockReset();
   mocks.refreshRefs.mockReset().mockResolvedValue(undefined);
   mocks.openRepo.mockReset().mockImplementation((path: string) => {
     mocks.appState.repo = path;
@@ -93,7 +98,10 @@ describe("repository creation flow", () => {
     await createRepositoryFlow();
 
     expect(mocks.pickRepoFolder).toHaveBeenCalledOnce();
-    expect(mocks.appState.status).toBe("A repository is already being created.");
+    expect(mocks.reportNotice).toHaveBeenCalledWith(
+      "Can't create a repository yet",
+      "A repository is already being created.",
+    );
     finishPicker(null);
     await first;
   });

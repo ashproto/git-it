@@ -1,0 +1,50 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { mount, tick, unmount } from "svelte";
+import { api } from "../api";
+import { appState } from "../store.svelte";
+import { errors } from "../errors.svelte";
+import RepoList from "./RepoList.svelte";
+import RepoTabs from "./RepoTabs.svelte";
+
+vi.mock("@tauri-apps/plugin-store", () => ({
+  load: vi.fn(async () => ({ get: vi.fn(), set: vi.fn(), save: vi.fn() })),
+}));
+let dispose: (() => Promise<void>) | undefined;
+beforeEach(() => {
+  Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+  appState.openRepo("/tmp/recent");
+  appState.closeRepo("/tmp/recent");
+});
+afterEach(async () => {
+  await dispose?.();
+  dispose = undefined;
+  errors.reset();
+  appState.forgetRepo("/tmp/recent");
+  document.body.replaceChildren();
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+});
+
+it.each([RepoList, RepoTabs])("reports rejected recent validation and notices non-repositories", async (Component) => {
+  const probe = vi.spyOn(api, "isGitRepo").mockRejectedValueOnce(new Error("fatal: permission denied")).mockResolvedValue(false);
+  const target = document.createElement("div");
+  document.body.appendChild(target);
+  const panel = mount(Component, { target });
+  dispose = () => unmount(panel);
+  await tick();
+  for (const kind of ["error", "notice"]) {
+    target.querySelector<HTMLButtonElement>(".add-btn")?.click();
+    await tick();
+    const recent = target.querySelector<HTMLButtonElement>('button[title="/tmp/recent"]');
+    expect(recent).not.toBeNull();
+    recent!.click();
+    await vi.waitFor(() => expect(errors.current?.kind).toBe(kind));
+    expect(errors.pending).toBe(1);
+    expect(errors.current?.title).toBe(kind === "error" ? "Couldn't open the repository" : "Not a git repository");
+    expect(appState.statusIsError).toBe(kind === "error");
+    errors.reset();
+  }
+  expect(probe).toHaveBeenCalledTimes(2);
+  expect(appState.openRepos).not.toContain("/tmp/recent");
+});
