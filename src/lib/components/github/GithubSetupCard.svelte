@@ -1,23 +1,32 @@
 <script lang="ts">
   import type { GhAvailability } from "../../types";
-  let { availability, onretry }: { availability: GhAvailability; onretry: () => void } = $props();
+  import LoadError from "../LoadError.svelte";
+  let { availability, availabilityError = null, onretry }: {
+    availability: GhAvailability | null;
+    availabilityError?: string | null;
+    onretry: () => void | Promise<unknown>;
+  } = $props();
 </script>
 
 <div class="setup">
-  {#if availability.kind === "NotInstalled"}
-    <h2>GitHub CLI not found</h2>
-    <p>The GitHub screen uses the <code>gh</code> command-line tool. Install it, then retry.</p>
-    <pre>brew install gh</pre>
-    <a href="https://cli.github.com" target="_blank" rel="noreferrer">cli.github.com ↗</a>
-  {:else if availability.kind === "NotAuthed"}
-    <h2>Sign in to GitHub</h2>
-    <p>Authenticate the <code>gh</code> CLI once in your terminal, then retry.</p>
-    <pre>gh auth login</pre>
-  {:else if availability.kind === "NoRemote"}
-    <h2>No GitHub remote</h2>
-    <p>This repository has no <code>github.com</code> remote, so there's nothing to show here.</p>
+  {#if availabilityError !== null}
+    <LoadError what="the GitHub screen" error={availabilityError} onRetry={onretry} />
+  {:else}
+    {#if availability?.kind === "NotInstalled"}
+      <h2>GitHub CLI not found</h2>
+      <p>The GitHub screen uses the <code>gh</code> command-line tool. Install it, then retry.</p>
+      <pre>brew install gh</pre>
+      <a href="https://cli.github.com" target="_blank" rel="noreferrer">cli.github.com ↗</a>
+    {:else if availability?.kind === "NotAuthed"}
+      <h2>Sign in to GitHub</h2>
+      <p>Authenticate the <code>gh</code> CLI once in your terminal, then retry.</p>
+      <pre>gh auth login</pre>
+    {:else if availability?.kind === "NoRemote"}
+      <h2>No GitHub remote</h2>
+      <p>This repository has no <code>github.com</code> remote, so there's nothing to show here.</p>
+    {/if}
+    <button class="retry" type="button" onclick={onretry}>Retry</button>
   {/if}
-  <button class="retry" type="button" onclick={onretry}>Retry</button>
 </div>
 
 <style>

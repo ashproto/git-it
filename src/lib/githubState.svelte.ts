@@ -1,5 +1,6 @@
 import { appState } from "./store.svelte";
 import { api } from "./api";
+import { errorText } from "./errorReport";
 import { parseGithubRemote } from "./github/remote";
 import { fetchActivityWithRetry } from "./github/activity";
 import type {
@@ -74,6 +75,8 @@ function isTauri(): boolean {
 
 function makeGithubState() {
   let availability = $state<GhAvailability | null>(null);
+  let availabilityError = $state<string | null>(null);
+  let availabilitySequence = 0;
   let availLoading = $state(false);
   let stats = $state<GhRepoStats | null>(null);
   let statsError = $state<GithubError | null>(null);
@@ -191,9 +194,10 @@ function makeGithubState() {
     }
   }
 
-  async function ensure(repo: string) {
+  async function ensure(repo: string, keepError = false) {
     if (!isTauri()) return; // gh paths are desktop-only
-    if (loadedRepo === repo && availability) return;
+    if (loadedRepo === repo && (availability || availLoading || availabilityError !== null)) return;
+    const sequence = ++availabilitySequence;
     loadedRepo = repo;
     pulls.reset();
     issues.reset();
@@ -210,15 +214,20 @@ function makeGithubState() {
     prDiff.reset();
     issueDetail.reset();
     availability = null;
+    if (!keepError) availabilityError = null;
     stats = null;
     statsError = null;
     availLoading = true;
     try {
-      availability = await api.githubAvailability(repo);
-    } catch {
-      availability = { kind: "NotInstalled" };
+      const result = await api.githubAvailability(repo);
+      if (sequence !== availabilitySequence || loadedRepo !== repo) return;
+      availabilityError = null;
+      availability = result;
+    } catch (e) {
+      if (sequence !== availabilitySequence || loadedRepo !== repo) return;
+      availabilityError = errorText(e);
     } finally {
-      availLoading = false;
+      if (sequence === availabilitySequence && loadedRepo === repo) availLoading = false;
     }
     if (availability && availability.kind === "Ok") {
       void loadStats(repo);
@@ -238,6 +247,9 @@ function makeGithubState() {
     },
     get availability() {
       return availability;
+    },
+    get availabilityError() {
+      return availabilityError;
     },
     get availLoading() {
       return availLoading;
@@ -386,9 +398,10 @@ function makeGithubState() {
       if (!isTauri()) return;
       // A different (or never-loaded) repo gets a full reload with reset.
       if (loadedRepo !== repo || !availability) {
+        const retrying = loadedRepo === repo && availabilityError !== null;
         loadedRepo = null;
         reloadNonce++;
-        return ensure(repo);
+        return ensure(repo, retrying);
       }
       // Same repo: soft refresh — keep stale data on screen while re-fetching.
       reloadNonce++;

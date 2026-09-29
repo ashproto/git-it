@@ -56,7 +56,7 @@
 <section class="gh">
   {#if !isTauri()}
     <p class="note">The GitHub screen is available in the desktop app only.</p>
-  {:else if githubState.availLoading && !avail}
+  {:else if githubState.availLoading && !avail && githubState.availabilityError === null}
     <GithubSkeleton variant="header" />
   {:else if avail && avail.kind === "Ok"}
     <GithubHeader
@@ -85,8 +85,12 @@
     {:else if githubState.activeTab === "insights"}
       <GithubInsights />
     {/if}
-  {:else if avail}
-    <GithubSetupCard availability={avail} onretry={() => appState.repo && githubState.refresh(appState.repo)} />
+  {:else if avail || githubState.availabilityError !== null}
+    <GithubSetupCard
+      availability={avail}
+      availabilityError={githubState.availabilityError}
+      onretry={() => (appState.repo ? githubState.refresh(appState.repo) : undefined)}
+    />
   {/if}
   <GithubActionModal />
 </section>
