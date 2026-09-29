@@ -3,6 +3,7 @@
   import { appState } from "../store.svelte";
   import { reportError, reportNotice } from "../errors.svelte";
   import { errorText } from "../errorReport";
+  import { rewriteFailureText } from "../rewriteFailure";
   import { api } from "../api";
   import { prerequisites } from "../prerequisites.svelte";
   import { toEpochTz } from "../dates";
@@ -79,7 +80,7 @@
     } catch (e) {
       if (stderr.length) {
         appState.appendLog(`[rewrite] stopped: ${errorText(e)}`);
-        reportError("Rewrite failed", stderr.join("\n"));
+        reportError("Rewrite failed", rewriteFailureText(stderr));
       } else {
         appState.appendLog("[rewrite] stopped.");
         reportError("Rewrite failed", e);

@@ -78,9 +78,15 @@ it("reports the streamed stderr rather than the exit code, keeping progress logg
   expect(appState.newDates.size).toBe(1);
   expect(appState.isRewriting).toBe(false);
 });
-it("headlines a streamed Python traceback with its exception", async () => {
+it("headlines a streamed Python traceback with its exception, not fast-import's epilogue", async () => {
   await failRewrite(
-    ["[stderr] Traceback (most recent call last):", '[stderr]   File "x.py", line 1, in <module>', "[stderr] ValueError: bad date"],
+    [
+      "[stderr] Traceback (most recent call last):",
+      '[stderr]   File "x.py", line 1, in <module>',
+      "[stderr] ValueError: bad date",
+      "[stderr] fatal: stream ends early",
+      "[stderr] fast-import: dumping crash report to .git/fast_import_crash_12345",
+    ],
     "git-filter-repo exited with code Some(1)",
   );
   expect(errors.current).toMatchObject({
@@ -89,6 +95,7 @@ it("headlines a streamed Python traceback with its exception", async () => {
     headline: "ValueError: bad date",
     output: 'Traceback (most recent call last):\n  File "x.py", line 1, in <module>\nValueError: bad date',
   });
+  expect(appState.logLines).toContain("[stderr] fatal: stream ends early");
 });
 it("reports the rejection once when the rewrite fails before anything streams", async () => {
   await failRewrite([], new Error("fatal: rewrite denied"));
