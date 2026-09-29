@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { appState } from "../store.svelte";
+  import { reportError } from "../errors.svelte";
+  import LoadError from "./LoadError.svelte";
   import { api } from "../api";
   import type { BundleInfo, SafetyRef } from "../types";
   import CollapsiblePanel from "./CollapsiblePanel.svelte";
@@ -13,28 +16,67 @@
   let tab = $state<"bundles" | "safety">("bundles");
   let bundles = $state<BundleInfo[]>([]);
   let safetyRefs = $state<SafetyRef[]>([]);
+  // Set when a list's last load failed, so the panel says so instead of "No bundles yet.".
+  // Wrapped so that a null/undefined rejection is still truthy.
+  let bundlesError = $state<{ error: unknown } | null>(null);
+  let safetyError = $state<{ error: unknown } | null>(null);
+  // True once a list has loaded for this repository. A refresh keeps the current list on
+  // screen; only the repo-switch effect below resets these.
+  let bundlesLoaded = $state(false);
+  let safetyLoaded = $state(false);
+  // Bumped per request; a response from a superseded request is dropped.
+  let bundlesSequence = 0;
+  let safetySequence = 0;
   let selectedBundle = $state<string | null>(null);
   let selectedRefs = $state<Set<string>>(new Set());
 
-  // Refresh bundles whenever the repo changes — only in Tauri.
+  // Reset selections on repo switch — `selectedBundle` is a bare path and `deleteRefs` takes
+  // names, so a selection carried over would delete the PREVIOUS repo's bundle or refs —
+  // and refresh the active safety list too.
   $effect(() => {
-    if (isTauri() && appState.repo) refreshBundles();
+    const repo = appState.repo;
+    selectedBundle = null;
+    selectedRefs = new Set();
+    bundles = [];
+    safetyRefs = [];
+    bundlesLoaded = false;
+    safetyLoaded = false;
+    bundlesError = null;
+    safetyError = null;
+    if (isTauri() && repo) {
+      void refreshBundles();
+      if (untrack(() => tab) === "safety") void refreshSafetyRefs();
+    }
   });
 
   async function refreshBundles() {
     if (!isTauri() || !appState.repo) return;
+    const repo = appState.repo;
+    const sequence = ++bundlesSequence;
     try {
-      bundles = await api.listBundles(appState.repo);
+      const result = await api.listBundles(repo);
+      if (sequence !== bundlesSequence || repo !== appState.repo) return;
+      bundles = result;
+      bundlesLoaded = true;
+      bundlesError = null;
     } catch (e) {
-      appState.status = `List bundles failed: ${e}`;
+      if (sequence !== bundlesSequence || repo !== appState.repo) return;
+      bundlesError = { error: e };
     }
   }
   async function refreshSafetyRefs() {
     if (!isTauri() || !appState.repo) return;
+    const repo = appState.repo;
+    const sequence = ++safetySequence;
     try {
-      safetyRefs = await api.listSafetyRefs(appState.repo);
+      const result = await api.listSafetyRefs(repo);
+      if (sequence !== safetySequence || repo !== appState.repo) return;
+      safetyRefs = result;
+      safetyLoaded = true;
+      safetyError = null;
     } catch (e) {
-      appState.status = `List safety refs failed: ${e}`;
+      if (sequence !== safetySequence || repo !== appState.repo) return;
+      safetyError = { error: e };
     }
   }
 
@@ -44,7 +86,7 @@
       appState.appendLog(`[bundle] saved ${p}`);
       await refreshBundles();
     } catch (e) {
-      appState.status = `Bundle failed: ${e}`;
+      reportError("Couldn't create the bundle", e);
     }
   }
 
@@ -56,7 +98,7 @@
       await refreshBundles();
       selectedBundle = null;
     } catch (e) {
-      appState.status = `Delete bundle failed: ${e}`;
+      reportError("Couldn't delete the bundle", e);
     }
   }
 
@@ -66,7 +108,7 @@
       const out = await api.fetchBundle(appState.repo, selectedBundle);
       appState.appendLog(`[fetch-bundle] ${out}`);
     } catch (e) {
-      appState.status = `Fetch bundle failed: ${e}`;
+      reportError("Couldn't fetch from the bundle", e);
     }
   }
 
@@ -86,7 +128,7 @@
       selectedRefs = new Set();
       await refreshSafetyRefs();
     } catch (e) {
-      appState.status = `Delete refs failed: ${e}`;
+      reportError("Couldn't delete the safety refs", e);
     }
   }
 
@@ -100,7 +142,7 @@
       );
       await refreshSafetyRefs();
     } catch (e) {
-      appState.status = `Delete refs failed: ${e}`;
+      reportError("Couldn't delete all safety refs", e);
     }
   }
 
@@ -114,6 +156,8 @@
 <CollapsiblePanel title="Backups" collapsed {bare}>
   {#if !isTauri()}
     <p class="note">Desktop app only — backups are not available in the browser preview.</p>
+  {:else if !appState.repo}
+    <p class="note">Open a repository to see backups.</p>
   {:else}
     <div class="mode-tabs">
       <button
@@ -138,9 +182,14 @@
       <button type="button" class="primary" onclick={createBundleNow}>Create bundle now</button>
       <button type="button" onclick={refreshBundles}>Refresh</button>
       <span class="spacer"></span>
-      <button type="button" onclick={fetchBundleNow} disabled={!selectedBundle}>Fetch refs</button>
-      <button type="button" onclick={deleteBundleNow} disabled={!selectedBundle}>Delete</button>
+      <button type="button" onclick={fetchBundleNow} disabled={!selectedBundle || bundlesError !== null}>Fetch refs</button>
+      <button type="button" onclick={deleteBundleNow} disabled={!selectedBundle || bundlesError !== null}>Delete</button>
     </div>
+    {#if bundlesError}
+      <LoadError what="the bundles" error={bundlesError.error} onRetry={refreshBundles} />
+    {:else if !bundlesLoaded}
+      <p class="note">Loading bundles…</p>
+    {:else}
     <ul class="list">
       {#each bundles as b}
         <li class:selected={selectedBundle === b.path}>
@@ -153,6 +202,7 @@
         <li class="empty">No bundles yet. Click "Create bundle now".</li>
       {/each}
     </ul>
+    {/if}
   {:else}
     <div class="row">
       <button type="button" onclick={refreshSafetyRefs}>Refresh</button>
@@ -160,12 +210,17 @@
       <button
         type="button"
         onclick={deleteSelectedRefs}
-        disabled={selectedRefs.size === 0}>Delete selected</button
+        disabled={selectedRefs.size === 0 || safetyError !== null}>Delete selected</button
       >
-      <button type="button" onclick={deleteAllRefs} disabled={safetyRefs.length === 0}
+      <button type="button" onclick={deleteAllRefs} disabled={safetyRefs.length === 0 || safetyError !== null}
         >Delete all</button
       >
     </div>
+    {#if safetyError}
+      <LoadError what="the safety refs" error={safetyError.error} onRetry={refreshSafetyRefs} />
+    {:else if !safetyLoaded}
+      <p class="note">Loading safety refs…</p>
+    {:else}
     <ul class="list">
       {#each safetyRefs as r}
         <li class:selected={selectedRefs.has(r.name)}>
@@ -178,6 +233,7 @@
         <li class="empty">No safety refs from past rewrites.</li>
       {/each}
     </ul>
+    {/if}
     {/if}
   {/if}
 </CollapsiblePanel>
