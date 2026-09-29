@@ -276,7 +276,8 @@ fn outcome(repo: &Path, ok: bool, msg: String) -> RemoteOutcome {
 }
 
 /// Pull from the configured upstream with an explicit `strategy` (see `PullStrategy`),
-/// optionally `--autostash`ing local changes around it.
+/// optionally `--autostash`ing local changes around it. A pull whose autostash re-apply
+/// conflicted still updates the branch, but reports `ok: false`.
 /// `GIT_TERMINAL_PROMPT=0` + `GIT_EDITOR=true` so git never blocks waiting for input.
 ///
 /// When `username` AND `password` are both `Some`, credentials are written to `0600`
@@ -327,6 +328,23 @@ pub fn pull(
     }
 
     let (ok, msg) = result?;
+    // git exits 0 even when re-applying the autostash conflicted (from `--autostash` or the
+    // user's merge.autoStash / rebase.autoStash): the files are left unmerged and the local
+    // changes stay in the stash. git won't start a pull over unmerged files, so any now came
+    // from that re-apply. No merge or rebase is in progress for the conflict view to finish,
+    // so this is a plain failure, not `conflicted`.
+    let unmerged = ok
+        && crate::ops_merge::conflicted_files(repo)
+            .map(|f| !f.is_empty())
+            .unwrap_or(false);
+    if unmerged {
+        // Last, and the only `error:` line, so the error popup makes it the headline.
+        // `msg` already ends in a newline: stream() terminates every line.
+        let message = msg
+            + "error: The pull completed, but your local changes conflicted when they were \
+               re-applied. They're safe in the stash.";
+        return Ok(RemoteOutcome { ok: false, auth_failed: false, conflicted: false, message });
+    }
     Ok(outcome(repo, ok, msg))
 }
 
@@ -948,10 +966,9 @@ mod tests {
 
     // ── Pull strategies — real diverged clones ───────────────────────────────
 
-    /// Bare origin + two clones whose `main` branches have DIVERGED. Clone A pushed a
-    /// commit that rewrites line 1 of `f.txt`; clone B has its own commit (a new file,
-    /// so a merge is clean) that origin lacks. Returns (bare, a, b); tests pull in B.
-    fn diverged_clones(tag: &str) -> (PathBuf, TempRepo, TempRepo) {
+    /// Bare origin + two clones where B is only BEHIND: after B cloned, clone A pushed a
+    /// commit that rewrites line 1 of `f.txt`. Returns (bare, a, b); tests pull in B.
+    fn behind_clones(tag: &str) -> (PathBuf, TempRepo, TempRepo) {
         let bare = TempRepo::new_bare(bare_path(tag));
         let a = TempRepo::new_clone(bare.to_str().unwrap(), bare_path(&format!("a-{tag}")));
         a.write_file("f.txt", "line1\nline2\nline3\n");
@@ -961,12 +978,23 @@ mod tests {
 
         // B clones AFTER the base push, so its `main` tracks origin/main from the start.
         let b = TempRepo::new_clone(bare.to_str().unwrap(), bare_path(&format!("b-{tag}")));
+        // Pin, in B's LOCAL config, what a GLOBAL config could change about its pulls.
+        // Tests that exercise such config override these per test.
+        b.git(&["config", "merge.autoStash", "false"]);
+        b.git(&["config", "rebase.autoStash", "false"]);
+        b.git(&["config", "merge.ff", "true"]);
 
         a.write_file("f.txt", "LINE1\nline2\nline3\n");
         a.git(&["add", "f.txt"]);
         a.git(&["commit", "-q", "-m", "remote edit"]);
         a.git(&["push", "-q", "origin", "main"]);
+        (bare, a, b)
+    }
 
+    /// `behind_clones`, plus a commit of B's own (a new file, so a merge is clean) that
+    /// origin lacks, so the two `main` branches have DIVERGED.
+    fn diverged_clones(tag: &str) -> (PathBuf, TempRepo, TempRepo) {
+        let (bare, a, b) = behind_clones(tag);
         b.write_file("local.txt", "local\n");
         b.git(&["add", "local.txt"]);
         b.git(&["commit", "-q", "-m", "local commit"]);
@@ -979,6 +1007,20 @@ mod tests {
             .split_whitespace()
             .count()
             - 1
+    }
+
+    #[test]
+    fn pull_merge_reconciles_a_diverged_branch_without_pull_config() {
+        // The user's original failure: with no pull.* keys, a pull that names no strategy
+        // refuses a diverged branch ("Need to specify how to reconcile divergent branches").
+        let (bare, _a, b) = diverged_clones("merge-no-pull-cfg");
+        let (has_pull_keys, _) = b.git_may_fail(&["config", "--local", "--get-regexp", r"^pull\."]);
+        assert!(!has_pull_keys, "this test needs a repo config with no pull.* keys");
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
+        assert!(r.ok, "merge pull should succeed; msg={}", r.message);
+        assert_eq!(head_parent_count(&b), 2, "a diverged merge pull creates a merge commit");
+        let _ = fs::remove_dir_all(&bare);
     }
 
     #[test]
@@ -1017,6 +1059,37 @@ mod tests {
             "the local commit should sit directly on top of origin/main"
         );
         assert_eq!(b.git_stdout(&["log", "-1", "--format=%s"]), "local commit");
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn pull_rebase_replays_local_commit_despite_pull_ff_only_config() {
+        let (bare, _a, b) = diverged_clones("rebase-ff-only");
+        b.git(&["config", "pull.ff", "only"]);
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Rebase, false, None, None, &st, &noop_line).unwrap();
+        assert!(r.ok, "--rebase must win over pull.ff=only; msg={}", r.message);
+        assert_eq!(head_parent_count(&b), 1, "a rebase pull keeps history linear");
+        assert_eq!(
+            b.git_stdout(&["rev-parse", "HEAD^"]),
+            b.git_stdout(&["rev-parse", "origin/main"]),
+            "the local commit should sit directly on top of origin/main"
+        );
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn pull_ff_only_fast_forwards_a_branch_that_is_only_behind() {
+        let (bare, _a, b) = behind_clones("ff-only-behind");
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::FfOnly, false, None, None, &st, &noop_line).unwrap();
+        assert!(r.ok, "ff-only pull should fast-forward; msg={}", r.message);
+        assert_eq!(
+            b.git_stdout(&["rev-parse", "HEAD"]),
+            b.git_stdout(&["rev-parse", "origin/main"]),
+            "a fast-forward moves HEAD to the remote tip without a commit of its own"
+        );
+        assert_eq!(fs::read_to_string(b.path.join("f.txt")).unwrap(), "LINE1\nline2\nline3\n");
         let _ = fs::remove_dir_all(&bare);
     }
 
@@ -1066,6 +1139,76 @@ mod tests {
             "LINE1\nline2\nLINE3-local\n",
             "the remote's line 1 and the local line 3 edit should both survive"
         );
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    // ── Autostash re-apply conflicts ─────────────────────────────────────────
+
+    /// Pinned verbatim: the error popup makes this final line its headline.
+    const AUTOSTASH_CONFLICT_LINE: &str = "error: The pull completed, but your local changes \
+        conflicted when they were re-applied. They're safe in the stash.";
+
+    /// git exits 0 when re-applying the autostash conflicts; the pull must still fail.
+    fn assert_autostash_conflict_reported(b: &TempRepo, r: &RemoteOutcome) {
+        assert!(!r.ok, "a conflicted re-apply is not a clean pull; msg={}", r.message);
+        assert!(!r.conflicted, "no merge or rebase is in progress to abort or continue");
+        assert!(!r.auth_failed);
+        assert!(
+            r.message.ends_with(&format!("\n{AUTOSTASH_CONFLICT_LINE}")),
+            "the line must come last, after git's own output; msg={}",
+            r.message
+        );
+        let prefixed: Vec<&str> = r
+            .message
+            .lines()
+            .filter(|l| l.starts_with("error:") || l.starts_with("fatal:"))
+            .collect();
+        assert_eq!(prefixed, [AUTOSTASH_CONFLICT_LINE], "it must be the only error: line");
+        assert!(
+            r.message.contains("Applying autostash resulted in conflicts."),
+            "git's own lines stay in the raw output; msg={}",
+            r.message
+        );
+        assert_eq!(b.git_stdout(&["status", "--porcelain", "--", "f.txt"]), "UU f.txt");
+        assert_eq!(
+            b.git_stdout(&["stash", "list"]).lines().count(),
+            1,
+            "the local edit is kept in the stash"
+        );
+    }
+
+    #[test]
+    fn pull_merge_autostash_reports_a_conflicted_reapply() {
+        let (bare, _a, b) = diverged_clones("autostash-conflict-merge");
+        // Dirty edit on line 1, the line the remote's commit rewrote.
+        b.write_file("f.txt", "line1-local\nline2\nline3\n");
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Merge, true, None, None, &st, &noop_line).unwrap();
+        assert_autostash_conflict_reported(&b, &r);
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn pull_rebase_autostash_reports_a_conflicted_reapply() {
+        let (bare, _a, b) = diverged_clones("autostash-conflict-rebase");
+        // Dirty edit on line 1, the line the remote's commit rewrote.
+        b.write_file("f.txt", "line1-local\nline2\nline3\n");
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Rebase, true, None, None, &st, &noop_line).unwrap();
+        assert_autostash_conflict_reported(&b, &r);
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn pull_reports_a_conflicted_reapply_from_the_merge_autostash_config() {
+        let (bare, _a, b) = diverged_clones("autostash-conflict-config");
+        // Git It asks for no autostash here; the repo's own config does.
+        b.git(&["config", "merge.autoStash", "true"]);
+        // Dirty edit on line 1, the line the remote's commit rewrote.
+        b.write_file("f.txt", "line1-local\nline2\nline3\n");
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
+        assert_autostash_conflict_reported(&b, &r);
         let _ = fs::remove_dir_all(&bare);
     }
 }
