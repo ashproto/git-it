@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
+  import { reportNotice } from "../errors.svelte";
   import { contextMenu, type MenuItem } from "../contextMenu.svelte";
   import { dialogs } from "../dialogs.svelte";
   import { gitActions, jumpToRefWithLoad } from "../gitActions";
@@ -79,7 +80,7 @@
   // read nothing and write nothing.
   function refActionsBlocked(): boolean {
     if (!appState.repoLoading) return false;
-    appState.status = "Still opening the repository — try that again in a moment.";
+    reportNotice("Repository still opening", "Still opening the repository — try that again in a moment.");
     return true;
   }
 
@@ -95,7 +96,7 @@
     const opened = appState.repo;
     return () => {
       if (appState.repo === opened) return true;
-      appState.status = "Repository changed while that dialog was open — nothing was done.";
+      reportNotice("Repository changed", "Repository changed while that dialog was open — nothing was done.");
       return false;
     };
   }
