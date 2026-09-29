@@ -897,6 +897,14 @@ export const gitActions = {
   // Both paths already route through the destructive machinery (auto-backup +
   // confirm dialog + graph reload), so no confirm/reload is added here.
   setCommitMessage: async (commit: GraphCommit, message: string): Promise<void> => {
+    if (!isTauri()) {
+      appState.status = "That action needs the desktop app (not the browser preview).";
+      return;
+    }
+    if (!appState.repo) {
+      reportNotice("Can't reword this commit", "Open a repository first.");
+      return;
+    }
     if (commit.refs.some((r) => r.is_head)) {
       // HEAD: amend in place. Do NOT reset author/committer dates.
       await gitActions.amend(message, false, false);
@@ -904,24 +912,30 @@ export const gitActions = {
     }
     // Non-HEAD reword: needs a linear base..HEAD replay, so reject merges/root.
     if (commit.parents.length === 0) {
-      appState.status = "Can't reword the root commit here.";
+      reportNotice("Can't reword this commit", "Can't reword the root commit here.");
       return;
     }
     if (commit.parents.length > 1) {
-      appState.status = "Can't reword a merge commit here.";
+      reportNotice("Can't reword this commit", "Can't reword a merge commit here.");
       return;
     }
     const base = commit.parents[0];
-    // A reword replays base..HEAD with `pick`, and git refuses `pick <merge>`,
-    // so refuse up-front if a merge sits anywhere in that range (otherwise the
-    // rebase fails and strands the repo mid-operation).
-    if ((await api.countMergesInRange(appState.repo, base)) > 0) {
-      appState.status = "Can't reword across a merge commit yet.";
+    let preview: Awaited<ReturnType<typeof api.rebaseTodoPreview>>;
+    try {
+      // A reword replays base..HEAD with `pick`, and git refuses `pick <merge>`,
+      // so refuse up-front if a merge sits anywhere in that range (otherwise the
+      // rebase fails and strands the repo mid-operation).
+      if ((await api.countMergesInRange(appState.repo, base)) > 0) {
+        reportNotice("Can't reword this commit", "Can't reword across a merge commit yet.");
+        return;
+      }
+      preview = await api.rebaseTodoPreview(appState.repo, base);
+    } catch (e) {
+      reportError("Couldn't reword the commit", e);
       return;
     }
-    const preview = await api.rebaseTodoPreview(appState.repo, base);
     if (!preview.some((e) => e.sha === commit.sha)) {
-      appState.status = "Can't reword that commit — it isn't in the current branch's history.";
+      reportNotice("Can't reword this commit", "Can't reword that commit — it isn't in the current branch's history.");
       return;
     }
     const steps: RebaseStep[] = preview.map((e) => ({
