@@ -284,7 +284,9 @@ export const api = {
     channel.onmessage = onEvent;
     return invoke<RemoteOutcome>("pull", {
       repo,
-      rebase,
+      // Bridge until the pull settings land (Task 3): the command takes a strategy now.
+      strategy: rebase ? "rebase" : "merge",
+      autostash: false,
       username: creds?.username ?? null,
       password: creds?.password ?? null,
       onEvent: channel,

@@ -1,5 +1,5 @@
 use crate::git_ops;
-use crate::types::{RemoteInfo, RemoteOutcome};
+use crate::types::{PullStrategy, RemoteInfo, RemoteOutcome};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -275,7 +275,8 @@ fn outcome(repo: &Path, ok: bool, msg: String) -> RemoteOutcome {
     RemoteOutcome { ok: false, auth_failed: false, conflicted, message: msg }
 }
 
-/// Pull from the configured upstream. Uses `--rebase` or `--no-edit` (merge).
+/// Pull from the configured upstream with an explicit `strategy` (see `PullStrategy`),
+/// optionally `--autostash`ing local changes around it.
 /// `GIT_TERMINAL_PROMPT=0` + `GIT_EDITOR=true` so git never blocks waiting for input.
 ///
 /// When `username` AND `password` are both `Some`, credentials are written to `0600`
@@ -283,7 +284,8 @@ fn outcome(repo: &Path, ok: bool, msg: String) -> RemoteOutcome {
 /// on argv, in URLs, or persisted. The scratch dir is deleted after the op.
 pub fn pull(
     repo: &Path,
-    rebase: bool,
+    strategy: PullStrategy,
+    autostash: bool,
     username: Option<&str>,
     password: Option<&str>,
     state: &RemoteState,
@@ -294,10 +296,21 @@ pub fn pull(
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_EDITOR", "true")
         .arg("pull");
-    if rebase {
-        c.arg("--rebase");
-    } else {
-        c.arg("--no-edit");
+    // Every pull names its strategy, so git never asks how to reconcile a diverged
+    // branch, and the explicit flag wins over the repo's own pull.rebase / pull.ff.
+    match strategy {
+        PullStrategy::Merge => {
+            c.args(["--no-rebase", "--no-edit"]);
+        }
+        PullStrategy::Rebase => {
+            c.arg("--rebase");
+        }
+        PullStrategy::FfOnly => {
+            c.arg("--ff-only");
+        }
+    }
+    if autostash {
+        c.arg("--autostash");
     }
 
     // Set up askpass only when both credentials are present.
@@ -455,6 +468,22 @@ mod tests {
             (o.status.success(), stderr)
         }
 
+        /// Run git and return its trimmed stdout — for inspecting history after a pull.
+        fn git_stdout(&self, args: &[&str]) -> String {
+            let o = Command::new("git")
+                .current_dir(&self.path)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                o.status.success(),
+                "git {:?}: {}",
+                args,
+                String::from_utf8_lossy(&o.stderr)
+            );
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        }
+
         fn write_file(&self, name: &str, content: &str) {
             fs::write(self.path.join(name), content).unwrap();
         }
@@ -545,7 +574,8 @@ mod tests {
         assert!(push2.ok, "second push; msg={}", push2.message);
 
         let state_b = RemoteState::default();
-        let pull_result = pull(&clone_b.path, false, None, None, &state_b, &noop_line).unwrap();
+        let pull_result =
+            pull(&clone_b.path, PullStrategy::Merge, false, None, None, &state_b, &noop_line).unwrap();
         assert!(pull_result.ok, "pull should succeed; msg={}", pull_result.message);
         let content = fs::read_to_string(clone_b.path.join("hello.txt")).unwrap();
         assert_eq!(content, "hello world\n");
@@ -649,7 +679,8 @@ mod tests {
         clone_b.git(&["commit", "-m", "B edit"]);
 
         let sb = RemoteState::default();
-        let pull_result = pull(&clone_b.path, false, None, None, &sb, &noop_line).unwrap();
+        let pull_result =
+            pull(&clone_b.path, PullStrategy::Merge, false, None, None, &sb, &noop_line).unwrap();
         // Pull stops on conflict → ok=false, conflicted=true.
         assert!(!pull_result.ok, "conflicting pull should not be ok");
         assert!(pull_result.conflicted, "should report conflicted; msg={}", pull_result.message);
@@ -913,5 +944,128 @@ mod tests {
         cmd2.arg("--version");
         let (ok2, _) = stream(cmd2, &state, &|_| {}).expect("second stream failed");
         assert!(ok2, "second git --version should succeed");
+    }
+
+    // ── Pull strategies — real diverged clones ───────────────────────────────
+
+    /// Bare origin + two clones whose `main` branches have DIVERGED. Clone A pushed a
+    /// commit that rewrites line 1 of `f.txt`; clone B has its own commit (a new file,
+    /// so a merge is clean) that origin lacks. Returns (bare, a, b); tests pull in B.
+    fn diverged_clones(tag: &str) -> (PathBuf, TempRepo, TempRepo) {
+        let bare = TempRepo::new_bare(bare_path(tag));
+        let a = TempRepo::new_clone(bare.to_str().unwrap(), bare_path(&format!("a-{tag}")));
+        a.write_file("f.txt", "line1\nline2\nline3\n");
+        a.git(&["add", "f.txt"]);
+        a.git(&["commit", "-q", "-m", "base"]);
+        a.git(&["push", "-q", "-u", "origin", "main"]);
+
+        // B clones AFTER the base push, so its `main` tracks origin/main from the start.
+        let b = TempRepo::new_clone(bare.to_str().unwrap(), bare_path(&format!("b-{tag}")));
+
+        a.write_file("f.txt", "LINE1\nline2\nline3\n");
+        a.git(&["add", "f.txt"]);
+        a.git(&["commit", "-q", "-m", "remote edit"]);
+        a.git(&["push", "-q", "origin", "main"]);
+
+        b.write_file("local.txt", "local\n");
+        b.git(&["add", "local.txt"]);
+        b.git(&["commit", "-q", "-m", "local commit"]);
+        (bare, a, b)
+    }
+
+    /// Number of parents of HEAD: 1 on a linear history, 2 after a merge commit.
+    fn head_parent_count(r: &TempRepo) -> usize {
+        r.git_stdout(&["rev-list", "--parents", "-n", "1", "HEAD"])
+            .split_whitespace()
+            .count()
+            - 1
+    }
+
+    #[test]
+    fn pull_merge_creates_merge_commit_despite_pull_ff_only_config() {
+        let (bare, _a, b) = diverged_clones("merge-ff-only");
+        b.git(&["config", "pull.ff", "only"]);
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
+        assert!(r.ok, "merge pull should succeed; msg={}", r.message);
+        assert_eq!(head_parent_count(&b), 2, "a diverged merge pull creates a merge commit");
+        assert_eq!(fs::read_to_string(b.path.join("f.txt")).unwrap(), "LINE1\nline2\nline3\n");
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn pull_merge_creates_merge_commit_despite_pull_rebase_config() {
+        let (bare, _a, b) = diverged_clones("merge-rebase-cfg");
+        b.git(&["config", "pull.rebase", "true"]);
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
+        assert!(r.ok, "merge pull should succeed; msg={}", r.message);
+        assert_eq!(head_parent_count(&b), 2, "--no-rebase must win over pull.rebase=true");
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn pull_rebase_replays_local_commit_on_the_remote_tip() {
+        let (bare, _a, b) = diverged_clones("rebase");
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Rebase, false, None, None, &st, &noop_line).unwrap();
+        assert!(r.ok, "rebase pull should succeed; msg={}", r.message);
+        assert_eq!(head_parent_count(&b), 1, "a rebase pull keeps history linear");
+        assert_eq!(
+            b.git_stdout(&["rev-parse", "HEAD^"]),
+            b.git_stdout(&["rev-parse", "origin/main"]),
+            "the local commit should sit directly on top of origin/main"
+        );
+        assert_eq!(b.git_stdout(&["log", "-1", "--format=%s"]), "local commit");
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn pull_ff_only_refuses_a_diverged_branch() {
+        let (bare, _a, b) = diverged_clones("ff-only");
+        // Even a repo that asks for rebases gets the fast-forward-only refusal.
+        b.git(&["config", "pull.rebase", "true"]);
+        let before = b.git_stdout(&["rev-parse", "HEAD"]);
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::FfOnly, false, None, None, &st, &noop_line).unwrap();
+        assert!(!r.ok, "ff-only must refuse a diverged branch; msg={}", r.message);
+        assert!(!r.auth_failed);
+        assert!(!r.conflicted, "a refusal leaves no conflicts behind");
+        assert!(r.message.contains("Not possible to fast-forward"), "msg={}", r.message);
+        assert_eq!(b.git_stdout(&["rev-parse", "HEAD"]), before, "HEAD must not move");
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn pull_autostash_keeps_a_dirty_edit_that_would_block_the_merge() {
+        let (bare, _a, b) = diverged_clones("autostash");
+        // Dirty edit on line 3; the remote commit rewrote line 1 of the same file.
+        b.write_file("f.txt", "line1\nline2\nLINE3-local\n");
+
+        let st = RemoteState::default();
+        let refused =
+            pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
+        assert!(!refused.ok, "an overlapping dirty file blocks a plain merge pull");
+        assert!(
+            refused.message.contains("would be overwritten by merge"),
+            "msg={}",
+            refused.message
+        );
+        assert_eq!(
+            fs::read_to_string(b.path.join("f.txt")).unwrap(),
+            "line1\nline2\nLINE3-local\n",
+            "a refused pull leaves the dirty edit untouched"
+        );
+
+        let st2 = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Merge, true, None, None, &st2, &noop_line).unwrap();
+        assert!(r.ok, "autostash pull should succeed; msg={}", r.message);
+        assert_eq!(head_parent_count(&b), 2);
+        assert_eq!(
+            fs::read_to_string(b.path.join("f.txt")).unwrap(),
+            "LINE1\nline2\nLINE3-local\n",
+            "the remote's line 1 and the local line 3 edit should both survive"
+        );
+        let _ = fs::remove_dir_all(&bare);
     }
 }

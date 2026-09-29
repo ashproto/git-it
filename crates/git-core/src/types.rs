@@ -238,3 +238,14 @@ pub struct RemoteOutcome {
     pub conflicted: bool,   // pull merge/rebase stopped on conflict → ConflictView
     pub message: String,
 }
+
+/// How `git pull` reconciles a branch that has diverged from its upstream. Every pull
+/// names one explicitly, so git's "Need to specify how to reconcile divergent branches"
+/// refusal cannot occur and the choice wins over the repo's own pull.rebase / pull.ff.
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PullStrategy {
+    Merge,
+    Rebase,
+    FfOnly,
+}

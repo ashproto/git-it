@@ -9,9 +9,9 @@ use git_core::ops_worktree;
 use git_core::rewrite;
 use git_core::types::{
     BundleInfo, Commit, ConflictEntry, DateMapping, GraphCommit, InitializeRepositoryResult,
-    OpOutcome, PrerequisiteCheck, RebaseOutcome, RebaseStep, Ref, ReflogEntry, RemoteInfo,
-    RemoteOutcome, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry, WorkingFile,
-    WorktreeInfo,
+    OpOutcome, PrerequisiteCheck, PullStrategy, RebaseOutcome, RebaseStep, Ref, ReflogEntry,
+    RemoteInfo, RemoteOutcome, RepoStatus, RewriteOptions, RewriteResult, SafetyRef, StashEntry,
+    WorkingFile, WorktreeInfo,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -530,7 +530,8 @@ pub fn remote_set_url(repo: String, name: String, url: String) -> Result<(), Str
 #[tauri::command]
 pub async fn pull(
     repo: String,
-    rebase: bool,
+    strategy: PullStrategy,
+    autostash: bool,
     username: Option<String>,
     password: Option<String>,
     on_event: Channel<String>,
@@ -542,7 +543,8 @@ pub async fn pull(
     tauri::async_runtime::spawn_blocking(move || {
         ops_remote::pull(
             &repo_path,
-            rebase,
+            strategy,
+            autostash,
             username.as_deref(),
             password.as_deref(),
             &st,
