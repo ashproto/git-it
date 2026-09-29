@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
   import { gitActions } from "../gitActions";
+  import { reportError } from "../errors.svelte";
 
   // Called after a successful message update — e.g. the modal closes itself.
   let { onDone }: { onDone?: () => void } = $props();
@@ -51,8 +52,8 @@
           originalMessage = m;
         }
       })
-      .catch(() => {
-        if (seededSha === sha) appState.status = "Couldn't load the commit message.";
+      .catch((e) => {
+        if (seededSha === sha) reportError("Couldn't load the commit message", e);
       })
       .finally(() => {
         if (seededSha === sha) loadingMessage = false;

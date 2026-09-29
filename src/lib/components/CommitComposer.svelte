@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
   import { gitActions } from "../gitActions";
+  import { reportError } from "../errors.svelte";
 
   // Commit message is composed of a single-line summary (subject) and an optional
   // multi-line description (body), joined as `subject\n\nbody` on commit — the git
@@ -87,9 +88,10 @@
           title = parts.title;
           body = parts.body;
         }
-      } catch {
+      } catch (e) {
         // Couldn't read HEAD's message — back out of amend cleanly.
         if (token === amendToken) {
+          reportError("Couldn't load the commit message", e);
           amend = false;
           title = draftTitle;
           body = draftBody;
