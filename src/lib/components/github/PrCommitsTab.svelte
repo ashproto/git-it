@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appState } from "../../store.svelte";
-  import { reportError } from "../../errors.svelte";
+  import { copyText } from "../../clipboard";
   import { parseISO, formatCommitDate } from "../../dates";
   import type { GhCommit } from "../../types";
 
@@ -25,17 +25,10 @@
   let copiedOid = $state<string | null>(null);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   async function copySha(oid: string) {
-    if (!navigator.clipboard) {
-      reportError("Couldn't copy the SHA", "Clipboard is unavailable.");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(oid);
+    if (await copyText(oid, "Couldn't copy the SHA")) {
       copiedOid = oid;
       clearTimeout(copiedTimer);
       copiedTimer = setTimeout(() => (copiedOid = null), 1200);
-    } catch (e) {
-      reportError("Couldn't copy the SHA", e);
     }
   }
 </script>

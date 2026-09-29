@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { appState } from "../store.svelte";
-  import { reportError } from "../errors.svelte";
+  import { copyText } from "../clipboard";
   import { graphView } from "../graphView.svelte";
   import { parseISO, formatCommitDate } from "../dates";
   import { contextMenu } from "../contextMenu.svelte";
@@ -324,20 +324,7 @@
         action: () => rebaseEditor.openWith(sha),
       },
       { separator: true },
-      {
-        label: "Copy SHA",
-        action: async () => {
-          if (!navigator.clipboard) {
-            reportError("Couldn't copy the SHA", "Clipboard is unavailable.");
-            return;
-          }
-          try {
-            await navigator.clipboard.writeText(sha);
-          } catch (e) {
-            reportError("Couldn't copy the SHA", e);
-          }
-        },
-      },
+      { label: "Copy SHA", action: () => void copyText(sha, "Couldn't copy the SHA") },
     ]);
   }
 

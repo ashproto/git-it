@@ -17,6 +17,7 @@ vi.mock("@tauri-apps/plugin-store", () => ({
   load: vi.fn(async () => ({ get: vi.fn(), set: vi.fn(), save: vi.fn() })),
 }));
 const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+const writeText = vi.fn();
 let dispose: (() => Promise<void>) | undefined;
 let target: HTMLDivElement;
 beforeEach(() => {
@@ -33,7 +34,8 @@ beforeEach(() => {
   vi.spyOn(api, "appsForFile").mockResolvedValue([{ name: "TextEdit", path: "/Applications/TextEdit.app" }]);
   vi.mocked(openPath).mockReset().mockRejectedValue(new Error("fatal: launch denied"));
   vi.mocked(revealItemInDir).mockReset().mockRejectedValue(new Error("fatal: launch denied"));
-  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error("fatal: copy denied")) } });
+  writeText.mockReset().mockRejectedValue(new Error("fatal: copy denied"));
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   target = document.createElement("div");
   document.body.appendChild(target);
 });
@@ -67,9 +69,23 @@ it.each([
   (label === "Open With" ? item.submenu![0] : item).action!();
   await vi.waitFor(() => expect(errors.current).toMatchObject({ kind: "error", title, headline: "launch denied" }));
   expect(errors.pending).toBe(1);
+  if (label === "Open") expect(openPath).toHaveBeenCalledWith("/tmp/repo/f.txt");
   if (label === "Open With") expect(openPath).toHaveBeenCalledWith("/tmp/repo/f.txt", "/Applications/TextEdit.app");
   if (label === "Show in Finder" && deleted) expect(openPath).toHaveBeenCalledWith("/tmp/repo");
   if (label === "Show in Finder" && !deleted) expect(revealItemInDir).toHaveBeenCalledWith("/tmp/repo/f.txt");
+});
+it("reports nothing when Open succeeds", async () => {
+  vi.mocked(openPath).mockResolvedValue(undefined);
+  appState.setWorkingChanges([{ path: "f.txt", status: "modified", staged: false, unstaged: true, untracked: false, conflicted: false }]);
+  const panel = mount(WorkingCopyView, { target });
+  dispose = () => unmount(panel);
+  await tick();
+  target.querySelector(".file-row")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  await vi.waitFor(() => expect(contextMenu.open).toBe(true));
+  contextMenu.items.find((item) => item.label === "Open")!.action!();
+  expect(openPath).toHaveBeenCalledWith("/tmp/repo/f.txt");
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(errors.pending).toBe(0);
 });
 it("keeps failed app discovery as silent submenu omission", async () => {
   vi.mocked(api.appsForFile).mockRejectedValue(new Error("discovery failed"));
@@ -89,6 +105,7 @@ it("reports Open Worktree Folder failure", async () => {
   target.querySelector(".worktree")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
   contextMenu.items.find((item) => item.label === "Open Worktree Folder")!.action!();
   await vi.waitFor(() => expect(errors.current?.title).toBe("Couldn't open the worktree folder"));
+  expect(openPath).toHaveBeenCalledWith("/tmp/linked");
 });
 it.each([false, true])("reports graph copy failure, missing clipboard=%s", async (missing) => {
   if (missing) Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
@@ -97,6 +114,8 @@ it.each([false, true])("reports graph copy failure, missing clipboard=%s", async
   await tick();
   target.querySelector('[id^="gc-row-"]')!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
   contextMenu.items.find((item) => item.label === "Copy SHA")!.action!();
+  // Checked before any await: WKWebView allows the write only inside the click.
+  if (!missing) expect(writeText).toHaveBeenCalledWith(SAMPLE_GRAPH[0].sha);
   await vi.waitFor(() => expect(errors.current).toMatchObject({ kind: "error", title: "Couldn't copy the SHA", headline: missing ? "Clipboard is unavailable." : "copy denied" }));
 });
 it.each([false, true])("reports PR copy failure without success feedback, missing clipboard=%s", async (missing) => {
@@ -105,5 +124,17 @@ it.each([false, true])("reports PR copy failure without success feedback, missin
   dispose = () => unmount(panel);
   target.querySelector<HTMLButtonElement>('[title="Copy full SHA"]')!.click();
   await vi.waitFor(() => expect(errors.current).toMatchObject({ kind: "error", title: "Couldn't copy the SHA", headline: missing ? "Clipboard is unavailable." : "copy denied" }));
+  // The report lands before copySha's await resumes; let it resume before checking the chip.
+  await new Promise((resolve) => setTimeout(resolve));
   expect(target.textContent).not.toContain("✓ copied");
+});
+it("shows PR copy success without a report", async () => {
+  writeText.mockResolvedValue(undefined);
+  const panel = mount(PrCommitsTab, { target, props: { commits: [{ oid: "a".repeat(40), message: "Subject", author: "A", committedDate: "2026-09-26T00:00:00Z" }] } });
+  dispose = () => unmount(panel);
+  target.querySelector<HTMLButtonElement>('[title="Copy full SHA"]')!.click();
+  // The full 40-character SHA, not the 7-character chip, written before any await.
+  expect(writeText).toHaveBeenCalledWith("a".repeat(40));
+  await vi.waitFor(() => expect(target.textContent).toContain("✓ copied"));
+  expect(errors.pending).toBe(0);
 });
