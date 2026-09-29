@@ -22,8 +22,11 @@ const status: RepoStatus = {
   operation: null,
 };
 const refs: Ref[] = [
-  { name: "main", kind: "local", target_sha: "a".repeat(40), upstream: "origin/main", ahead: 2, behind: 3 },
+  // Shares the local branch's name without being a local branch. It comes first so that a
+  // lookup ignoring the kind would pick it up.
   { name: "main", kind: "remote", target_sha: "b".repeat(40), upstream: null, ahead: 0, behind: 0 },
+  { name: "main", kind: "local", target_sha: "a".repeat(40), upstream: "origin/main", ahead: 2, behind: 3 },
+  { name: "origin/main", kind: "remote", target_sha: "b".repeat(40), upstream: null, ahead: 0, behind: 0 },
   { name: "lonely", kind: "local", target_sha: "c".repeat(40), upstream: null, ahead: 0, behind: 0 },
 ];
 
@@ -88,6 +91,13 @@ describe("pull dialog copy", () => {
     expect(canPull("main", null)).toBe(false);
     expect(canPull(null, null)).toBe(false);
   });
+
+  it("blocks a pull from an upstream the last fetch pruned", () => {
+    expect(pullStatusLine("feature", "origin/feature", 0, 0, true)).toBe(
+      "origin/feature no longer exists — push feature to recreate it.",
+    );
+    expect(canPull("feature", "origin/feature", true)).toBe(false);
+  });
 });
 
 describe("resolvePullStrategy (settings migration)", () => {
@@ -109,25 +119,75 @@ describe("resolvePullStrategy (settings migration)", () => {
 });
 
 describe("pullContext (what the dialog shows)", () => {
+  const onBranch = (branch: string): RepoStatus => ({ ...status, head: { ...status.head, branch } });
+  // The remote deleted this branch (typically a merged PR's), so the fetch pruned
+  // origin/feature, and its "[gone]" tracking parses to 0 ahead / 0 behind.
+  const feature: Ref = {
+    name: "feature",
+    kind: "local",
+    target_sha: "d".repeat(40),
+    upstream: "origin/feature",
+    ahead: 0,
+    behind: 0,
+  };
+
   it("takes the branch from the repository status and tracking data from the local ref", () => {
     expect(pullContext(status, refs)).toEqual({
       branch: "main",
       upstream: "origin/main",
+      upstreamGone: false,
       ahead: 2,
       behind: 3,
     });
     expect(pullContext({ ...status, head: { ...status.head, branch: "lonely" } }, refs)).toEqual({
       branch: "lonely",
       upstream: null,
+      upstreamGone: false,
       ahead: 0,
       behind: 0,
     });
   });
 
-  it("reports no branch for a detached HEAD, an unknown status, or an empty inventory", () => {
+  it("marks an upstream missing from the inventory as gone", () => {
+    expect(pullContext(onBranch("feature"), [...refs, feature])).toEqual({
+      branch: "feature",
+      upstream: "origin/feature",
+      upstreamGone: true,
+      ahead: 0,
+      behind: 0,
+    });
+  });
+
+  it("counts a local branch as a live upstream, but not a tag", () => {
+    // `git branch -u lonely` makes a local branch the upstream.
+    const topic: Ref = { ...feature, name: "topic", upstream: "lonely" };
+    expect(pullContext(onBranch("topic"), [...refs, topic]).upstreamGone).toBe(false);
+    const tag: Ref = { ...feature, name: "origin/feature", kind: "tag", upstream: null };
+    expect(pullContext(onBranch("feature"), [...refs, feature, tag]).upstreamGone).toBe(true);
+  });
+
+  it("reports no branch for a detached HEAD or an unknown status, and keeps the branch without an upstream for an empty inventory", () => {
     const detached = { ...status, head: { sha: "a".repeat(40), branch: null, detached: true } };
-    expect(pullContext(detached, refs)).toEqual({ branch: null, upstream: null, ahead: 0, behind: 0 });
-    expect(pullContext(null, refs)).toEqual({ branch: null, upstream: null, ahead: 0, behind: 0 });
-    expect(pullContext(status, [])).toEqual({ branch: "main", upstream: null, ahead: 0, behind: 0 });
+    expect(pullContext(detached, refs)).toEqual({
+      branch: null,
+      upstream: null,
+      upstreamGone: false,
+      ahead: 0,
+      behind: 0,
+    });
+    expect(pullContext(null, refs)).toEqual({
+      branch: null,
+      upstream: null,
+      upstreamGone: false,
+      ahead: 0,
+      behind: 0,
+    });
+    expect(pullContext(status, [])).toEqual({
+      branch: "main",
+      upstream: null,
+      upstreamGone: false,
+      ahead: 0,
+      behind: 0,
+    });
   });
 });

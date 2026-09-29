@@ -38,9 +38,13 @@ export function pullButtonTitle(askEveryTime: boolean, strategy: PullStrategy): 
     : `Pull (${PULL_STRATEGY_WORDS[strategy]}) — ⌥-click for options`;
 }
 
-// A pull needs a checked-out branch with an upstream to pull from.
-export function canPull(branch: string | null, upstream: string | null): boolean {
-  return branch !== null && upstream !== null;
+// A pull needs a checked-out branch with an upstream that still exists to pull from.
+export function canPull(
+  branch: string | null,
+  upstream: string | null,
+  upstreamGone = false,
+): boolean {
+  return branch !== null && upstream !== null && !upstreamGone;
 }
 
 export function pullDialogTitle(branch: string | null, upstream: string | null): string {
@@ -48,15 +52,18 @@ export function pullDialogTitle(branch: string | null, upstream: string | null):
 }
 
 // Status line under the title. Only non-zero counts are named; ahead/behind come from
-// the tracking ref, i.e. the last fetch, so say so.
+// the tracking ref, i.e. the last fetch, so say so. A gone upstream's counts read 0/0,
+// so it is ruled out before them.
 export function pullStatusLine(
   branch: string | null,
   upstream: string | null,
   ahead: number,
   behind: number,
+  upstreamGone = false,
 ): string {
   if (branch === null) return "No branch is checked out.";
   if (upstream === null) return `${branch} has no upstream branch — push it first to set one.`;
+  if (upstreamGone) return `${upstream} no longer exists — push ${branch} to recreate it.`;
   if (ahead > 0 && behind > 0) {
     return `${branch} is ${ahead} ahead, ${behind} behind ${upstream} as of the last fetch.`;
   }
@@ -77,6 +84,8 @@ export function resolvePullStrategy(saved: unknown, legacyRebase: unknown): Pull
 export type PullContext = {
   branch: string | null;
   upstream: string | null;
+  // The branch still names an upstream, but no such ref exists any more.
+  upstreamGone: boolean;
   ahead: number;
   behind: number;
 };
@@ -85,14 +94,19 @@ export type PullContext = {
 // (the repository status), NOT from graph decorations: a branch whose commit sits outside
 // the loaded page carries no `is_head` decoration and would wrongly read as "no branch".
 // Tracking data comes from the `list_refs` inventory entry for that local branch.
+// Fetch prunes, so a branch deleted on the remote (typically a merged PR's) leaves its
+// upstream name configured and its "[gone]" tracking read as 0/0, while the ref itself
+// drops out of the inventory. Any non-tag ref counts, since an upstream can be local.
 export function pullContext(status: RepoStatus | null, refs: Ref[]): PullContext {
   const branch = status && !status.head.detached ? status.head.branch : null;
   const tracking = branch
     ? (refs.find((r) => r.kind === "local" && r.name === branch) ?? null)
     : null;
+  const upstream = tracking?.upstream ?? null;
   return {
     branch,
-    upstream: tracking?.upstream ?? null,
+    upstream,
+    upstreamGone: upstream !== null && !refs.some((r) => r.kind !== "tag" && r.name === upstream),
     ahead: tracking?.ahead ?? 0,
     behind: tracking?.behind ?? 0,
   };
