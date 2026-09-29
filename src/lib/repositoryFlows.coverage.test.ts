@@ -39,9 +39,12 @@ it.each(["picker", "validation"])("reports a rejected %s once", async (site) => 
 });
 
 it("notices an ordinary non-repository result", async () => {
+  const open = vi.spyOn(appState, "openRepo").mockImplementation(() => {});
   mocks.isGitRepo.mockResolvedValue(false);
   await openRepositoryFlow();
+  expect(open).not.toHaveBeenCalled();
   expect(errors.current).toMatchObject({ kind: "notice", title: "Not a git repository", headline: "/tmp/recent is not a git repo." });
+  expect(errors.pending).toBe(1);
   expect(appState.status).toBe("/tmp/recent is not a git repo.");
   expect(appState.statusIsError).toBe(false);
 });

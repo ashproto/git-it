@@ -74,7 +74,6 @@ export function reportError(title: string, error: unknown, opts: { quiet?: boole
 
 /**
  * Explain why a click did nothing. Not an error: the status bar stays its normal colour.
- * Its callers arrive with refusal notices in a follow-up change; don't remove it as unused.
  */
 export function reportNotice(title: string, message: string): void {
   appState.status = message;

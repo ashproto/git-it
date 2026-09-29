@@ -23,22 +23,42 @@ function githubErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Open the repository at `path` if it is one. False means it wasn't opened and the user has
+ * already been told why, so the caller must not report again.
+ */
+export async function openRepositoryAt(path: string): Promise<boolean> {
+  if (!isTauri()) {
+    appState.status = "Opening a repo needs the desktop app.";
+    return false;
+  }
+  try {
+    if (!(await api.isGitRepo(path))) {
+      reportNotice("Not a git repository", `${path} is not a git repo.`);
+      return false;
+    }
+    appState.openRepo(path);
+    return true;
+  } catch (e) {
+    reportError("Couldn't open the repository", e);
+    return false;
+  }
+}
+
 export async function openRepositoryFlow(initial?: string): Promise<void> {
   if (!isTauri()) {
     appState.status = "Opening a repo needs the desktop app.";
     return;
   }
+  let path: string | null;
   try {
-    const path = await pickRepoFolder(initial);
-    if (!path) return;
-    if (!(await api.isGitRepo(path))) {
-      reportNotice("Not a git repository", `${path} is not a git repo.`);
-      return;
-    }
-    appState.openRepo(path);
+    path = await pickRepoFolder(initial);
   } catch (e) {
     reportError("Couldn't open the repository", e);
+    return;
   }
+  if (!path) return;
+  await openRepositoryAt(path);
 }
 
 export async function createRepositoryFlow(initial?: string): Promise<void> {

@@ -1,12 +1,6 @@
 <script lang="ts">
   import { appState } from "../store.svelte";
-  import { api } from "../api";
-  import { reportError, reportNotice } from "../errors.svelte";
-  import { createRepositoryFlow, openRepositoryFlow } from "../repositoryFlows";
-
-  function isTauri(): boolean {
-    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-  }
+  import { createRepositoryFlow, openRepositoryAt, openRepositoryFlow } from "../repositoryFlows";
 
   function basename(path: string): string {
     return path.split("/").filter(Boolean).pop() ?? path;
@@ -25,19 +19,7 @@
   }
 
   async function openRecentRepo(path: string) {
-    if (!isTauri()) {
-      appState.status = "Opening a repo needs the desktop app.";
-      return;
-    }
-    try {
-      if (!(await api.isGitRepo(path))) {
-        reportNotice("Not a git repository", `${path} is not a git repo.`);
-        return;
-      }
-      appState.openRepo(path);
-    } catch (e) {
-      reportError("Couldn't open the repository", e);
-    }
+    await openRepositoryAt(path);
   }
 </script>
 

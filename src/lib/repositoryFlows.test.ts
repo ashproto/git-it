@@ -189,3 +189,66 @@ describe("repository creation flow", () => {
     expect(mocks.refreshRefs).not.toHaveBeenCalled();
   });
 });
+
+describe("opening a repository by path", () => {
+  it("opens a git repository without a report", async () => {
+    const { openRepositoryAt } = await loadFlows();
+
+    await expect(openRepositoryAt("/projects/app")).resolves.toBe(true);
+
+    expect(mocks.isGitRepo).toHaveBeenCalledWith("/projects/app");
+    expect(mocks.openRepo).toHaveBeenCalledWith("/projects/app");
+    expect(mocks.reportNotice).not.toHaveBeenCalled();
+    expect(mocks.reportError).not.toHaveBeenCalled();
+  });
+
+  it("gives a notice, not an error, for a folder that isn't a repository", async () => {
+    mocks.isGitRepo.mockResolvedValue(false);
+    const { openRepositoryAt } = await loadFlows();
+
+    await expect(openRepositoryAt("/projects/app")).resolves.toBe(false);
+
+    expect(mocks.reportNotice).toHaveBeenCalledWith(
+      "Not a git repository",
+      "/projects/app is not a git repo.",
+    );
+    expect(mocks.reportError).not.toHaveBeenCalled();
+    expect(mocks.openRepo).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed repository check once", async () => {
+    const error = new Error("fatal: permission denied");
+    mocks.isGitRepo.mockRejectedValue(error);
+    const { openRepositoryAt } = await loadFlows();
+
+    await expect(openRepositoryAt("/projects/app")).resolves.toBe(false);
+
+    expect(mocks.reportError).toHaveBeenCalledOnce();
+    expect(mocks.reportError).toHaveBeenCalledWith("Couldn't open the repository", error);
+    expect(mocks.openRepo).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure to open", async () => {
+    const error = new Error("could not open");
+    mocks.openRepo.mockImplementation(() => {
+      throw error;
+    });
+    const { openRepositoryAt } = await loadFlows();
+
+    await expect(openRepositoryAt("/projects/app")).resolves.toBe(false);
+
+    expect(mocks.reportError).toHaveBeenCalledWith("Couldn't open the repository", error);
+  });
+
+  it("keeps the desktop-preview guard status-only", async () => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    const { openRepositoryAt } = await loadFlows();
+
+    await expect(openRepositoryAt("/projects/app")).resolves.toBe(false);
+
+    expect(mocks.appState.status).toBe("Opening a repo needs the desktop app.");
+    expect(mocks.isGitRepo).not.toHaveBeenCalled();
+    expect(mocks.reportNotice).not.toHaveBeenCalled();
+    expect(mocks.reportError).not.toHaveBeenCalled();
+  });
+});

@@ -10,11 +10,15 @@ import RepoTabs from "./RepoTabs.svelte";
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: vi.fn(async () => ({ get: vi.fn(), set: vi.fn(), save: vi.fn() })),
 }));
+const components = [["RepoList", RepoList], ["RepoTabs", RepoTabs]] as const;
 let dispose: (() => Promise<void>) | undefined;
+let target: HTMLDivElement;
 beforeEach(() => {
   Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
   appState.openRepo("/tmp/recent");
   appState.closeRepo("/tmp/recent");
+  target = document.createElement("div");
+  document.body.appendChild(target);
 });
 afterEach(async () => {
   await dispose?.();
@@ -26,19 +30,24 @@ afterEach(async () => {
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
 });
 
-it.each([RepoList, RepoTabs])("reports rejected recent validation and notices non-repositories", async (Component) => {
+// RepoTabs lists recents in its + menu; RepoList lists them inline.
+async function clickRecent(Component: typeof RepoList | typeof RepoTabs): Promise<void> {
+  if (Component === RepoTabs) {
+    target.querySelector<HTMLButtonElement>(".add-btn")!.click();
+    await tick();
+  }
+  const recent = target.querySelector<HTMLButtonElement>('button[title="/tmp/recent"]');
+  expect(recent).not.toBeNull();
+  recent!.click();
+}
+
+it.each(components)("%s reports rejected recent validation and notices non-repositories", async (_name, Component) => {
   const probe = vi.spyOn(api, "isGitRepo").mockRejectedValueOnce(new Error("fatal: permission denied")).mockResolvedValue(false);
-  const target = document.createElement("div");
-  document.body.appendChild(target);
   const panel = mount(Component, { target });
   dispose = () => unmount(panel);
   await tick();
   for (const kind of ["error", "notice"]) {
-    target.querySelector<HTMLButtonElement>(".add-btn")?.click();
-    await tick();
-    const recent = target.querySelector<HTMLButtonElement>('button[title="/tmp/recent"]');
-    expect(recent).not.toBeNull();
-    recent!.click();
+    await clickRecent(Component);
     await vi.waitFor(() => expect(errors.current?.kind).toBe(kind));
     expect(errors.pending).toBe(1);
     expect(errors.current?.title).toBe(kind === "error" ? "Couldn't open the repository" : "Not a git repository");
@@ -47,4 +56,14 @@ it.each([RepoList, RepoTabs])("reports rejected recent validation and notices no
   }
   expect(probe).toHaveBeenCalledTimes(2);
   expect(appState.openRepos).not.toContain("/tmp/recent");
+});
+
+it.each(components)("%s opens a valid recent without a report", async (_name, Component) => {
+  vi.spyOn(api, "isGitRepo").mockResolvedValue(true);
+  const panel = mount(Component, { target });
+  dispose = () => unmount(panel);
+  await tick();
+  await clickRecent(Component);
+  await vi.waitFor(() => expect(appState.repo).toBe("/tmp/recent"));
+  expect(errors.pending).toBe(0);
 });
