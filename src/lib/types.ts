@@ -155,6 +155,9 @@ export type RemoteOutcome = {
   message: string;
 };
 
+// How `git pull` reconciles a diverged branch; mirrors git-core's PullStrategy (serde camelCase).
+export type PullStrategy = "merge" | "rebase" | "ffOnly";
+
 export type GhAvailability =
   | { kind: "Ok"; owner: string; repo: string }
   | { kind: "NotInstalled" }
