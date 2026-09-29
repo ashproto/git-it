@@ -275,8 +275,9 @@ fn outcome(repo: &Path, ok: bool, msg: String) -> RemoteOutcome {
     RemoteOutcome { ok: false, auth_failed: false, conflicted, message: msg }
 }
 
-/// Pull from the configured upstream with an explicit `strategy` (see `PullStrategy`),
-/// optionally `--autostash`ing local changes around it. A pull whose autostash re-apply
+/// Pull from the configured upstream with an explicit `strategy` (see `PullStrategy`).
+/// `autostash` passes `--autostash` or `--no-autostash`, so it wins over the repo's
+/// pull.autoStash / merge.autoStash / rebase.autoStash. A pull whose autostash re-apply
 /// conflicted still updates the branch, but reports `ok: false`.
 /// `GIT_TERMINAL_PROMPT=0` + `GIT_EDITOR=true` so git never blocks waiting for input.
 ///
@@ -298,10 +299,13 @@ pub fn pull(
         .env("GIT_EDITOR", "true")
         .arg("pull");
     // Every pull names its strategy, so git never asks how to reconcile a diverged
-    // branch, and the explicit flag wins over the repo's own pull.rebase / pull.ff.
+    // branch, and the explicit flags win over the repo's pull.rebase, pull.ff and merge.ff.
     match strategy {
         PullStrategy::Merge => {
-            c.args(["--no-rebase", "--no-edit"]);
+            // `--ff`: fast-forward when possible, else a merge commit, whatever pull.ff /
+            // merge.ff say ("only" would refuse a diverged branch, "false" would force a
+            // merge commit on one that is only behind).
+            c.args(["--no-rebase", "--ff", "--no-edit"]);
         }
         PullStrategy::Rebase => {
             c.arg("--rebase");
@@ -310,9 +314,9 @@ pub fn pull(
             c.arg("--ff-only");
         }
     }
-    if autostash {
-        c.arg("--autostash");
-    }
+    // Always explicit, so the caller's choice wins over the repo's pull.autoStash /
+    // merge.autoStash / rebase.autoStash.
+    c.arg(if autostash { "--autostash" } else { "--no-autostash" });
 
     // Set up askpass only when both credentials are present.
     let cred_dir = match (username, password) {
@@ -328,11 +332,11 @@ pub fn pull(
     }
 
     let (ok, msg) = result?;
-    // git exits 0 even when re-applying the autostash conflicted (from `--autostash` or the
-    // user's pull.autoStash / merge.autoStash / rebase.autoStash): the files are left
-    // unmerged and the local changes stay in the stash. git won't start a pull over unmerged
-    // files, so any now came from that re-apply. No merge or rebase is in progress for the
-    // conflict view to finish, so this is a plain failure, not `conflicted`.
+    // git exits 0 even when re-applying the `--autostash` conflicted: the files are left
+    // unmerged and the local changes stay in the stash. Only `autostash: true` gets here, as
+    // `--no-autostash` keeps the repo's autoStash config from stashing. git won't start a
+    // pull over unmerged files, so any now came from that re-apply. No merge or rebase is in
+    // progress for the conflict view to finish, so this is a plain failure, not `conflicted`.
     let unmerged = ok
         && crate::ops_merge::conflicted_files(repo)
             .map(|f| !f.is_empty())
@@ -1051,6 +1055,48 @@ mod tests {
     }
 
     #[test]
+    fn pull_merge_creates_merge_commit_despite_merge_ff_only_config() {
+        let (bare, _a, b) = diverged_clones("merge-merge-ff-only");
+        b.git(&["config", "merge.ff", "only"]);
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
+        assert!(r.ok, "--ff must win over merge.ff=only; msg={}", r.message);
+        assert_eq!(head_parent_count(&b), 2, "a diverged merge pull creates a merge commit");
+        assert_eq!(fs::read_to_string(b.path.join("f.txt")).unwrap(), "LINE1\nline2\nline3\n");
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn pull_merge_fast_forwards_despite_merge_ff_false_config() {
+        let (bare, _a, b) = behind_clones("merge-merge-ff-false");
+        b.git(&["config", "merge.ff", "false"]);
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
+        assert!(r.ok, "merge pull should succeed; msg={}", r.message);
+        assert_eq!(
+            b.git_stdout(&["rev-parse", "HEAD"]),
+            b.git_stdout(&["rev-parse", "origin/main"]),
+            "--ff must win over merge.ff=false: HEAD moves to the remote tip, no merge commit"
+        );
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn pull_merge_fast_forwards_despite_pull_ff_false_config() {
+        let (bare, _a, b) = behind_clones("merge-pull-ff-false");
+        b.git(&["config", "pull.ff", "false"]);
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
+        assert!(r.ok, "merge pull should succeed; msg={}", r.message);
+        assert_eq!(
+            b.git_stdout(&["rev-parse", "HEAD"]),
+            b.git_stdout(&["rev-parse", "origin/main"]),
+            "--ff must win over pull.ff=false: HEAD moves to the remote tip, no merge commit"
+        );
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
     fn pull_rebase_replays_local_commit_on_the_remote_tip() {
         let (bare, _a, b) = diverged_clones("rebase");
         let st = RemoteState::default();
@@ -1146,6 +1192,31 @@ mod tests {
         let _ = fs::remove_dir_all(&bare);
     }
 
+    #[test]
+    fn pull_without_autostash_ignores_the_pull_autostash_config() {
+        let (bare, _a, b) = diverged_clones("no-autostash-pull-cfg");
+        // The repo's own config asks for an autostash; `autostash: false` must still win.
+        // pull.autoStash because it outranks merge.autoStash / rebase.autoStash.
+        b.git(&["config", "pull.autoStash", "true"]);
+        // Dirty edit on line 1, the line the remote's commit rewrote.
+        b.write_file("f.txt", "line1-local\nline2\nline3\n");
+        let before = b.git_stdout(&["rev-parse", "HEAD"]);
+        let st = RemoteState::default();
+        let r = pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
+        assert!(!r.ok, "the dirty file must block the pull; msg={}", r.message);
+        assert!(!r.conflicted);
+        assert!(!r.auth_failed);
+        assert!(r.message.contains("would be overwritten by merge"), "msg={}", r.message);
+        assert_eq!(b.git_stdout(&["stash", "list"]), "", "nothing may be stashed");
+        assert_eq!(b.git_stdout(&["rev-parse", "HEAD"]), before, "HEAD must not move");
+        assert_eq!(
+            fs::read_to_string(b.path.join("f.txt")).unwrap(),
+            "line1-local\nline2\nline3\n",
+            "the dirty edit stays in the working tree"
+        );
+        let _ = fs::remove_dir_all(&bare);
+    }
+
     // ── Autostash re-apply conflicts ─────────────────────────────────────────
 
     /// Pinned verbatim: the error popup makes this final line its headline.
@@ -1199,20 +1270,6 @@ mod tests {
         b.write_file("f.txt", "line1-local\nline2\nline3\n");
         let st = RemoteState::default();
         let r = pull(&b.path, PullStrategy::Rebase, true, None, None, &st, &noop_line).unwrap();
-        assert_autostash_conflict_reported(&b, &r);
-        let _ = fs::remove_dir_all(&bare);
-    }
-
-    #[test]
-    fn pull_reports_a_conflicted_reapply_from_the_pull_autostash_config() {
-        let (bare, _a, b) = diverged_clones("autostash-conflict-config");
-        // Git It asks for no autostash here; the repo's own config does. pull.autoStash
-        // (not merge.autoStash) because it outranks the others, so no global value undoes it.
-        b.git(&["config", "pull.autoStash", "true"]);
-        // Dirty edit on line 1, the line the remote's commit rewrote.
-        b.write_file("f.txt", "line1-local\nline2\nline3\n");
-        let st = RemoteState::default();
-        let r = pull(&b.path, PullStrategy::Merge, false, None, None, &st, &noop_line).unwrap();
         assert_autostash_conflict_reported(&b, &r);
         let _ = fs::remove_dir_all(&bare);
     }
