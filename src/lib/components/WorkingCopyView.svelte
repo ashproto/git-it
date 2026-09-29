@@ -6,6 +6,7 @@
   import { contextMenu, type MenuItem } from "../contextMenu.svelte";
   import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
   import DiffView from "./DiffView.svelte";
+  import LoadError from "./LoadError.svelte";
   import CommitComposer from "./CommitComposer.svelte";
   import FileTree from "./FileTree.svelte";
   import { buildFileTree } from "../fileTree";
@@ -126,29 +127,41 @@
   );
 
   let diffPatch = $state("");
-  let diffLoading = $state(false);
+  // Pending is `!diffLoaded && !diffError`: every key change starts a fresh load, as today.
+  let diffLoaded = $state(false);
+  // Wrapped so that a null/undefined rejection is still truthy.
+  let diffError = $state<{ error: unknown } | null>(null);
+  // Bumped by Retry so the effect re-runs for the same key.
+  let diffRetry = $state(0);
 
   $effect(() => {
-    const key = diffKey; // register dependency
+    const key = diffKey;
+    const repo = appState.repo;
+    void diffRetry;
+    diffError = null;
+    diffLoaded = false;
     if (!key || !selectedFile || !isTauri()) {
       diffPatch = "";
       return;
     }
-    diffLoading = true;
+    // Cleared by the cleanup below, so a response for a superseded key (or another
+    // repository holding the same path) never lands.
+    let active = true;
     api
-      .diff(appState.repo, selectedFile, selectedIsStaged, selectedIsUntracked, appState.effectiveDiffContext)
+      .diff(repo, selectedFile, selectedIsStaged, selectedIsUntracked, appState.effectiveDiffContext)
       .then((p) => {
-        // Guard stale results: only apply if the key hasn't changed.
-        if (key === diffKey) {
-          diffPatch = p;
-        }
+        if (!active) return;
+        diffPatch = p;
+        diffLoaded = true;
       })
-      .catch(() => {
-        if (key === diffKey) diffPatch = "";
-      })
-      .finally(() => {
-        if (key === diffKey) diffLoading = false;
+      .catch((e) => {
+        if (!active) return;
+        diffPatch = "";
+        diffError = { error: e };
       });
+    return () => {
+      active = false;
+    };
   });
 
   // ── Status glyph helper ──────────────────────────────────────────────────────
@@ -597,7 +610,11 @@
              there is nothing to show and no row is highlighted — same state as no selection. -->
         {#if !selectedFile || section === null}
           <p class="diff-loading">Select a file to view its diff.</p>
-        {:else if diffLoading}
+        {:else if diffError}
+          <div class="diff-error">
+            <LoadError what="the diff" error={diffError.error} onRetry={() => { diffRetry += 1; }} />
+          </div>
+        {:else if !diffLoaded}
           <p class="diff-loading">Loading diff…</p>
         {:else}
           <DiffView
@@ -892,6 +909,10 @@
     font-size: 12px;
     color: var(--text-muted);
     font-style: italic;
+  }
+  /* Same inset as .diff-loading, so the inline error lines up with the pane's other notes. */
+  .diff-error {
+    padding: 12px 14px;
   }
 
   .mono {
