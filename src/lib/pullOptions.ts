@@ -39,31 +39,35 @@ export function pullButtonTitle(askEveryTime: boolean, strategy: PullStrategy): 
 }
 
 // A pull needs a checked-out branch with an upstream that still exists to pull from.
+// `upstreamGone` is required (no default) so that no caller can silently drop it.
 export function canPull(
   branch: string | null,
   upstream: string | null,
-  upstreamGone = false,
+  upstreamGone: boolean,
 ): boolean {
   return branch !== null && upstream !== null && !upstreamGone;
 }
 
 export function pullDialogTitle(branch: string | null, upstream: string | null): string {
-  return canPull(branch, upstream) ? `Pull ${upstream} → ${branch}` : "Pull";
+  return branch !== null && upstream !== null ? `Pull ${upstream} → ${branch}` : "Pull";
 }
 
 // Status line under the title. Only non-zero counts are named; ahead/behind come from
 // the tracking ref, i.e. the last fetch, so say so. A gone upstream's counts read 0/0,
-// so it is ruled out before them.
+// so it is ruled out before them. Typically a merged PR's branch was deleted, so the
+// copy doesn't suggest pushing the branch again.
 export function pullStatusLine(
   branch: string | null,
   upstream: string | null,
   ahead: number,
   behind: number,
-  upstreamGone = false,
+  upstreamGone: boolean,
 ): string {
   if (branch === null) return "No branch is checked out.";
   if (upstream === null) return `${branch} has no upstream branch — push it first to set one.`;
-  if (upstreamGone) return `${upstream} no longer exists — push ${branch} to recreate it.`;
+  if (upstreamGone) {
+    return `${upstream} no longer exists as of the last fetch — there's nothing to pull.`;
+  }
   if (ahead > 0 && behind > 0) {
     return `${branch} is ${ahead} ahead, ${behind} behind ${upstream} as of the last fetch.`;
   }

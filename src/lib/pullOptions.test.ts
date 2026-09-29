@@ -68,35 +68,43 @@ describe("pull dialog copy", () => {
   });
 
   it("names only the non-zero counts", () => {
-    expect(pullStatusLine("main", "origin/main", 2, 3)).toBe(
+    expect(pullStatusLine("main", "origin/main", 2, 3, false)).toBe(
       "main is 2 ahead, 3 behind origin/main as of the last fetch.",
     );
-    expect(pullStatusLine("main", "origin/main", 0, 3)).toBe(
+    expect(pullStatusLine("main", "origin/main", 0, 3, false)).toBe(
       "main is 3 behind origin/main as of the last fetch.",
     );
-    expect(pullStatusLine("main", "origin/main", 2, 0)).toBe(
+    expect(pullStatusLine("main", "origin/main", 2, 0, false)).toBe(
       "main is 2 ahead of origin/main as of the last fetch.",
     );
-    expect(pullStatusLine("main", "origin/main", 0, 0)).toBe(
+    expect(pullStatusLine("main", "origin/main", 0, 0, false)).toBe(
       "Up to date with origin/main as of the last fetch.",
     );
   });
 
   it("explains why a pull is impossible", () => {
-    expect(pullStatusLine("main", null, 0, 0)).toBe(
+    expect(pullStatusLine("main", null, 0, 0, false)).toBe(
       "main has no upstream branch — push it first to set one.",
     );
-    expect(pullStatusLine(null, null, 0, 0)).toBe("No branch is checked out.");
-    expect(canPull("main", "origin/main")).toBe(true);
-    expect(canPull("main", null)).toBe(false);
-    expect(canPull(null, null)).toBe(false);
+    expect(pullStatusLine(null, null, 0, 0, false)).toBe("No branch is checked out.");
+    expect(canPull("main", "origin/main", false)).toBe(true);
+    expect(canPull("main", null, false)).toBe(false);
+    expect(canPull(null, null, false)).toBe(false);
   });
 
   it("blocks a pull from an upstream the last fetch pruned", () => {
     expect(pullStatusLine("feature", "origin/feature", 0, 0, true)).toBe(
-      "origin/feature no longer exists — push feature to recreate it.",
+      "origin/feature no longer exists as of the last fetch — there's nothing to pull.",
     );
     expect(canPull("feature", "origin/feature", true)).toBe(false);
+  });
+
+  it("requires the gone flag, so no caller can silently drop it", () => {
+    // Compile-time only, enforced by `npm run check`: leaving the flag out must not type-check.
+    // @ts-expect-error: upstreamGone is required
+    canPull("main", "origin/main");
+    // @ts-expect-error: upstreamGone is required
+    pullStatusLine("main", "origin/main", 0, 0);
   });
 });
 
