@@ -172,7 +172,10 @@ pub fn list_refs(repo: &Path) -> Result<Vec<Ref>, String> {
     let mut cmd = Command::new("git");
     cmd.current_dir(repo)
         .arg("for-each-ref")
-        .arg("--format=%(refname)%00%(objectname)%00%(*objectname)%00%(upstream:short)%00%(upstream:track)")
+        // `upstream:lstrip=2`, not `:short`: git lengthens an ambiguous short name (a local
+        // branch named `origin/main` turns `origin/main` into `remotes/origin/main`). Dropping
+        // `refs/<heads|remotes>/` names the upstream exactly as `name` below names its ref.
+        .arg("--format=%(refname)%00%(objectname)%00%(*objectname)%00%(upstream:lstrip=2)%00%(upstream:track)")
         .args(["refs/heads", "refs/remotes", "refs/tags"]);
     let (out, _) = git_ops::run(&mut cmd)?;
 
@@ -185,7 +188,7 @@ pub fn list_refs(repo: &Path) -> Result<Vec<Ref>, String> {
         let refname = p[0];
         let obj = p[1];
         let deref = p[2];
-        let upstream_short = p[3];
+        let upstream_name = p[3];
         let track = p[4];
 
         let (kind, name) = if let Some(n) = refname.strip_prefix("refs/heads/") {
@@ -201,10 +204,10 @@ pub fn list_refs(repo: &Path) -> Result<Vec<Ref>, String> {
             continue;
         }
         let target_sha = if deref.is_empty() { obj.to_string() } else { deref.to_string() };
-        let upstream = if upstream_short.is_empty() {
+        let upstream = if upstream_name.is_empty() {
             None
         } else {
-            Some(upstream_short.to_string())
+            Some(upstream_name.to_string())
         };
         let (ahead, behind) = parse_track(track);
         refs.push(Ref { name, kind, target_sha, upstream, ahead, behind });
@@ -451,6 +454,25 @@ mod tests {
         assert!(refs.iter().any(|x| x.name == "feature" && x.kind == RefKind::Local));
         assert!(refs.iter().any(|x| x.name == "v1" && x.kind == RefKind::Tag));
         assert!(!refs.iter().any(|x| x.kind == RefKind::Remote));
+    }
+
+    #[test]
+    fn list_refs_names_upstream_without_an_ambiguity_prefix() {
+        // A local branch named `origin/main` makes the short name `origin/main` ambiguous,
+        // so git would shorten main's upstream to `remotes/origin/main`, a name no entry has.
+        let r = TempRepo::new();
+        r.write_commit("a.txt", "A");
+        r.git(&["remote", "add", "origin", "https://example.invalid/repo.git"]);
+        r.git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
+        r.git(&["branch", "--set-upstream-to=origin/main", "main"]);
+        // Only now: once it exists, `origin/main` above would resolve to this local branch.
+        r.git(&["branch", "origin/main"]);
+
+        let refs = list_refs(&r.path).unwrap();
+        assert!(refs.iter().any(|x| x.name == "origin/main" && x.kind == RefKind::Local));
+        assert!(refs.iter().any(|x| x.name == "origin/main" && x.kind == RefKind::Remote));
+        let main = refs.iter().find(|x| x.name == "main" && x.kind == RefKind::Local).unwrap();
+        assert_eq!(main.upstream.as_deref(), Some("origin/main"));
     }
 
     #[test]
