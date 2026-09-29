@@ -4,6 +4,7 @@
   import { gitActions } from "../gitActions";
   import { amendDialog } from "../amendDialog.svelte";
   import type { ConflictEntry } from "../types";
+  import LoadError from "./LoadError.svelte";
 
   function inTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -14,16 +15,28 @@
   const headCommit = $derived(appState.graphCommits.find((c) => c.refs.some((r) => r.is_head)) ?? null);
 
   let details = $state<ConflictEntry[]>([]);
+  // Set when the file list failed to load, so the panel says so instead of listing nothing.
+  // Wrapped so that a null/undefined rejection is still truthy.
+  let detailsError = $state<{ error: unknown } | null>(null);
+  // Bumped per request; a response from a superseded request (or an ended op) is dropped.
+  let detailsSequence = 0;
 
   async function refreshDetails() {
+    const sequence = ++detailsSequence;
+    detailsError = null;
     if (!inTauri() || !appState.repo || !op) {
       details = [];
       return;
     }
+    const repo = appState.repo;
     try {
-      details = await api.conflictDetails(appState.repo);
-    } catch {
+      const result = await api.conflictDetails(repo);
+      if (sequence !== detailsSequence || repo !== appState.repo) return;
+      details = result;
+    } catch (e) {
+      if (sequence !== detailsSequence || repo !== appState.repo) return;
       details = [];
+      detailsError = { error: e };
     }
   }
 
@@ -33,7 +46,11 @@
     const o = appState.repoStatus?.operation;
     void appState.repoStatus?.conflicted;
     if (o) refreshDetails();
-    else details = [];
+    else {
+      detailsSequence++;
+      details = [];
+      detailsError = null;
+    }
   });
 
   function opLabel(kind: string): string {
@@ -51,7 +68,9 @@
       </span>
     </header>
 
-    {#if details.length}
+    {#if detailsError}
+      <LoadError what="the conflict details" error={detailsError.error} onRetry={() => void refreshDetails()} />
+    {:else if details.length}
       <ul class="files">
         {#each details as f (f.path)}
           <li>
