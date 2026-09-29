@@ -51,6 +51,7 @@
   import { githubState } from "$lib/githubState.svelte";
   import { prForBranch } from "$lib/github/branchPr";
   import { pullStateBadge } from "$lib/github/itemState";
+  import { pullButtonTitle } from "$lib/pullOptions";
   import { SAMPLE_GRAPH } from "$lib/graph/sample";
 
   const currentBranch = $derived(
@@ -453,8 +454,10 @@
       <button
         class="fetch-btn"
         disabled={!hasRemotes || appState.remoteOpActive}
-        title={hasRemotes ? "Pull changes from remote" : noRemoteTitle}
-        onclick={() => gitActions.pull()}
+        title={hasRemotes
+          ? pullButtonTitle(appState.pullAskEveryTime, appState.pullStrategy)
+          : noRemoteTitle}
+        onclick={(e) => gitActions.pull({ showOptions: e.altKey })}
       >Pull</button>
       <div class="push-group">
         <button

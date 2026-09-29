@@ -6,7 +6,7 @@ import { api } from "./api";
 import { SAMPLE_GRAPH } from "./graph/sample";
 import type { GraphCommit, OpOutcome, RemoteOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot, WorkingFile } from "./types";
 import { dialogs } from "./dialogs.svelte";
-import { pullLabel } from "./pullOptions";
+import { canPull, pullContext, pullLabel, pullStatusLine } from "./pullOptions";
 import { graphView } from "./graphView.svelte";
 import { githubState } from "./githubState.svelte";
 import { prefillFromSubjects } from "./github/prCreate";
@@ -553,6 +553,15 @@ function sameRepoAfterPrompt(): () => boolean {
   };
 }
 
+// Pull reads settings and refs that belong to the loaded repository, so it refuses during
+// the switch window — and again after every await, since a switch (even A → B → A, which
+// keeps the identity but restarts loading) can land in between.
+function pullStillLoading(): boolean {
+  if (!appState.repoLoading) return false;
+  reportNotice("Can't pull yet", "Repository is still loading — try again in a moment.");
+  return true;
+}
+
 // Run a working-copy op (non-destructive): guard → run → refresh working changes + graph.
 async function runWorktree(label: string, fn: () => Promise<unknown>): Promise<boolean> {
   if (!isTauri()) {
@@ -681,13 +690,15 @@ let remoteCancelRequested = false;
 // Runs a streamed pull/push op with:
 //   1. Progress state management (startRemoteProgress / pushRemoteLog / endRemoteProgress)
 //   2. First attempt WITHOUT credentials (relies on system credential helper / SSH agent)
-//   3. On authFailed: prompt for credentials and retry
+//   3. On authFailed: prompt for credentials and retry, unless the repository changed or
+//      the caller's `beforeRetry` re-check refuses (it reports why itself)
 //   4. Graph reload + status update (conflicted → ConflictView; ok → done)
 //   5. The error popup, but only for failures the user didn't choose (not Cancel, not a
-//      dismissed sign-in, not a repository switch during the prompt)
+//      dismissed sign-in, not a repository switch or a refused retry during the prompt)
 async function runRemote(
   label: string,
   fn: (onLine: (l: string) => void, creds?: { username: string; password: string }) => Promise<RemoteOutcome>,
+  opts?: { beforeRetry?: () => boolean },
 ): Promise<boolean> {
   if (appState.remoteOpActive) { appState.status = "A remote operation is already in progress."; return false; }
   if (!isTauri()) {
@@ -711,6 +722,7 @@ async function runRemote(
     let cancelled = remoteCancelRequested;
     let signInCancelled = false;
     let repoChanged = false;
+    let retryRefused = false;
 
     if (outcome.authFailed && !cancelled) {
       // Auth failed — prompt for credentials and retry once. `fn` reads `appState.repo` when
@@ -719,6 +731,9 @@ async function runRemote(
       const creds = await dialogs.confirmCredentials({ title: `${label}: sign in` });
       if (!creds) signInCancelled = true;
       else if (!sameRepo()) repoChanged = true;
+      // The same repository can still have moved on under the prompt (another branch checked
+      // out, say); the caller re-checks what its operation was bound to.
+      else if (opts?.beforeRetry && !opts.beforeRetry()) retryRefused = true;
       else {
         outcome = await fn((l) => appState.pushRemoteLog(l), creds);
         cancelled = remoteCancelRequested;
@@ -740,8 +755,9 @@ async function runRemote(
       appState.status = `${label} cancelled.`;
     } else if (signInCancelled) {
       appState.status = `${label}: sign-in cancelled.`;
-    } else if (!repoChanged) {
-      // (When the repository changed, sameRepo() has already said why nothing happened.)
+    } else if (!repoChanged && !retryRefused) {
+      // (When the repository changed, sameRepo() has already said why nothing happened; so
+      // has a beforeRetry that refused.)
       reportError(`${label} failed`, outcome.message);
     }
 
@@ -1157,17 +1173,74 @@ export const gitActions = {
   },
 
   // ── Remote actions (Phase 6) ───────────────────────────────────────────────
-  pull: () => {
-    if (appState.repoLoading) {
-      reportNotice("Can't pull yet", "Repository is still loading — try again in a moment.");
-      return Promise.resolve(false);
+  // Pull with an explicit strategy. Asks first when the setting is on or the toolbar
+  // button was ⌥-clicked; the dialog's choice becomes the new default (as Fork does)
+  // and the pull runs with the dialog's values, never a re-read of the store.
+  pull: async (opts?: { showOptions?: boolean }): Promise<boolean> => {
+    if (pullStillLoading()) return false;
+    // Capture before the FIRST await: every check below compares against the repository
+    // the user clicked Pull in.
+    const sameRepo = sameRepoAfterPrompt();
+    // Preferences arrive from the Tauri store asynchronously. Reading them earlier would
+    // use startup defaults — and confirming the dialog would then persist those defaults
+    // over the saved ones, with the touched guards stopping hydration from fixing it.
+    await appState.waitForPullSettingsHydration();
+    if (!sameRepo() || pullStillLoading()) return false;
+    let strategy = appState.pullStrategy;
+    let autostash = appState.pullAutostash;
+    // The branch and upstream this pull is for. The dialog shows them; a confirmed pull and
+    // a sign-in retry each refuse if they have moved on since.
+    const bound = pullContext(appState.repoStatus, appState.refsDetailed);
+    if (appState.pullAskEveryTime || opts?.showOptions) {
+      const choice = await dialogs.confirmPull({ ...bound, strategy, autostash });
+      // Bind the confirmed pull to what the dialog showed: same repository, not loading
+      // again, same branch and upstream — all before any preference write or pull.
+      if (!choice || !sameRepo() || pullStillLoading()) return false;
+      const now = pullContext(appState.repoStatus, appState.refsDetailed);
+      if (now.branch !== bound.branch || now.upstream !== bound.upstream) {
+        reportNotice(
+          "Can't pull",
+          "The checked-out branch changed while that dialog was open — nothing was done.",
+        );
+        return false;
+      }
+      // Same names, but a fetch may have pruned the upstream while the dialog was open.
+      if (!canPull(now.branch, now.upstream, now.upstreamGone)) {
+        reportNotice(
+          "Can't pull",
+          pullStatusLine(now.branch, now.upstream, now.ahead, now.behind, now.upstreamGone),
+        );
+        return false;
+      }
+      strategy = choice.strategy;
+      autostash = choice.autostash;
+      appState.setPullStrategy(strategy);
+      appState.setPullAutostash(autostash);
+      if (choice.dontAsk) appState.setPullAskEveryTime(false);
     }
-    // Read once, up front, so a settings change mid-pull cannot split the label from
-    // the flags actually sent.
-    const strategy = appState.pullStrategy;
-    const autostash = appState.pullAutostash;
-    return runRemote(pullLabel(strategy), (onLine, creds) =>
-      api.pull(appState.repo, strategy, autostash, onLine, creds),
+    return runRemote(
+      pullLabel(strategy),
+      (onLine, creds) => api.pull(appState.repo, strategy, autostash, onLine, creds),
+      {
+        // The sign-in prompt is one more await: retry with the credentials just entered
+        // only while the branch and upstream are still the ones this pull was for.
+        beforeRetry: () => {
+          if (pullStillLoading()) return false;
+          const now = pullContext(appState.repoStatus, appState.refsDetailed);
+          if (
+            now.branch !== bound.branch ||
+            now.upstream !== bound.upstream ||
+            !canPull(now.branch, now.upstream, now.upstreamGone)
+          ) {
+            reportNotice(
+              "Can't pull",
+              "The checked-out branch changed while you were signing in — nothing was pulled.",
+            );
+            return false;
+          }
+          return true;
+        },
+      },
     );
   },
 

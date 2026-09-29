@@ -39,6 +39,18 @@ beforeEach(() => {
   appState.repo = REPO;
   appState.setRepoLoading(false);
   appState.setGraphCommits(SAMPLE_GRAPH);
+  // These are runRemote cases: pull's own options must never wait on the pull dialog.
+  appState.setPullStrategy("merge");
+  appState.setPullAutostash(false);
+  appState.setPullAskEveryTime(false);
+  // And pull's pre-retry check only lets a sign-in retry through for a checked-out branch
+  // whose upstream exists, so give main one.
+  appState.setRepoStatus(repoStatus);
+  const sha = SAMPLE_GRAPH[0].sha;
+  appState.setRefsDetailed([
+    { name: "main", kind: "local", target_sha: sha, upstream: "origin/main", ahead: 0, behind: 0 },
+    { name: "origin/main", kind: "remote", target_sha: sha, upstream: null, ahead: 0, behind: 0 },
+  ]);
   vi.spyOn(api, "loadGraph").mockResolvedValue(SAMPLE_GRAPH);
   vi.spyOn(api, "repoStatus").mockResolvedValue(repoStatus);
   vi.spyOn(api, "workingChanges").mockResolvedValue([]);
@@ -48,6 +60,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  if (dialogs.state.kind === "pull") dialogs.resolvePull(false);
   errors.reset();
   appState.repo = "";
   appState.status = "Ready";
@@ -205,6 +218,7 @@ describe("runRemote reports only failures the user didn't choose", () => {
     );
     vi.spyOn(api, "cancelRemote").mockResolvedValue(undefined);
     const pulling = gitActions.pull();
+    await vi.waitFor(() => expect(api.pull).toHaveBeenCalled());
     void gitActions.cancelRemote();
     finish(outcome({ message: "error: RPC failed; curl 56 Recv failure" }));
     expect(await pulling).toBe(false);
@@ -219,6 +233,7 @@ describe("runRemote reports only failures the user didn't choose", () => {
     );
     vi.spyOn(api, "cancelRemote").mockResolvedValue(undefined);
     const pulling = gitActions.pull();
+    await vi.waitFor(() => expect(api.pull).toHaveBeenCalled());
     void gitActions.cancelRemote();
     fail(new Error("killed"));
     expect(await pulling).toBe(false);

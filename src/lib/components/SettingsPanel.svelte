@@ -399,6 +399,14 @@
           <label class="opt">
             <input
               type="checkbox"
+              checked={appState.pullAskEveryTime}
+              onchange={() => appState.setPullAskEveryTime(!appState.pullAskEveryTime)}
+            />
+            <span>Ask before every pull</span>
+          </label>
+          <label class="opt">
+            <input
+              type="checkbox"
               checked={appState.unifyUnstaged}
               onchange={() => appState.setUnifyUnstaged(!appState.unifyUnstaged)}
             />
