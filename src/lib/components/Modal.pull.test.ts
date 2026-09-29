@@ -74,6 +74,34 @@ describe("pull dialog", () => {
     await unmount(modal);
   });
 
+  it("keeps Enter working after a click moves focus to the dialog itself", async () => {
+    // macOS WebKit doesn't focus a clicked button, radio, checkbox or label: focus goes to the
+    // nearest focusable ancestor instead. The dialog is that ancestor (tabindex -1), so the
+    // next key still starts inside the overlay rather than on <body>.
+    const { target, modal } = mountModal();
+    const pending = openPull("origin/main");
+    await tick();
+    const dialog = target.querySelector<HTMLElement>(".dialog.pull");
+    expect(dialog?.getAttribute("tabindex")).toBe("-1");
+    dialog?.focus();
+    expect(document.activeElement).toBe(dialog);
+
+    keydown(dialog, "Enter");
+    await expect(pending).resolves.toEqual({ strategy: "rebase", autostash: true, dontAsk: false });
+    await unmount(modal);
+  });
+
+  it("cancels on a backdrop press but not on a press inside the dialog", async () => {
+    const { target, modal } = mountModal();
+    const pending = openPull("origin/main");
+    await tick();
+    target.querySelector(".dialog.pull")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(dialogs.state.kind).toBe("pull");
+    target.querySelector(".overlay")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await expect(pending).resolves.toBeNull();
+    await unmount(modal);
+  });
+
   it("disables Pull and explains when the branch has no upstream", async () => {
     const { target, modal } = mountModal();
     const pending = openPull(null);
@@ -97,7 +125,7 @@ describe("pull dialog", () => {
     await unmount(modal);
   });
 
-  it("disables Pull and explains when the upstream no longer exists", async () => {
+  it("disables Pull and its options and explains when the upstream no longer exists", async () => {
     const { target, modal } = mountModal();
     const pending = dialogs.confirmPull({
       branch: "main",
@@ -115,12 +143,43 @@ describe("pull dialog", () => {
       "origin/main no longer exists as of the last fetch — there's nothing to pull.",
     );
     expect(status?.classList.contains("blocked")).toBe(true);
+    // The status line describes the dialog, so a screen reader announces why Pull is off.
+    expect(status?.id).toBeTruthy();
+    expect(target.querySelector(".dialog.pull")?.getAttribute("aria-describedby")).toBe(status?.id);
     const pull = target.querySelector<HTMLButtonElement>(".actions button.primary");
     expect(pull?.disabled).toBe(true);
+    // Options that can't take effect must not look usable.
+    const options = target.querySelectorAll<HTMLInputElement>(
+      ".strategy-opt input, .pull-autostash input, .pull-dont-ask input",
+    );
+    expect([...options].map((o) => o.disabled)).toEqual([true, true, true, true, true]);
     const cancel = target.querySelector<HTMLButtonElement>(".actions button");
     expect(document.activeElement).toBe(cancel);
 
     keydown(cancel, "Escape");
+    await expect(pending).resolves.toBeNull();
+    await unmount(modal);
+  });
+
+  it("disables Pull and explains when HEAD is detached", async () => {
+    const { target, modal } = mountModal();
+    const pending = dialogs.confirmPull({
+      branch: null,
+      upstream: null,
+      upstreamGone: false,
+      ahead: 0,
+      behind: 0,
+      strategy: "rebase",
+      autostash: true,
+    });
+    await tick();
+
+    const status = target.querySelector(".pull-status");
+    expect(status?.textContent?.trim()).toBe("No branch is checked out.");
+    expect(status?.classList.contains("blocked")).toBe(true);
+    expect(target.querySelector<HTMLButtonElement>(".actions button.primary")?.disabled).toBe(true);
+
+    keydown(target.querySelector(".actions button"), "Escape");
     await expect(pending).resolves.toBeNull();
     await unmount(modal);
   });

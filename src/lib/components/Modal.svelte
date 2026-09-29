@@ -529,9 +529,18 @@
     }}
     onkeydown={handlePullKey}
   >
-    <div class="dialog pull" role="dialog" aria-modal="true" aria-label={title}>
+    <!-- tabindex -1: WebKit doesn't focus a clicked radio, checkbox or button, so a click would
+         leave focus on <body>; the dialog takes it instead, so Enter and Escape keep working. -->
+    <div
+      class="dialog pull"
+      tabindex="-1"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      aria-describedby="pull-dialog-status"
+    >
       <h3>{title}</h3>
-      <p class="msg pull-status" class:blocked={!allowed}>{statusLine}</p>
+      <p id="pull-dialog-status" class="msg pull-status" class:blocked={!allowed}>{statusLine}</p>
       <div class="strategy-list" role="radiogroup" aria-label="Pull strategy">
         {#each PULL_STRATEGIES as s (s)}
           <label class="strategy-opt">
@@ -540,6 +549,7 @@
               name="pull-dialog-strategy"
               value={s}
               checked={dialogs.state.strategy === s}
+              disabled={!allowed}
               onchange={() => dialogs.setPullStrategy(s)}
             />
             <span class="strategy-copy">
@@ -553,6 +563,7 @@
         <input
           type="checkbox"
           checked={dialogs.state.autostash}
+          disabled={!allowed}
           onchange={(e) => dialogs.setPullAutostash((e.currentTarget as HTMLInputElement).checked)}
         />
         Stash &amp; reapply local changes
@@ -561,6 +572,7 @@
         <input
           type="checkbox"
           checked={dialogs.state.dontAsk}
+          disabled={!allowed}
           onchange={(e) => dialogs.setPullDontAsk((e.currentTarget as HTMLInputElement).checked)}
         />
         <span>Don't ask again <span class="dont-ask-note">Change this in Settings</span></span>
@@ -886,6 +898,9 @@
   .dialog.pull {
     width: 440px;
   }
+  .dialog.pull:focus {
+    outline: none;
+  }
   .pull-status {
     color: var(--text-muted);
   }
@@ -936,5 +951,14 @@
     margin-left: 6px;
     font-size: 11px;
     color: var(--text-muted);
+  }
+  /* Nothing to pull from: the options can't take effect, so they mustn't look usable. */
+  .strategy-opt:has(input:disabled),
+  .dialog.pull .backup-row:has(input:disabled) {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .dialog.pull input:disabled {
+    cursor: inherit;
   }
 </style>
