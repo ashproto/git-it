@@ -48,6 +48,17 @@ it("reports manual check failure with a popup", async () => {
   expect(appState.statusIsError).toBe(true);
   expect(appState.busyOp).toBeNull();
 });
+it("reports a check failure as it is, not as a signature failure", async () => {
+  // A check only fetches and parses the manifest; signatures are verified when installing.
+  mocks.check.mockRejectedValue(new Error("invalid peer certificate: UnknownIssuer"));
+  await updater.manualCheckForUpdates();
+  expect(errors.current).toMatchObject({
+    kind: "error",
+    title: "Couldn't check for updates",
+    headline: "invalid peer certificate: UnknownIssuer",
+    output: "invalid peer certificate: UnknownIssuer",
+  });
+});
 it.each(["startup", "background", "activation"])("keeps %s check errors quiet but accessible", async (source) => {
   if (source === "background") {
     await updater.startupUpdateCheck();

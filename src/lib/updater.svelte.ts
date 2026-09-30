@@ -132,7 +132,10 @@ async function checkForUpdates(
     available = await api.checkUpdateOnChannel(appState.updateChannel);
     if (!available && manual) appState.status = "You are on the latest version.";
   } catch (err) {
-    reportUpdaterError("Couldn't check for updates", err, { quiet: !manual });
+    // Not reportUpdaterError: a check only fetches and parses the manifest, and signatures are
+    // verified at install, so its "invalid …" failures (a URL, a certificate, the manifest's
+    // JSON) aren't signature failures.
+    reportError("Couldn't check for updates", err, { quiet: !manual });
   } finally {
     checking = false;
     if (manual) appState.setBusyOp(null);
@@ -253,7 +256,7 @@ async function presentUpdate(update: UpdateInfo): Promise<void> {
   }
 }
 
-function reportUpdaterError(title: string, err: unknown, opts?: { quiet?: boolean }): void {
+function reportUpdaterError(title: string, err: unknown): void {
   const raw = errorText(err);
   const sig = /signature|verify|verification|invalid/i.test(raw);
   // The `error:` prefix makes the explanation the headline; the raw text follows it as a
@@ -265,6 +268,5 @@ function reportUpdaterError(title: string, err: unknown, opts?: { quiet?: boolea
           "The artifact may be unsigned or corrupted.\n" +
           raw
       : err,
-    opts,
   );
 }
