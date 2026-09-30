@@ -107,7 +107,7 @@ it("reports relaunch rejection", async () => {
   expect(errors.current).toMatchObject({ title: "Couldn't restart to install the update", headline: "relaunch denied" });
   expect(errors.pending).toBe(1);
 });
-it("reports a relaunch watchdog once even if relaunch rejects later", async () => {
+it("reports a relaunch watchdog once and only logs a later rejection", async () => {
   let reject!: (e: unknown) => void;
   mocks.check.mockResolvedValue(update);
   mocks.confirm.mockResolvedValue(true);
@@ -119,6 +119,7 @@ it("reports a relaunch watchdog once even if relaunch rejects later", async () =
   reject(new Error("late rejection"));
   await pending;
   expect(errors.pending).toBe(1);
+  expect(appState.logLines).toContain("[updater] relaunch failed after the watchdog: late rejection");
   expect(appState.busyOp).toBeNull();
 });
 it("does not report user postponement as an error", async () => {

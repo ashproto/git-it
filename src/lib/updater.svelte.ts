@@ -248,7 +248,12 @@ async function presentUpdate(update: UpdateInfo): Promise<void> {
       clearTimeout(guard);
     }
   } catch (err) {
-    if (!installReported) reportUpdaterError(failureTitle, err);
+    if (!installReported) {
+      reportUpdaterError(failureTitle, err);
+    } else {
+      // The watchdog already reported this relaunch, so its late failure is only logged.
+      appState.appendLog(`[updater] relaunch failed after the watchdog: ${errorText(err)}`);
+    }
   } finally {
     presenting = false;
     appState.setBusyOp(null);
