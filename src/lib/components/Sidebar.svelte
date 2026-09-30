@@ -102,6 +102,8 @@
   }
 
   function onRefCheckout(r: RefEntry, kind: "local" | "remote" | "tag") {
+    // tag → no-op (double-click only jumps), so there is nothing for the guard to refuse.
+    if (kind === "tag") return;
     if (refActionsBlocked()) return;
     if (kind === "local") {
       gitActions.checkout(r.name);
@@ -112,7 +114,6 @@
       if (exists) gitActions.checkout(short);
       else gitActions.createBranch(short, r.name).then((ok) => { if (ok) gitActions.checkout(short); });
     }
-    // tag → no-op (double-click only jumps).
   }
 
   async function confirmDeleteBranch(name: string) {

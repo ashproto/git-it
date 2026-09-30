@@ -62,3 +62,21 @@ it("notices changed repository after a rename prompt and makes no write", async 
   expect(errors.pending).toBe(1);
   expect(appState.status).toBe("Repository changed while that dialog was open — nothing was done.");
 });
+it("raises no notice for a tag double-click while the repository opens", async () => {
+  const checkout = vi.spyOn(gitActions, "checkout").mockResolvedValue(true);
+  appState.setRefsDetailed([
+    { name: "main", kind: "local", target_sha: SAMPLE_GRAPH[0].sha, upstream: null, ahead: 0, behind: 0 },
+    { name: "v1.0", kind: "tag", target_sha: SAMPLE_GRAPH[0].sha, upstream: null, ahead: 0, behind: 0 },
+  ]);
+  appState.setRepoLoading(true);
+  const panel = mount(Sidebar, { target });
+  dispose = () => unmount(panel);
+  await tick();
+  // Double-clicking a tag only jumps to it, so there is nothing to refuse.
+  target.querySelector('button.ref[title="v1.0"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  expect(errors.pending).toBe(0);
+  // A branch's double-click checks it out, so it is still refused.
+  target.querySelector('button.ref[title="main"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  expect(errors.current).toMatchObject({ kind: "notice", title: "Repository still opening" });
+  expect(checkout).not.toHaveBeenCalled();
+});
