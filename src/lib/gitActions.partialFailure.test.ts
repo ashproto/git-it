@@ -28,6 +28,7 @@ const mainRef: Ref = {
   upstream: null,
   ahead: 0,
   behind: 0,
+  merge_source: null,
 };
 
 function graphWithoutFeatureDecoration(): GraphCommit[] {
@@ -61,6 +62,7 @@ beforeEach(() => {
       upstream: null,
       ahead: 0,
       behind: 0,
+      merge_source: null,
     },
   ]);
   appState.setCurrent(SAMPLE_GRAPH[2].sha);

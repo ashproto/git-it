@@ -167,8 +167,58 @@ fn parse_track(track: &str) -> (u32, u32) {
     (ahead, behind)
 }
 
+/// Every local branch's `Ref::merge_source`, keyed by branch name, from one config read.
+/// git ignores `branch.<name>.merge` without `branch.<name>.remote` (the pull then has no
+/// tracking information), so a branch needs both.
+fn branch_merge_sources(repo: &Path) -> Result<HashMap<String, String>, String> {
+    // A fixed pattern, no user operands. With `-z` each entry is `key\nvalue\0`, and the key
+    // keeps the branch name as written, dots included.
+    let out = Command::new("git")
+        .current_dir(repo)
+        .args(["config", "-z", "--get-regexp", r"^branch\..*\.(remote|merge)$"])
+        .output()
+        .map_err(|e| format!("Failed to spawn command: {}", e))?;
+    // Exit 1: nothing matched, so no branch has either setting.
+    if out.status.code() == Some(1) {
+        return Ok(HashMap::new());
+    }
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).into_owned());
+    }
+    let mut remotes = HashMap::new();
+    let mut merges = HashMap::new();
+    for entry in String::from_utf8_lossy(&out.stdout).split('\0') {
+        // No newline: a key set without a value, which names nothing.
+        let Some((key, value)) = entry.split_once('\n') else { continue };
+        // The LAST dot ends the branch name, which may contain dots itself.
+        let Some((branch, var)) = key.strip_prefix("branch.").and_then(|k| k.rsplit_once('.'))
+        else {
+            continue;
+        };
+        if value.is_empty() {
+            continue;
+        }
+        if var == "remote" {
+            // As in git, the last value wins.
+            remotes.insert(branch.to_string(), value.to_string());
+        } else {
+            // A branch may merge several refs; git's upstream is the first.
+            merges.entry(branch.to_string()).or_insert_with(|| value.to_string());
+        }
+    }
+    Ok(merges
+        .into_iter()
+        .filter_map(|(branch, merge)| {
+            let remote = remotes.get(&branch)?;
+            let merge_ref = merge.strip_prefix("refs/heads/").unwrap_or(&merge);
+            Some((branch, format!("{remote} {merge_ref}")))
+        })
+        .collect())
+}
+
 /// All branches (local + remote-tracking) and tags, for the sidebar.
 pub fn list_refs(repo: &Path) -> Result<Vec<Ref>, String> {
+    let merge_sources = branch_merge_sources(repo)?;
     let mut cmd = Command::new("git");
     cmd.current_dir(repo)
         .arg("for-each-ref")
@@ -210,7 +260,9 @@ pub fn list_refs(repo: &Path) -> Result<Vec<Ref>, String> {
             Some(upstream_name.to_string())
         };
         let (ahead, behind) = parse_track(track);
-        refs.push(Ref { name, kind, target_sha, upstream, ahead, behind });
+        let merge_source =
+            if kind == RefKind::Local { merge_sources.get(&name).cloned() } else { None };
+        refs.push(Ref { name, kind, target_sha, upstream, ahead, behind, merge_source });
     }
     Ok(refs)
 }
@@ -473,6 +525,79 @@ mod tests {
         assert!(refs.iter().any(|x| x.name == "origin/main" && x.kind == RefKind::Remote));
         let main = refs.iter().find(|x| x.name == "main" && x.kind == RefKind::Local).unwrap();
         assert_eq!(main.upstream.as_deref(), Some("origin/main"));
+    }
+
+    fn local<'a>(refs: &'a [Ref], name: &str) -> &'a Ref {
+        refs.iter().find(|x| x.name == name && x.kind == RefKind::Local).unwrap()
+    }
+
+    #[test]
+    fn list_refs_reports_a_merge_source_that_no_tracking_ref_mirrors() {
+        // What `gh pr checkout` sets for a fork's PR. origin's refspec maps only refs/heads/*,
+        // so git reports no upstream, yet `git pull` fetches refs/pull/1/head and merges it.
+        let r = TempRepo::new();
+        r.write_commit("a.txt", "A");
+        r.git(&["remote", "add", "origin", "https://example.invalid/repo.git"]);
+        r.git(&["branch", "pr-1"]);
+        r.git(&["config", "branch.pr-1.remote", "origin"]);
+        r.git(&["config", "branch.pr-1.merge", "refs/pull/1/head"]);
+
+        let refs = list_refs(&r.path).unwrap();
+        let pr = local(&refs, "pr-1");
+        assert_eq!(pr.upstream, None);
+        assert_eq!(pr.merge_source.as_deref(), Some("origin refs/pull/1/head"));
+    }
+
+    #[test]
+    fn list_refs_keeps_a_tracked_upstream_beside_its_merge_source() {
+        let r = TempRepo::new();
+        r.write_commit("a.txt", "A");
+        r.git(&["remote", "add", "origin", "https://example.invalid/repo.git"]);
+        r.git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
+        r.git(&["branch", "--set-upstream-to=origin/main", "main"]);
+
+        let refs = list_refs(&r.path).unwrap();
+        let main = local(&refs, "main");
+        assert_eq!(main.upstream.as_deref(), Some("origin/main"));
+        assert_eq!(main.merge_source.as_deref(), Some("origin main"));
+    }
+
+    #[test]
+    fn list_refs_reports_neither_for_a_branch_without_config() {
+        // No branch config at all, so `git config --get-regexp` matches nothing (exit 1).
+        let r = TempRepo::new();
+        r.write_commit("a.txt", "A");
+
+        let refs = list_refs(&r.path).unwrap();
+        let main = local(&refs, "main");
+        assert_eq!((main.upstream.as_deref(), main.merge_source.as_deref()), (None, None));
+    }
+
+    #[test]
+    fn list_refs_ignores_a_merge_without_a_remote() {
+        // git ignores it too: `git pull` there says there is no tracking information.
+        let r = TempRepo::new();
+        r.write_commit("a.txt", "A");
+        r.git(&["config", "branch.main.merge", "refs/heads/main"]);
+
+        let refs = list_refs(&r.path).unwrap();
+        assert_eq!(local(&refs, "main").merge_source, None);
+    }
+
+    #[test]
+    fn list_refs_reads_the_merge_source_of_a_branch_with_dots_in_its_name() {
+        // `gh pr checkout` when the maintainer may push to the fork: the remote is the fork's
+        // URL, and its branch keeps the head branch's name.
+        let r = TempRepo::new();
+        r.write_commit("a.txt", "A");
+        r.git(&["branch", "fix.v1.2"]);
+        r.git(&["config", "branch.fix.v1.2.remote", "https://example.invalid/fork.git"]);
+        r.git(&["config", "branch.fix.v1.2.merge", "refs/heads/fix.v1.2"]);
+
+        let refs = list_refs(&r.path).unwrap();
+        let fix = local(&refs, "fix.v1.2");
+        assert_eq!(fix.upstream, None);
+        assert_eq!(fix.merge_source.as_deref(), Some("https://example.invalid/fork.git fix.v1.2"));
     }
 
     #[test]

@@ -6,7 +6,7 @@ import { api } from "./api";
 import { SAMPLE_GRAPH } from "./graph/sample";
 import type { GraphCommit, OpOutcome, RemoteOutcome, RewriteResult, RebaseOutcome, RebaseStep, UndoSnapshot, WorkingFile } from "./types";
 import { dialogs } from "./dialogs.svelte";
-import { canPull, pullContext, pullLabel, pullStatusLine } from "./pullOptions";
+import { canPull, pullContext, pullLabel, pullStatusLine, samePullTarget } from "./pullOptions";
 import { graphView } from "./graphView.svelte";
 import { githubState } from "./githubState.svelte";
 import { prefillFromSubjects } from "./github/prCreate";
@@ -1188,25 +1188,24 @@ export const gitActions = {
     if (!sameRepo() || pullStillLoading()) return false;
     let strategy = appState.pullStrategy;
     let autostash = appState.pullAutostash;
-    // The branch and upstream this pull is for. The dialog shows them; a confirmed pull and
-    // a sign-in retry each refuse if they have moved on since.
-    const bound = pullContext(appState.repoStatus, appState.refsDetailed);
+    // The branch and where it pulls from. The dialog shows them; a confirmed pull and a
+    // sign-in retry each refuse if they have moved on since.
+    const readContext = () =>
+      pullContext(appState.repoStatus, appState.refsDetailed, appState.refsDetailedKnown);
+    const bound = readContext();
     // Re-checked after each later await (the dialog, a sign-in prompt): the same branch must
-    // still track the same upstream, and that upstream must still exist. Otherwise it says
-    // why — `changed` when the branch or its upstream moved — and returns false.
+    // still pull from the same place, and that place must still exist. Otherwise it says
+    // why — `changed` when the branch or where it pulls from moved — and returns false.
     const stillBound = (changed: string): boolean => {
-      const now = pullContext(appState.repoStatus, appState.refsDetailed);
-      if (now.branch !== bound.branch || now.upstream !== bound.upstream) {
+      const now = readContext();
+      if (!samePullTarget(now, bound)) {
         reportNotice("Can't pull", changed);
         return false;
       }
       // Same names, but a fetch may have pruned the upstream meanwhile — or, when no dialog
       // ran, there may never have been one to pull from.
-      if (!canPull(now.branch, now.upstream, now.upstreamGone)) {
-        reportNotice(
-          "Can't pull",
-          pullStatusLine(now.branch, now.upstream, now.ahead, now.behind, now.upstreamGone),
-        );
+      if (!canPull(now)) {
+        reportNotice("Can't pull", pullStatusLine(now));
         return false;
       }
       return true;
@@ -1242,8 +1241,8 @@ export const gitActions = {
       (onLine, creds) => api.pull(appState.repo, strategy, autostash, onLine, creds),
       {
         // The sign-in prompt is one more await: retry with the credentials just entered only
-        // if the repository isn't loading again and the pull is still bound (same branch and
-        // upstream, and that upstream still exists).
+        // if the repository isn't loading again and the pull is still bound (same branch,
+        // pulling from the same place, which still exists).
         beforeRetry: () =>
           !pullStillLoading() &&
           stillBound(

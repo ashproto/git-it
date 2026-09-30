@@ -18,10 +18,10 @@ function mountModal() {
 function openPull(upstream: string | null) {
   return dialogs.confirmPull({
     branch: "main",
-    upstream,
-    upstreamGone: false,
-    ahead: 2,
-    behind: 3,
+    source:
+      upstream === null
+        ? { kind: "none" }
+        : { kind: "tracked", upstream, gone: false, ahead: 2, behind: 3 },
     strategy: "rebase",
     autostash: true,
     offerDontAsk: true,
@@ -66,10 +66,7 @@ describe("pull dialog", () => {
     const { target, modal } = mountModal();
     const pending = dialogs.confirmPull({
       branch: "main",
-      upstream: "origin/main",
-      upstreamGone: false,
-      ahead: 2,
-      behind: 3,
+      source: { kind: "tracked", upstream: "origin/main", gone: false, ahead: 2, behind: 3 },
       strategy: "rebase",
       autostash: true,
       offerDontAsk: false,
@@ -155,10 +152,7 @@ describe("pull dialog", () => {
     const { target, modal } = mountModal();
     const pending = dialogs.confirmPull({
       branch: "main",
-      upstream: "origin/main",
-      upstreamGone: true,
-      ahead: 0,
-      behind: 0,
+      source: { kind: "tracked", upstream: "origin/main", gone: true, ahead: 0, behind: 0 },
       strategy: "rebase",
       autostash: true,
       offerDontAsk: true,
@@ -192,10 +186,7 @@ describe("pull dialog", () => {
     const { target, modal } = mountModal();
     const pending = dialogs.confirmPull({
       branch: null,
-      upstream: null,
-      upstreamGone: false,
-      ahead: 0,
-      behind: 0,
+      source: { kind: "none" },
       strategy: "rebase",
       autostash: true,
       offerDontAsk: true,
@@ -209,6 +200,40 @@ describe("pull dialog", () => {
 
     keydown(target.querySelector(".actions button"), "Escape");
     await expect(pending).resolves.toBeNull();
+    await unmount(modal);
+  });
+
+  it("enables Pull for a merge source that no tracking ref mirrors, without counts", async () => {
+    // A fork's pull request checked out through gh: git pulls refs/pull/7/head from origin, and
+    // nothing local mirrors it to count ahead/behind against.
+    const { target, modal } = mountModal();
+    const pending = dialogs.confirmPull({
+      branch: "pr-7",
+      source: { kind: "configured", source: "origin refs/pull/7/head" },
+      strategy: "rebase",
+      autostash: true,
+      offerDontAsk: true,
+    });
+    await tick();
+
+    expect(target.querySelector("h3")?.textContent?.trim()).toBe(
+      "Pull origin refs/pull/7/head → pr-7",
+    );
+    const status = target.querySelector(".pull-status");
+    expect(status?.textContent?.trim()).toBe(
+      "pr-7 pulls from origin refs/pull/7/head, as configured — ahead/behind isn't known.",
+    );
+    expect(status?.classList.contains("blocked")).toBe(false);
+    const options = target.querySelectorAll<HTMLInputElement>(
+      ".strategy-opt input, .pull-autostash input, .pull-dont-ask input",
+    );
+    expect([...options].map((o) => o.disabled)).toEqual([false, false, false, false, false]);
+    const pull = target.querySelector<HTMLButtonElement>(".actions button.primary");
+    expect(pull?.disabled).toBe(false);
+    expect(document.activeElement).toBe(pull);
+
+    keydown(pull, "Enter");
+    await expect(pending).resolves.toEqual({ strategy: "rebase", autostash: true, dontAsk: false });
     await unmount(modal);
   });
 });

@@ -92,6 +92,12 @@ pub struct Ref {
     pub upstream: Option<String>,
     pub ahead: u32,
     pub behind: u32,
+    /// Local branches only: what a plain `git pull` fetches and merges, from the branch's
+    /// `branch.<name>.remote` + `branch.<name>.merge` config. Set even when no remote-tracking
+    /// ref mirrors it (a fork PR's `refs/pull/N/head`; another branch of a single-branch
+    /// clone), where `upstream` is empty. Shown as the operands of the same pull spelled out,
+    /// `<remote> <ref>` with `refs/heads/` dropped: "origin refs/pull/1/head", "origin topic".
+    pub merge_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

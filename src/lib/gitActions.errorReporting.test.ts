@@ -27,8 +27,8 @@ const repoStatus: RepoStatus = {
 // sign-in retry through on such a branch, and every reload must keep it that way.
 const sha = SAMPLE_GRAPH[0].sha;
 const refs: Ref[] = [
-  { name: "main", kind: "local", target_sha: sha, upstream: "origin/main", ahead: 0, behind: 0 },
-  { name: "origin/main", kind: "remote", target_sha: sha, upstream: null, ahead: 0, behind: 0 },
+  { name: "main", kind: "local", target_sha: sha, upstream: "origin/main", ahead: 0, behind: 0, merge_source: null },
+  { name: "origin/main", kind: "remote", target_sha: sha, upstream: null, ahead: 0, behind: 0, merge_source: null },
 ];
 
 const DIVERGENT = [

@@ -4,6 +4,7 @@ import { dialogs } from "./dialogs.svelte";
 import { errors } from "./errors.svelte";
 import { gitActions } from "./gitActions";
 import { SAMPLE_GRAPH } from "./graph/sample";
+import { canPull } from "./pullOptions";
 import { appState } from "./store.svelte";
 import type { Ref, RemoteOutcome, RepoStatus } from "./types";
 
@@ -36,7 +37,10 @@ const mainRef: Ref = {
   upstream: "origin/main",
   ahead: 2,
   behind: 3,
+  merge_source: "origin main",
 };
+// What the dialog shows for mainRef.
+const tracksOriginMain = { kind: "tracked", upstream: "origin/main", gone: false, ahead: 2, behind: 3 };
 // The upstream's own ref: without it in the inventory, pullContext reads origin/main as gone.
 const originMainRef: Ref = {
   name: "origin/main",
@@ -45,6 +49,17 @@ const originMainRef: Ref = {
   upstream: null,
   ahead: 0,
   behind: 0,
+  merge_source: null,
+};
+
+// main as `gh pr checkout` leaves a fork's pull request: git pulls refs/pull/1/head from
+// origin, and no tracking ref mirrors it, so there is no upstream and nothing to count.
+const prMainRef: Ref = {
+  ...mainRef,
+  upstream: null,
+  ahead: 0,
+  behind: 0,
+  merge_source: "origin refs/pull/1/head",
 };
 
 // Each of these changes exactly one thing a pull is bound to, so a test can only pass
@@ -149,9 +164,7 @@ describe("gitActions.pull", () => {
     await vi.waitFor(() => expect(dialogs.state.kind).toBe("pull"));
     if (dialogs.state.kind !== "pull") throw new Error("pull dialog did not open");
     expect(dialogs.state.branch).toBe("main");
-    expect(dialogs.state.upstream).toBe("origin/main");
-    expect(dialogs.state.ahead).toBe(2);
-    expect(dialogs.state.behind).toBe(3);
+    expect(dialogs.state.source).toEqual(tracksOriginMain);
     expect(dialogs.state.strategy).toBe("merge");
     expect(dialogs.state.autostash).toBe(false);
     expect(dialogs.state.offerDontAsk).toBe(true);
@@ -215,9 +228,7 @@ describe("gitActions.pull", () => {
     await vi.waitFor(() => expect(dialogs.state.kind).toBe("pull"));
     if (dialogs.state.kind !== "pull") throw new Error("pull dialog did not open");
     expect(dialogs.state.branch).toBe("main");
-    expect(dialogs.state.upstream).toBe("origin/main");
-    expect(dialogs.state.ahead).toBe(2);
-    expect(dialogs.state.behind).toBe(3);
+    expect(dialogs.state.source).toEqual(tracksOriginMain);
 
     dialogs.resolvePull(false);
     await expect(pulling).resolves.toBe(false);
@@ -261,6 +272,39 @@ describe("gitActions.pull", () => {
     await expect(pulling).resolves.toBe(false);
     expect(api.pull).not.toHaveBeenCalled();
     expect(errors.current).toMatchObject({ kind: "notice", title: "Can't pull yet" });
+  });
+
+  it("pulls from a configured merge source that no tracking ref mirrors", async () => {
+    appState.setRefsDetailed([prMainRef]);
+    appState.setPullAskEveryTime(true);
+
+    const pulling = gitActions.pull();
+    await vi.waitFor(() => expect(dialogs.state.kind).toBe("pull"));
+    if (dialogs.state.kind !== "pull") throw new Error("pull dialog did not open");
+    expect(dialogs.state.source).toEqual({ kind: "configured", source: "origin refs/pull/1/head" });
+    expect(canPull(dialogs.state)).toBe(true);
+    dialogs.resolvePull(true);
+
+    await expect(pulling).resolves.toBe(true);
+    expect(api.pull).toHaveBeenCalledWith(REPO, "merge", false, expect.any(Function), undefined);
+  });
+
+  it("leaves the upstream to git when the branch list couldn't be read", async () => {
+    // A failed list_refs leaves this repository without an inventory, which is not the same
+    // as a branch without an upstream.
+    appState.invalidateRefsDetailed(REPO);
+    expect(appState.refsDetailed).toEqual([]);
+    appState.setPullAskEveryTime(true);
+
+    const pulling = gitActions.pull();
+    await vi.waitFor(() => expect(dialogs.state.kind).toBe("pull"));
+    if (dialogs.state.kind !== "pull") throw new Error("pull dialog did not open");
+    expect(dialogs.state.source).toEqual({ kind: "unknown" });
+    expect(canPull(dialogs.state)).toBe(true);
+    dialogs.resolvePull(true);
+
+    await expect(pulling).resolves.toBe(true);
+    expect(api.pull).toHaveBeenCalledWith(REPO, "merge", false, expect.any(Function), undefined);
   });
 });
 
@@ -358,6 +402,23 @@ describe("a confirmed pull is bound to what the dialog showed", () => {
       kind: "notice",
       title: "Can't pull",
       headline: "origin/main no longer exists as of the last fetch — there's nothing to pull.",
+    });
+  });
+
+  it("refuses when the branch's merge source changed while the dialog was open", async () => {
+    appState.setRefsDetailed([prMainRef]);
+    const { pulling, expectNothingHappened } = await openDialog();
+
+    // Still nothing tracks it, but main now pulls another pull request's head.
+    appState.setRefsDetailed([{ ...prMainRef, merge_source: "origin refs/pull/2/head" }]);
+    dialogs.resolvePull(true);
+
+    await expect(pulling).resolves.toBe(false);
+    expectNothingHappened();
+    expect(errors.current).toMatchObject({
+      kind: "notice",
+      title: "Can't pull",
+      headline: CHANGED_WHILE_OPEN,
     });
   });
 });
@@ -463,7 +524,10 @@ describe("a sign-in retry is bound to the same branch and upstream", () => {
     // Asking is off, so no dialog stopped the first attempt, and git fetches (and fails
     // authentication) before it would notice there is nothing to merge. Nothing changed:
     // the refusal must not say it did.
-    appState.setRefsDetailed([{ ...mainRef, upstream: null, ahead: 0, behind: 0 }, originMainRef]);
+    appState.setRefsDetailed([
+      { ...mainRef, upstream: null, ahead: 0, behind: 0, merge_source: null },
+      originMainRef,
+    ]);
     const { pulling } = await untilSignIn({ ask: false });
     dialogs.resolveCredentials(creds);
 

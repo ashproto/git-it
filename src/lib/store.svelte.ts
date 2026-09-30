@@ -2406,6 +2406,11 @@ function makeState() {
     get refsDetailed() {
       return refsDetailedRepo === repo ? refsDetailed : [];
     },
+    // Whether refsDetailed is this repository's inventory. When it isn't (not loaded, or
+    // list_refs failed), its [] means "unknown", not "no refs".
+    get refsDetailedKnown() {
+      return refsDetailedRepo === repo;
+    },
     setRefsDetailed(v: Ref[], sourceRepo = repo) {
       refsDetailed = v;
       refsDetailedRepo = sourceRepo;

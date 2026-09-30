@@ -135,6 +135,7 @@ describe("Local Changes view-model", () => {
       upstream: null,
       ahead: 0,
       behind: 0,
+      merge_source: null,
     };
     const featureRef = {
       name: "feature/graph-view",
@@ -143,6 +144,7 @@ describe("Local Changes view-model", () => {
       upstream: null,
       ahead: 0,
       behind: 0,
+      merge_source: null,
     };
     appState.setGraphCommits(SAMPLE_GRAPH);
     appState.setRefsDetailed([mainRef, featureRef]);

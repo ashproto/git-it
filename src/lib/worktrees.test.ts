@@ -90,8 +90,8 @@ describe("worktree helpers", () => {
     expect(worktreeStatusDetail(changed)).toBe("2 staged · 1 unstaged · 3 untracked");
 
     const refs: Ref[] = [
-      { name: "feature", kind: "local", target_sha: "a", upstream: "origin/feature", ahead: 2, behind: 1 },
-      { name: "origin/feature", kind: "remote", target_sha: "b", upstream: null, ahead: 0, behind: 0 },
+      { name: "feature", kind: "local", target_sha: "a", upstream: "origin/feature", ahead: 2, behind: 1, merge_source: null },
+      { name: "origin/feature", kind: "remote", target_sha: "b", upstream: null, ahead: 0, behind: 0, merge_source: null },
     ];
     expect(worktreeTrackingDetail(changed, refs)).toBe("↑2 to push · ↓1 to pull");
     expect(worktreeTrackingDetail(changed, refs.slice(0, 1))).toBe("Upstream missing — origin/feature");

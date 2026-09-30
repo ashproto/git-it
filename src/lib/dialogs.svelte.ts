@@ -3,7 +3,7 @@
 // whichever dialog is active.
 import type { PullStrategy, WorktreeInfo } from "./types";
 import { worktreeRemovalBlocker } from "./worktrees";
-import { canPull } from "./pullOptions";
+import { canPull, type PullContext, type PullSource } from "./pullOptions";
 
 type BranchDeleteResult = {
   confirmed: boolean;
@@ -106,10 +106,7 @@ type DialogState =
   | {
       kind: "pull";
       branch: string | null; // null when HEAD is detached
-      upstream: string | null; // e.g. "origin/main"; null when the branch has no upstream
-      upstreamGone: boolean; // the upstream is still configured, but its ref no longer exists
-      ahead: number;
-      behind: number;
+      source: PullSource; // where the branch pulls from (see pullContext)
       strategy: PullStrategy;
       autostash: boolean;
       // false when asking is already off (an ⌥-click): "Don't ask again" would change nothing
@@ -351,25 +348,15 @@ function makeDialogs() {
     // ── Pull options dialog ────────────────────────────────────────────────────
     // Strategy + autostash preselected from the saved settings; resolves the edited
     // choice (plus "don't ask again"), or null on cancel / replacement.
-    confirmPull(opts: {
-      branch: string | null;
-      upstream: string | null;
-      upstreamGone: boolean;
-      ahead: number;
-      behind: number;
-      strategy: PullStrategy;
-      autostash: boolean;
-      offerDontAsk: boolean;
-    }): Promise<PullDialogResult | null> {
+    confirmPull(
+      opts: PullContext & { strategy: PullStrategy; autostash: boolean; offerDontAsk: boolean },
+    ): Promise<PullDialogResult | null> {
       settlePending();
       return new Promise((resolve) => {
         state = {
           kind: "pull",
           branch: opts.branch,
-          upstream: opts.upstream,
-          upstreamGone: opts.upstreamGone,
-          ahead: opts.ahead,
-          behind: opts.behind,
+          source: opts.source,
           strategy: opts.strategy,
           autostash: opts.autostash,
           offerDontAsk: opts.offerDontAsk,
@@ -383,9 +370,9 @@ function makeDialogs() {
     setPullDontAsk(v: boolean) { if (state.kind === "pull") state = { ...state, dontAsk: v }; },
     resolvePull(accepted: boolean) {
       if (state.kind === "pull") {
-        const { branch, upstream, upstreamGone, strategy, autostash, dontAsk } = state;
+        const { strategy, autostash, dontAsk } = state;
         // Defense in depth: Enter or a future caller cannot pull with nowhere to pull from.
-        if (accepted && !canPull(branch, upstream, upstreamGone)) return;
+        if (accepted && !canPull(state)) return;
         state.resolve(accepted ? { strategy, autostash, dontAsk } : null);
         state = { kind: "none" };
       }

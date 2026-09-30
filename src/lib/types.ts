@@ -81,6 +81,9 @@ export type Ref = {
   upstream: string | null;
   ahead: number;
   behind: number;
+  // Local branches: what `git pull` pulls, as "<remote> <ref>" (e.g. "origin refs/pull/1/head"),
+  // from the branch's config. Set even when no tracking ref mirrors it and `upstream` is null.
+  merge_source: string | null;
 };
 
 export type HeadInfo = {

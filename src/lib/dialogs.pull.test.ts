@@ -4,10 +4,10 @@ import { dialogs } from "./dialogs.svelte";
 function openPull(upstream: string | null) {
   return dialogs.confirmPull({
     branch: "main",
-    upstream,
-    upstreamGone: false,
-    ahead: 2,
-    behind: 3,
+    source:
+      upstream === null
+        ? { kind: "none" }
+        : { kind: "tracked", upstream, gone: false, ahead: 2, behind: 3 },
     strategy: "merge",
     autostash: false,
     offerDontAsk: true,
@@ -21,9 +21,13 @@ describe("pull options dialog", () => {
     expect(dialogs.state.kind).toBe("pull");
     if (dialogs.state.kind !== "pull") throw new Error("pull dialog did not open");
     expect(dialogs.state.branch).toBe("main");
-    expect(dialogs.state.upstream).toBe("origin/main");
-    expect(dialogs.state.ahead).toBe(2);
-    expect(dialogs.state.behind).toBe(3);
+    expect(dialogs.state.source).toEqual({
+      kind: "tracked",
+      upstream: "origin/main",
+      gone: false,
+      ahead: 2,
+      behind: 3,
+    });
     expect(dialogs.state.strategy).toBe("merge");
     expect(dialogs.state.autostash).toBe(false);
     expect(dialogs.state.offerDontAsk).toBe(true);
@@ -57,10 +61,7 @@ describe("pull options dialog", () => {
   it("refuses to pull when the upstream is gone", async () => {
     const pending = dialogs.confirmPull({
       branch: "main",
-      upstream: "origin/main",
-      upstreamGone: true,
-      ahead: 0,
-      behind: 0,
+      source: { kind: "tracked", upstream: "origin/main", gone: true, ahead: 0, behind: 0 },
       strategy: "merge",
       autostash: false,
       offerDontAsk: true,
@@ -74,10 +75,7 @@ describe("pull options dialog", () => {
   it("refuses to pull with a detached HEAD", async () => {
     const pending = dialogs.confirmPull({
       branch: null,
-      upstream: null,
-      upstreamGone: false,
-      ahead: 0,
-      behind: 0,
+      source: { kind: "none" },
       strategy: "merge",
       autostash: false,
       offerDontAsk: true,

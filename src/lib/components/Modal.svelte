@@ -51,7 +51,7 @@
       branchDeleteCancelEl?.focus();
     } else if (s.kind === "pull") {
       // Enter = Pull, so the primary takes focus — unless there is nothing to pull from.
-      (canPull(s.branch, s.upstream, s.upstreamGone) ? pullPrimaryEl : pullCancelEl)?.focus();
+      (canPull(s) ? pullPrimaryEl : pullCancelEl)?.focus();
     }
   });
 
@@ -512,15 +512,9 @@
     </div>
   </div>
 {:else if dialogs.state.kind === "pull"}
-  {@const allowed = canPull(dialogs.state.branch, dialogs.state.upstream, dialogs.state.upstreamGone)}
-  {@const title = pullDialogTitle(dialogs.state.branch, dialogs.state.upstream)}
-  {@const statusLine = pullStatusLine(
-    dialogs.state.branch,
-    dialogs.state.upstream,
-    dialogs.state.ahead,
-    dialogs.state.behind,
-    dialogs.state.upstreamGone,
-  )}
+  {@const allowed = canPull(dialogs.state)}
+  {@const title = pullDialogTitle(dialogs.state)}
+  {@const statusLine = pullStatusLine(dialogs.state)}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="overlay"
@@ -904,6 +898,11 @@
   }
   .dialog.pull:focus {
     outline: none;
+  }
+  /* A pull source can be a fork's URL: one long word that would run out of the dialog. */
+  .dialog.pull h3,
+  .pull-status {
+    overflow-wrap: anywhere;
   }
   .pull-status {
     color: var(--text-muted);

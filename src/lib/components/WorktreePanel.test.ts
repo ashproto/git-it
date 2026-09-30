@@ -52,8 +52,8 @@ describe("linked worktree panel", () => {
     const target = document.createElement("div");
     document.body.appendChild(target);
     const refs: Ref[] = [
-      { name: "feature", kind: "local", target_sha: "a", upstream: "origin/feature", ahead: 2, behind: 0 },
-      { name: "origin/feature", kind: "remote", target_sha: "a", upstream: null, ahead: 0, behind: 0 },
+      { name: "feature", kind: "local", target_sha: "a", upstream: "origin/feature", ahead: 2, behind: 0, merge_source: null },
+      { name: "origin/feature", kind: "remote", target_sha: "a", upstream: null, ahead: 0, behind: 0, merge_source: null },
     ];
     const panel = mount(WorktreePanel, {
       target,
