@@ -1,8 +1,18 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import { appState } from "../store.svelte";
   import { errorText, summarizeGitOutput } from "../errorReport";
 
   let { what, error, onRetry }: { what: string; error: unknown; onRetry: () => void | Promise<unknown> } = $props();
-  const headline = $derived(summarizeGitOutput(errorText(error)).headline.split("\n")[0]);
+  const raw = $derived(errorText(error));
+  const headline = $derived(summarizeGitOutput(raw).headline.split("\n")[0]);
+  // The panel shows one line; the Output log keeps the whole failure. `raw` compares by value,
+  // so a refresh that fails the same way (the stash list reloads on every watcher tick) logs
+  // nothing new. untrack: appendLog reads the log it writes, which would re-run this effect.
+  $effect(() => {
+    const line = `[load] Couldn't load ${what}\n${raw}`;
+    untrack(() => appState.appendLog(line));
+  });
   // True while a retry runs, so one that fails the same way again still shows it did something.
   let retrying = $state(false);
 

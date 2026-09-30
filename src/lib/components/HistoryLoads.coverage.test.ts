@@ -167,3 +167,32 @@ it.each(panels)("drops an obsolete $name success after a repository switch", asy
   expect(target.textContent).not.toContain(row);
   expect(target.textContent).toContain(empty);
 });
+it.each(panels)("logs a $name failure once while refreshes repeat it", async ({ open, method, what, empty }) => {
+  appState.clearLog();
+  const load = vi
+    .spyOn(api, method)
+    .mockRejectedValueOnce(new Error("fatal: cannot read"))
+    .mockRejectedValueOnce(new Error("fatal: cannot read"))
+    .mockResolvedValueOnce([])
+    .mockRejectedValueOnce(new Error("fatal: cannot read"));
+  const logged = () => appState.logLines.filter((line) => line === `[load] Couldn't load ${what}\nfatal: cannot read`);
+  // A working-copy / undo refresh re-runs the loader.
+  const refresh = () => {
+    appState.setWorkingChanges([]);
+    appState.setLastUndo({ branch: "main", sha: "a", label: "Reset" });
+  };
+  const panel = open();
+  dispose = () => unmount(panel);
+  target.querySelector<HTMLButtonElement>(".toggle")!.click();
+  await vi.waitFor(() => expect(logged()).toHaveLength(1));
+  refresh();
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+  await nextTask();
+  expect(logged()).toHaveLength(1);
+  target.querySelector<HTMLButtonElement>(".load-error button")!.click();
+  await vi.waitFor(() => expect(target.textContent).toContain(empty));
+  // Failing again after a success is news: it's logged again.
+  refresh();
+  await vi.waitFor(() => expect(logged()).toHaveLength(2));
+  expect(load).toHaveBeenCalledTimes(4);
+});

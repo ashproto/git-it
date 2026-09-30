@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { mount, unmount } from "svelte";
+import { flushSync, mount, unmount } from "svelte";
+import { SvelteMap } from "svelte/reactivity";
 import { errors } from "../errors.svelte";
+import { appState } from "../store.svelte";
 import LoadError from "./LoadError.svelte";
 let dispose: (() => Promise<void>) | undefined;
 afterEach(async () => {
   await dispose?.();
   dispose = undefined;
   errors.reset();
+  appState.clearLog();
   document.body.replaceChildren();
   vi.restoreAllMocks();
 });
@@ -70,4 +73,61 @@ it("re-enables Retry when the retry rejects", async () => {
   expect(button.textContent).toBe("Retry");
   // Logged, not left as an unhandled rejection.
   expect(warn).toHaveBeenCalledWith("[gte] retry loading the stashes failed", failure);
+});
+// Mounts with a failure the test can swap, the way a panel hands over each failed load.
+function mountFailure(error: unknown): (next: unknown) => void {
+  const failure = new SvelteMap<"error", unknown>([["error", error]]);
+  const target = document.createElement("div");
+  document.body.appendChild(target);
+  const panel = mount(LoadError, {
+    target,
+    props: {
+      what: "the stashes",
+      get error() {
+        return failure.get("error");
+      },
+      onRetry: () => {},
+    },
+  });
+  dispose = () => unmount(panel);
+  flushSync();
+  return (next) => {
+    failure.set("error", next);
+    flushSync();
+  };
+}
+const loadLines = () => appState.logLines.filter((line) => line.startsWith("[load] "));
+it("logs the whole failure to the Output log", () => {
+  const raw = "From example\nfatal: cannot read\n\tfile.txt\nhint: try later";
+  mountFailure(new Error(raw));
+  expect(loadLines()).toEqual([`[load] Couldn't load the stashes\n${raw}`]);
+});
+it("doesn't log a refresh that fails the same way again", () => {
+  const fail = mountFailure(new Error("fatal: cannot read"));
+  fail(new Error("fatal: cannot read"));
+  fail(new Error("fatal: cannot read"));
+  expect(loadLines()).toEqual(["[load] Couldn't load the stashes\nfatal: cannot read"]);
+});
+it("logs a refresh that fails differently", () => {
+  const fail = mountFailure(new Error("fatal: cannot read"));
+  fail(new Error("fatal: permission denied"));
+  expect(loadLines()).toEqual([
+    "[load] Couldn't load the stashes\nfatal: cannot read",
+    "[load] Couldn't load the stashes\nfatal: permission denied",
+  ]);
+});
+it("logs the same failure again when mounted for a new failure", async () => {
+  // A panel unmounts this on a successful load, so a later failure mounts it afresh.
+  mountFailure(new Error("fatal: cannot read"));
+  await dispose?.();
+  mountFailure(new Error("fatal: cannot read"));
+  expect(loadLines()).toHaveLength(2);
+});
+it("logs without re-running on its own write", () => {
+  const warn = vi.spyOn(console, "warn");
+  const error = vi.spyOn(console, "error");
+  expect(() => mountFailure(new Error("fatal: cannot read"))).not.toThrow();
+  expect(loadLines()).toHaveLength(1);
+  expect(warn).not.toHaveBeenCalled();
+  expect(error).not.toHaveBeenCalled();
 });
