@@ -30,7 +30,7 @@ A fast, native **macOS git client** — commit graph, branches, merges, rebases,
 - **Rewrite history** — soft/mixed/hard reset, amend, rebase-onto, and **interactive rebase** (reorder / squash / drop / reword), with a configurable **auto-backup** (git bundle) before destructive ops and **one-click undo** plus a reflog browser.
 - **Working copy** — file list, whole-file and **per-hunk** stage / unstage / discard, a commit composer, and stash — reached via a synthetic "Uncommitted changes" row in the graph.
 - **Diff viewer** — syntax-highlighted (Shiki, bundled offline), unified or split, with per-hunk staging.
-- **Remotes** — manage remotes; streamed **pull** (merge or rebase) and **push** (`--force-with-lease`, `--set-upstream`) with live progress, cancel, and an ahead/behind indicator. Credentials are prompted on demand and never stored.
+- **Remotes** — manage remotes; streamed **pull** (merge, rebase, or fast-forward only, with an optional **Stash & reapply** of local changes via `--autostash`) and **push** (`--force-with-lease`, `--set-upstream`) with live progress, cancel, and an ahead/behind indicator. Credentials are prompted on demand and never stored.
 - **Commit-time editing** — select commits and shift them by an **offset**, set an **exact** time, or **compress** a range proportionally into a new window. Opens in an on-demand drawer; previews before it rewrites.
 - **Multi-repo** — open several repositories at once, as tabs or a sidebar list (your choice).
 - **Themes** — Settings → Appearance switches the whole UI between **Classic** (native macOS vibrancy) and **NERV**, a high-contrast HUD console theme with six accent schemes and optional ambient motion.
@@ -59,6 +59,8 @@ Git It needs `git` and `python3`, both of which ship with the **Xcode Command Li
 ```sh
 xcode-select --install
 ```
+
+Pulls need **git 2.27 or later**: every pull passes `--autostash` or `--no-autostash`, which older git rejects on a merge or fast-forward-only pull (`--[no-]autostash option is only valid with --rebase`).
 
 [`git-filter-repo`](https://github.com/newren/git-filter-repo) — used by the **commit-time editing** feature — is bundled inside the app and run with the host's `python3`, so there is nothing extra to install.
 
