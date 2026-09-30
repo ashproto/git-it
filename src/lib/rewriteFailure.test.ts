@@ -36,6 +36,19 @@ describe("rewriteFailureText", () => {
     expect(rewriteFailureText(EPILOGUE)).toBe(EPILOGUE.join("\n"));
   });
 
+  it("keeps an epilogue that only blank lines come before", () => {
+    const stream = ["", ...EPILOGUE];
+    const text = rewriteFailureText(stream);
+    expect(text).toBe(stream.join("\n"));
+    expect(summarizeGitOutput(text).headline.split("\n")[0]).toBe("stream ends early");
+  });
+
+  it("drops the epilogue after a cause that follows a blank line", () => {
+    const text = rewriteFailureText(["", "ValueError: bad date", ...EPILOGUE]);
+    expect(text).toBe("\nValueError: bad date");
+    expect(summarizeGitOutput(text).headline).toBe("ValueError: bad date");
+  });
+
   it("keeps a fatal-led stream unchanged", () => {
     expect(rewriteFailureText(["fatal: rewrite denied"])).toBe("fatal: rewrite denied");
   });

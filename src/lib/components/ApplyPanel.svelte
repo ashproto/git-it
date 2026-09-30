@@ -62,7 +62,8 @@
     appState.isRewriting = true;
     appState.status = "Rewriting…";
     // When git-filter-repo fails, the rewrite rejects with just its exit code; the reason
-    // streams in earlier on stderr, so report this run's stderr lines instead.
+    // streams in earlier on stderr, so report this run's stderr lines instead, unless they're
+    // all blank.
     const stderr: string[] = [];
     try {
       await api.rewriteHistory(appState.repo, mappings, options, (line) => {
@@ -78,9 +79,10 @@
         appState.commits = fresh;
       } catch {}
     } catch (e) {
-      if (stderr.length) {
+      const reason = rewriteFailureText(stderr);
+      if (reason.trim()) {
         appState.appendLog(`[rewrite] stopped: ${errorText(e)}`);
-        reportError("Rewrite failed", rewriteFailureText(stderr));
+        reportError("Rewrite failed", reason);
       } else {
         appState.appendLog("[rewrite] stopped.");
         reportError("Rewrite failed", e);

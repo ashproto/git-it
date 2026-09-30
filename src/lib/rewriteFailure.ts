@@ -11,9 +11,10 @@ function isFastImportEpilogue(line: string): boolean {
   );
 }
 
-/** The lines as one text, minus fast-import's epilogue when another line comes before it. */
+/** The lines as one text, minus fast-import's epilogue when a non-blank line comes before it. */
 export function rewriteFailureText(stderr: string[]): string {
   const first = stderr.findIndex(isFastImportEpilogue);
-  const lines = first > 0 ? stderr.filter((line) => !isFastImportEpilogue(line)) : stderr;
+  const causeBefore = first > 0 && stderr.slice(0, first).some((line) => line.trim() !== "");
+  const lines = causeBefore ? stderr.filter((line) => !isFastImportEpilogue(line)) : stderr;
   return lines.join("\n");
 }

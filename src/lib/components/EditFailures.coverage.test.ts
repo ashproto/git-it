@@ -106,6 +106,17 @@ it("reports the rejection once when the rewrite fails before anything streams", 
   expect(appState.newDates.size).toBe(1);
   expect(appState.isRewriting).toBe(false);
 });
+it("reports the exit code when everything streamed on stderr is blank", async () => {
+  await failRewrite(["[stderr] ", "[stderr] "], "git-filter-repo exited with code Some(1)");
+  expect(errors.current).toMatchObject({
+    kind: "error",
+    title: "Rewrite failed",
+    headline: "git-filter-repo exited with code Some(1)",
+    output: "git-filter-repo exited with code Some(1)",
+  });
+  expect(errors.pending).toBe(1);
+  expect(appState.logLines).toContain("[rewrite] stopped.");
+});
 it("reports only the current run's stderr on a retried rewrite", async () => {
   await failRewrite(["[stderr] fatal: rewrite denied"], "git-filter-repo exited with code Some(1)");
   errors.dismiss();
