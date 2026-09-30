@@ -274,6 +274,48 @@ describe("gitActions.pull", () => {
     expect(errors.current).toMatchObject({ kind: "notice", title: "Can't pull yet" });
   });
 
+  describe("with asking off, refuses before the first attempt", () => {
+    // Nothing would stop the first `git pull`, and over HTTPS it can ask to sign in for a pull
+    // that has nothing to pull from. The refusal says why instead, as the dialog would.
+    async function expectRefused(headline: string) {
+      await expect(gitActions.pull()).resolves.toBe(false);
+      expect(api.pull).not.toHaveBeenCalled();
+      expect(dialogs.state.kind).toBe("none");
+      expect(errors.current).toMatchObject({ kind: "notice", title: "Can't pull", headline });
+    }
+
+    it("a detached HEAD", async () => {
+      appState.setRepoStatus({
+        ...repoStatus,
+        head: { sha: SAMPLE_GRAPH[0].sha, branch: null, detached: true },
+      });
+      await expectRefused("No branch is checked out.");
+    });
+
+    it("a branch with nothing configured to pull from", async () => {
+      appState.setRefsDetailed([
+        { ...mainRef, upstream: null, ahead: 0, behind: 0, merge_source: null },
+        originMainRef,
+      ]);
+      await expectRefused("main has no upstream branch — push it first to set one.");
+    });
+
+    it("an upstream the last fetch pruned", async () => {
+      appState.setRefsDetailed([{ ...mainRef, ahead: 0, behind: 0 }]);
+      await expectRefused(
+        "origin/main no longer exists as of the last fetch — there's nothing to pull.",
+      );
+    });
+
+    it("but still pulls from a configured merge source that nothing tracks", async () => {
+      appState.setRefsDetailed([prMainRef]);
+
+      await expect(gitActions.pull()).resolves.toBe(true);
+      expect(api.pull).toHaveBeenCalledWith(REPO, "merge", false, expect.any(Function), undefined);
+      expect(errors.current).toBeNull();
+    });
+  });
+
   it("pulls from a configured merge source that no tracking ref mirrors", async () => {
     appState.setRefsDetailed([prMainRef]);
     appState.setPullAskEveryTime(true);
@@ -520,15 +562,11 @@ describe("a sign-in retry is bound to the same branch and upstream", () => {
     expect(errors.last).toBeNull();
   });
 
-  it("gives the real reason when a branch that never had an upstream needs a sign-in", async () => {
-    // Asking is off, so no dialog stopped the first attempt, and git fetches (and fails
-    // authentication) before it would notice there is nothing to merge. Nothing changed:
-    // the refusal must not say it did.
-    appState.setRefsDetailed([
-      { ...mainRef, upstream: null, ahead: 0, behind: 0, merge_source: null },
-      originMainRef,
-    ]);
+  it("gives the real reason when the upstream was pruned during sign-in", async () => {
+    // The branch still names the same upstream, so the refusal must not say it changed: a
+    // fetch elsewhere deleted the ref while the prompt was open.
     const { pulling } = await untilSignIn({ ask: false });
+    appState.setRefsDetailed([{ ...mainRef, ahead: 0, behind: 0 }]);
     dialogs.resolveCredentials(creds);
 
     await expect(pulling).resolves.toBe(false);
@@ -536,7 +574,7 @@ describe("a sign-in retry is bound to the same branch and upstream", () => {
     expect(errors.current).toMatchObject({
       kind: "notice",
       title: "Can't pull",
-      headline: "main has no upstream branch — push it first to set one.",
+      headline: "origin/main no longer exists as of the last fetch — there's nothing to pull.",
     });
     expect(errors.last).toBeNull();
   });

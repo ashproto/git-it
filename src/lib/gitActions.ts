@@ -1202,8 +1202,7 @@ export const gitActions = {
         reportNotice("Can't pull", changed);
         return false;
       }
-      // Same names, but a fetch may have pruned the upstream meanwhile — or, when no dialog
-      // ran, there may never have been one to pull from.
+      // Same names, but a fetch may have pruned the upstream meanwhile.
       if (!canPull(now)) {
         reportNotice("Can't pull", pullStatusLine(now));
         return false;
@@ -1235,6 +1234,11 @@ export const gitActions = {
       appState.setPullStrategy(strategy);
       appState.setPullAutostash(autostash);
       if (choice.dontAsk) appState.setPullAskEveryTime(false);
+    } else if (!canPull(bound)) {
+      // No dialog to say why, so say it now — before git fetches, and maybe asks to sign in,
+      // for a pull with nothing to pull from.
+      reportNotice("Can't pull", pullStatusLine(bound));
+      return false;
     }
     return runRemote(
       pullLabel(strategy),
